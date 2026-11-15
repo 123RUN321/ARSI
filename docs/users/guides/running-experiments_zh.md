@@ -109,6 +109,7 @@ ember-rsi dashboard --port <端口号>
 - 当前界面只读，启动、恢复和取消通过 CLI 进行。
 - 默认将 `/api` 代理到 4317 端口。
 - 没有专用报告的 Policy 在 Results 中也会展示最终输出产生前的已记录评估，并在完成后保留评估历史；最终候选仍只由保存的输出引用确定。评估列表同时显示状态与覆盖情况，失败或中断的测量不会提供最终分数。
+- Results 同时展示实验记录中的执行错误。实验已经结束且没有最终输出时，页面明确显示未记录最终结果，并继续保留已有评估。
 
 ![rsi-studio-wikiskill-compact](../assets/rsi-studio-wikiskill-compact.gif)
 

@@ -17,7 +17,13 @@ import { inferenceSummary } from './inference-summary';
 import { Measurements } from './measurements';
 import { metricValue } from './measurement-score';
 
-export function Results({ id }: { id: string }): React.JSX.Element {
+export function Results({
+  id,
+  status,
+}: {
+  id: string;
+  status: string;
+}): React.JSX.Element {
   const labels = useRoundLabels();
   const records = useCallRecords();
   const candidates = useAllObservations(
@@ -97,8 +103,10 @@ export function Results({ id }: { id: string }): React.JSX.Element {
       {details.data ? (
         !details.data.result ? (
           <p className="empty-state">
-            No final result is recorded yet. Recorded evaluations are shown
-            below.
+            {['succeeded', 'failed', 'cancelled'].includes(status)
+              ? 'No final result was recorded.'
+              : 'No final result is recorded yet.'}{' '}
+            Recorded evaluations are shown below.
           </p>
         ) : (
           <>

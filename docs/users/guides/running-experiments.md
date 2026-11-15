@@ -109,6 +109,7 @@ Run from an experiment workspace that already contains `.rsi/`. The web dashboar
 - Start, resume, and cancel experiments through the CLI.
 - The development frontend proxies `/api` to port 4317 by default.
 - Results for Policies without a specialized report include recorded evaluations before a final output is available, and retain the evaluation history after completion. Final candidates still come only from saved output references. Evaluation lists show status and coverage; failed or interrupted measurements do not supply a final score.
+- Results also display the experiment's recorded error when execution fails. An experiment that has ended without a final output is shown as having no recorded final result, while its evaluations remain available.
 
 ![rsi-studio-wikiskill-compact](../assets/rsi-studio-wikiskill-compact.gif)
 
