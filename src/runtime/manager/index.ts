@@ -393,6 +393,8 @@ export class Manager {
     };
     try {
       if (!options.resume) {
+        // Startup can fail before the first charged call; resume still needs a ledger.
+        await this.facts.write('budgets', id, { scopes: {} });
         const locked = await lockDefinition(
           recipe,
           this.options.registry,
