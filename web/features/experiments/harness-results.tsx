@@ -18,6 +18,7 @@ import { useRoundLabels } from './round-labels';
 import { finalResults } from './final-results';
 import { scoreLabel } from './record-identifiers';
 import { route } from '../../app/routing';
+import { HarnessDelivery } from './harness-delivery';
 
 const variants = ['Base', 'Invariant', 'Domain', 'Composed'] as const;
 
@@ -31,6 +32,27 @@ export function HarnessResults({
   references: ResultReference[];
 }): React.JSX.Element {
   const labels = useRoundLabels();
+  return (
+    <HarnessResultsView
+      id={id}
+      measurements={measurements}
+      references={references}
+      labels={labels}
+    />
+  );
+}
+
+export function HarnessResultsView({
+  id,
+  measurements,
+  references,
+  labels,
+}: {
+  id: string;
+  measurements: MeasurementSummary[];
+  references: ResultReference[];
+  labels: Pick<ReturnType<typeof useRoundLabels>, 'harness' | 'task'>;
+}): React.JSX.Element {
   const groups = new Map<string, MeasurementSummary[]>();
   for (const measurement of measurements) {
     const stage = labels.harness(measurement.ref);
@@ -41,9 +63,20 @@ export function HarnessResults({
       ]);
   }
   const deliveries = finalResults(references, measurements);
-  const averages = variants.map((variant) => {
+  const delivered = new Set(
+    deliveries.scores.map(({ measurement }) => measurement.ref),
+  );
+  const columns = [...variants, 'Delivered'] as const;
+  const matches = (
+    item: MeasurementSummary,
+    variant: (typeof columns)[number],
+  ): boolean =>
+    variant === 'Delivered'
+      ? delivered.has(item.ref)
+      : labels.harness(item.ref)?.variant === variant;
+  const averages = columns.map((variant) => {
     const rounds = [...groups.values()].map((items) =>
-      items.filter((item) => labels.harness(item.ref)?.variant === variant),
+      items.filter((item) => matches(item, variant)),
     );
     return {
       variant,
@@ -58,7 +91,10 @@ export function HarnessResults({
       <div className="results-heading">
         <div>
           <h2>Harness comparison</h2>
-          <p>Compare each harness stage across recorded task rounds.</p>
+          <p>
+            Compare each harness stage and the saved selection across recorded
+            task rounds.
+          </p>
         </div>
       </div>
       <div
@@ -88,7 +124,7 @@ export function HarnessResults({
               <TableRow>
                 <TableHead>Round</TableHead>
                 <TableHead>Task</TableHead>
-                {variants.map((variant) => (
+                {columns.map((variant) => (
                   <TableHead key={variant}>{variant}</TableHead>
                 ))}
               </TableRow>
@@ -122,15 +158,21 @@ export function HarnessResults({
                             : '—'}
                         </div>
                       </TableCell>
-                      {variants.map((variant) => (
+                      {columns.map((variant) => (
                         <TableCell key={variant}>
                           <div className="harness-score-list">
                             {records
-                              .filter(
-                                (item) =>
-                                  labels.harness(item.ref)?.variant === variant,
-                              )
+                              .filter((item) => matches(item, variant))
                               .map((item, index, attempts) => {
+                                if (variant === 'Delivered')
+                                  return (
+                                    <HarnessDelivery
+                                      key={item.ref}
+                                      id={id}
+                                      measurement={item}
+                                      stage={labels.harness(item.ref)!.variant}
+                                    />
+                                  );
                                 const score = primaryScore(item);
                                 return (
                                   <div key={item.ref}>
@@ -165,11 +207,10 @@ export function HarnessResults({
                                   </div>
                                 );
                               })}
-                            {!records.some(
-                              (item) =>
-                                labels.harness(item.ref)?.variant === variant,
-                            )
-                              ? '—'
+                            {!records.some((item) => matches(item, variant))
+                              ? variant === 'Delivered'
+                                ? 'Not recorded'
+                                : '—'
                               : null}
                           </div>
                         </TableCell>
