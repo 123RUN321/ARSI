@@ -55,6 +55,8 @@ export interface MetricObservation {
   values: Record<string, number | null>;
 }
 export interface MeasurementSummary {
+  /** Immutable diagnostics for this evaluation, even if its call later resumes. */
+  diagnosticsRef?: string | null;
   ref: string;
   candidateRef: string;
   callId: string;

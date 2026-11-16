@@ -926,6 +926,7 @@ export class ObservationQueries {
       selected.items.map(async (entry): Promise<MeasurementSummary> => {
         const metrics = await this.metrics(entry.metrics!, secrets);
         return {
+          diagnosticsRef: optionalText(entry.diagnosticsRef),
           ref: string(entry.ref),
           candidateRef: string(entry.candidateRef),
           callId: string(entry.callId),
