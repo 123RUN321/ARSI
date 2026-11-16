@@ -157,13 +157,13 @@ RSI keeps native model and authentication settings while limiting tasks to read-
 After configuring your chosen backend, replace the path below with your complete Recipe file and run these commands in the same terminal:
 
 ```sh
-ember-rsi doctor path/to/recipe.yaml
-ember-rsi run path/to/recipe.yaml
+arsi doctor path/to/recipe.yaml
+arsi run path/to/recipe.yaml
 ```
 
 Resolve Doctor failures before running the experiment. `model-access: unchecked` does not confirm a working model connection: actual calls may still fail due to permissions, model names or API compatibility. See [Doctor](doctor.md) for check coverage.
 
-When running from the source repository, replace `ember-rsi` with `pnpm ember-rsi`. If the native CLI cannot be found, open a new terminal or set `executable` to its full path under the binding's `config`.
+When running from the source repository, replace `arsi` with `pnpm arsi`. If the native CLI cannot be found, open a new terminal or set `executable` to its full path under the binding's `config`.
 
 For native CLI backends, add `timeoutMs: 180000` to limit each Agent task to 3 minutes; omitting it leaves that deadline unset. These backends cannot enforce `budget.modelCalls`. The Agent proposes changes for RSI to check and apply; configure prompts and Skills in the calling component, such as the Proposer.
 
@@ -224,7 +224,7 @@ To migrate a custom Proposer prompt, remove `editProtocol` from the binding and 
 
 ## Limits and budgets
 
-When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `ember-rsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `parameter.agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
+When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `arsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `parameter.agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
 
 Omitted Recipe binding settings first inherit Policy defaults. The “When omitted” column describes settings that remain unset; limits at other layers can still apply.
 

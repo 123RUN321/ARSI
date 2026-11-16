@@ -202,7 +202,7 @@ test('failed extension registration reports its directory and disposes prior reg
 test('home discovery loads extensions once and CLI describes schemas', async () => {
   const root = await fixture();
   try {
-    const home = join(root, '.ember-rsi');
+    const home = join(root, '.arsi');
     await mkdir(join(home, 'plugins'), { recursive: true });
     const { rename } = await import('node:fs/promises');
     await rename(join(root, 'extension'), join(home, 'plugins', 'demo'));

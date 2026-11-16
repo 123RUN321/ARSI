@@ -139,7 +139,7 @@ export async function doctorRecipe(
       config: implementation.config,
     });
   }
-  const temporary = await mkdtemp(join(tmpdir(), 'ember-rsi-doctor-'));
+  const temporary = await mkdtemp(join(tmpdir(), 'arsi-doctor-'));
   const isolated = new Manager({
     registry: runtime.registry,
     rootDirectory: runtime.context.rootDirectory,

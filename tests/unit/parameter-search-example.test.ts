@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { loadConfig } from 'ember-evaluator';
+import { loadConfig } from 'arsi-evaluator';
 import { object } from '../../src/shared/json.js';
 import { RuntimeContext } from '../../src/contracts/index.js';
 import { createInferencebench } from '../../src/plugins/evaluator-inferencebench/service.js';

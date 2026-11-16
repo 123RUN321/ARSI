@@ -28,7 +28,7 @@ interface ParsedCommand {
 export function parseCommand(argv: string[]): ParsedCommand {
   let result: ParsedCommand | undefined;
   let help = '';
-  const program = new Command('ember-rsi')
+  const program = new Command('arsi')
     .description('Make everything rsi-able')
     .option(
       '--plugin-dir <directory>',
@@ -48,7 +48,7 @@ export function parseCommand(argv: string[]): ParsedCommand {
     .showHelpAfterError();
   program.addHelpText(
     'after',
-    '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.ember-rsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
+    '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.arsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
   );
   const capture = (command: string, args: string[], cmd: Command): void => {
     result = {

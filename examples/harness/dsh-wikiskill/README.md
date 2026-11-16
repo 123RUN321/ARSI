@@ -15,8 +15,8 @@ Prepare Node 24, project dependencies, DSH/AgentBundle, a working Docker Engine 
 From the repository root:
 
 ```bash
-ember-rsi doctor examples/harness/dsh-wikiskill/recipe.yaml
-ember-rsi run examples/harness/dsh-wikiskill/recipe.yaml
+arsi doctor examples/harness/dsh-wikiskill/recipe.yaml
+arsi run examples/harness/dsh-wikiskill/recipe.yaml
 ```
 
 Inspect `.rsi/` for call receipts, checkpoints, candidates, measurements and Wiki Memory artifacts. Runtime data are ignored by Git. Creating/validating this Recipe does not execute the ten-task experiment.

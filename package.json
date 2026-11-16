@@ -1,5 +1,5 @@
 {
-  "name": "ember-rsi",
+  "name": "arsi",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "private": true,
@@ -9,7 +9,7 @@
     "node": "24.x"
   },
   "bin": {
-    "ember-rsi": "./dist/src/entries/cli/main.js"
+    "arsi": "./dist/src/entries/cli/main.js"
   },
   "exports": {
     ".": {
@@ -28,7 +28,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "ember-rsi": "node dist/src/entries/cli/main.js",
+    "arsi": "node dist/src/entries/cli/main.js",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json",
     "test": "node --import tsx --test tests/unit/*.test.ts",
@@ -44,10 +44,10 @@
     "@deepseek-ai/cordis": "4.0.2",
     "@earendil-works/pi-coding-agent": "1.5.0",
     "@fastify/static": "10.1.7",
-    "agent-bundle-core": "git+https://github.com/evolving-foundry/agentbundle.git#0.0.1&path:/packages/core",
+    "agent-bundle-core": "git+https://github.com/ARSI-LAB/agentbundle.git#0.0.1&path:/packages/core",
     "ajv": "8.20.0",
     "commander": "15.0.0",
-    "ember-evaluator": "git+https://github.com/evolving-foundry/ember-evaluator.git#7f84931d3bf74facd45fecc561e6ff82786dfee1",
+    "arsi-evaluator": "git+https://github.com/ARSI-LAB/ARSI-Evaluator.git#0.0.5",
     "exceljs": "4.4.0",
     "fastify": "5.12.7",
     "htmlparser2": "10.0.0",
@@ -74,7 +74,7 @@
     "vite": "^8.3.4"
   },
   "bundleDependencies": [
-    "ember-evaluator",
+    "arsi-evaluator",
     "agent-bundle-core"
   ]
 }

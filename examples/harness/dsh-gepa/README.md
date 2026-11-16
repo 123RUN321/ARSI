@@ -44,8 +44,8 @@ Then build, validate and run the Recipe:
 
 ```sh
 pnpm build
-pnpm ember-rsi doctor examples/harness/dsh-gepa/recipe.yaml
-pnpm ember-rsi run examples/harness/dsh-gepa/recipe.yaml --id gepa-office
+pnpm arsi doctor examples/harness/dsh-gepa/recipe.yaml
+pnpm arsi run examples/harness/dsh-gepa/recipe.yaml --id gepa-office
 ```
 
 The built-in startup entrypoint provides `proposer.pareto-evolution` and `policy.gepa`.

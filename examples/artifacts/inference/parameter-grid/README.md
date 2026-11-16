@@ -107,7 +107,7 @@ corner before the first measurement, then persists and reuses that choice for
 the experiment. Device, software and model identity must remain consistent.
 Changing the search space requires updating the calibration corner as well.
 
-`evaluator.inferencebench` calls the installed ember-evaluator SDK's `agentx` benchmark
+`evaluator.inferencebench` calls the installed arsi-evaluator SDK's `agentx` benchmark
 with `agentx-replay`, using the remote endpoint supplied by the Application.
 The example replays eight traces from the 256K corpus with four concurrent session
 trees and a 7200-second replay bound. Input/output lengths, prefix reuse, turns,
@@ -139,14 +139,14 @@ or quality improvement is established by this example.
 
 ## Run
 
-The project installs [ember-evaluator](https://github.com/evolving-foundry/ember-evaluator)
+The project installs [arsi-evaluator](https://github.com/ARSI-LAB/ARSI-Evaluator)
 from the Git revision recorded in `pnpm-lock.yaml`. From the repository root,
 run `pnpm install --frozen-lockfile` and `pnpm build` before the commands below.
 
 ```sh
-ember-rsi doctor examples/artifacts/inference/parameter-grid/recipe.yaml
-ember-rsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first
-ember-rsi show parameter-grid-first
+arsi doctor examples/artifacts/inference/parameter-grid/recipe.yaml
+arsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first
+arsi show parameter-grid-first
 ```
 
 Validation does not check that the template is implemented, start a remote service,
@@ -154,7 +154,7 @@ or prove that deployment settings are usable. Resume only the same locked config
 unknown remote lifecycle outcome:
 
 ```sh
-ember-rsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first --resume
+arsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first --resume
 ```
 
 Cancellation attempts bounded owned cleanup. If deployment connectivity prevents it,

@@ -4,13 +4,13 @@ English | [简体中文](doctor_zh.md) · [Getting started](../getting-started.m
 
 ## 1. Purpose
 
-`ember-rsi doctor` checks whether an experiment's configuration, inputs and supported runtime prerequisites are ready before you start it. Use it after preparing a Recipe, changing components, models or credentials, or moving an experiment to another environment.
+`arsi doctor` checks whether an experiment's configuration, inputs and supported runtime prerequisites are ready before you start it. Use it after preparing a Recipe, changing components, models or credentials, or moving an experiment to another environment.
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml
+arsi doctor my-experiment/recipe.yaml
 ```
 
-- From a source checkout, run `pnpm build` first. Set the environment variables required by the selected components before running `pnpm ember-rsi doctor my-experiment/recipe.yaml`.
+- From a source checkout, run `pnpm build` first. Set the environment variables required by the selected components before running `pnpm arsi doctor my-experiment/recipe.yaml`.
 - `doctor` combines Recipe validation with component-specific checks. It can catch missing prompts or baselines, incompatible bindings, proposal model connection failures, and evaluator configuration, runtime or download-route problems reported by the SDK.
 
 - For a quick check of the effective configuration and declared local paths, add `--static`.
@@ -23,7 +23,7 @@ The following diagram shows normal command completion.
 
 ```mermaid
 flowchart TD
-    A["Run ember-rsi doctor"] --> B["Load Runtime and register built-in components and extensions"]
+    A["Run arsi doctor"] --> B["Load Runtime and register built-in components and extensions"]
     B --> C{"Registration succeeded?"}
     C -- No --> D["Record runtime.registration failure"]
     C -- Yes --> E["Load and validate Recipe<br/>Merge the effective configuration"]
@@ -45,7 +45,7 @@ flowchart TD
     O --> P["Write the JSON report<br/>Exit 1 for any failed check, otherwise exit 0"]
 ```
 
-1. **Load registrations.** The CLI uses the usual Runtime registration to load built-in components, user extensions in `~/.ember-rsi/plugins/<name>/index.mjs` and extensions specified by `--plugin-dir`.
+1. **Load registrations.** The CLI uses the usual Runtime registration to load built-in components, user extensions in `~/.arsi/plugins/<name>/index.mjs` and extensions specified by `--plugin-dir`.
 2. **Load the effective Recipe.** `Recipe.load` validates Schemas, bindings, contract compatibility, Policy compilation, budgets and declared Reflection resources.
    - Probes use the configuration produced by merging Policy defaults and Recipe overrides.
    - A loading error produces a failed diagnostic and stops component probes.
@@ -130,7 +130,7 @@ Define and register your component using the plugin guide. Add an optional `doct
 
 ### Write and declare the diagnostic function
 
-Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `ember-rsi/contracts` or `ember-rsi`.
+Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/contracts` or `arsi`.
 
 - Component registration and Recipe loading retain the callback for the `doctor` command to invoke.
 - When a component omits `doctor`, the framework still runs the common checks and marks the component-specific `plugin` check as `unchecked`.
@@ -147,8 +147,8 @@ In this example, the existing `configSchema` declares a required string named `i
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { runDoctorCheck } from 'ember-rsi';
-import type { OperationDoctor } from 'ember-rsi/contracts';
+import { runDoctorCheck } from 'arsi';
+import type { OperationDoctor } from 'arsi/contracts';
 
 type CustomConfig = { inputFile: string };
 
@@ -173,7 +173,7 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 Add the diagnostic function to the component definition in its `index.ts` or `index.js`.
 
 ```js
-import { proposerContract } from 'ember-rsi/contracts';
+import { proposerContract } from 'arsi/contracts';
 import { configSchema } from './schema.js';
 import { createCustom } from './service.js';
 import { checkCustom } from './doctor.js';
@@ -190,7 +190,7 @@ export const customDefinition = {
 Build the extension, call `registry.registerOperation(customDefinition)` from its `index.mjs`, then load the extension with the CLI.
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
+arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 ```
 
 ## 5. Doctor time limits

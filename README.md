@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/users/assets/ember-rsi-logo.png" alt="ember-rsi" width="520">
+  <img src="docs/users/assets/arsi-logo.png" alt="arsi" width="520">
 </h1>
 
 <h3 align="center">Multiple self-improvement strategies in one framework · Make Everything RSI-able.</h3>
@@ -24,28 +24,28 @@
   <a href="#architecture">How it works</a> ·
   <a href="#extensions">Everything is a plugin</a> ·
   <a href="#installation">Installation</a> ·
-  <a href="#usage">Using ember-rsi</a> ·
+  <a href="#usage">Using arsi</a> ·
   <a href="#built-in-rsi-strategies">Built-in RSI strategies</a> ·
   <a href="#user-guide">User guides</a>
 </p>
 
 <a id="when-to-use"></a>
 
-## 🎯 When to use ember-rsi
+## 🎯 When to use arsi
 
-When you want AI to help continuously improve agents, models, or AI infrastructure, `ember-rsi` provides built-in strategies, an extensible plugin system, and a companion Skill to help you quickly start experiments in Agent Skill optimization, inference engine tuning, and more.
+When you want AI to help continuously improve agents, models, or AI infrastructure, `arsi` provides built-in strategies, an extensible plugin system, and a companion Skill to help you quickly start experiments in Agent Skill optimization, inference engine tuning, and more.
 
 | Typical scenario                                                          | Environment and integration setup                                                                                                                                                                                              | What to tell AI                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Evolve Harness Skills through task feedback**                           | Prepare a working Harness, tasks, and evaluation criteria, and reuse or implement [execution and evaluation plugins](docs/users/guides/writing-plugins.md).                                                                    | “Use ember-rsi to improve this Harness's Skills, edit only Skill files, iterate on my tasks within my budget, and test the results on new tasks.”                                                                                                                                                                  |
-| **Automatically search for configuration parameters that fit your needs** | Provide parameter ranges, optimization metrics, and constraints, and integrate plugins that apply configurations and evaluate their effects.                                                                                   | “Use ember-rsi to tune this configuration within the given ranges and budget, optimize the target metric while meeting constraints, and deliver the best configuration measured in this experiment with comparison results.”                                                                                       |
-| **Evolve an operator toward a correct implementation with lower latency** | Prepare the operator source and a test environment, integrate evaluation plugins, and extend the proposal plugin and Policy to invoke [Memory](docs/users/guides/memory.md) and [Reflection](docs/users/guides/reflection.md). | “Use ember-rsi to iterate on this operator: have Memory summarize effective optimizations and lessons from failures, and Reflection refine the proposing Agent's prompts and guidance for later rounds; check correctness and compare latency within budget, then independently re-evaluate against the baseline.” |
+| **Evolve Harness Skills through task feedback**                           | Prepare a working Harness, tasks, and evaluation criteria, and reuse or implement [execution and evaluation plugins](docs/users/guides/writing-plugins.md).                                                                    | “Use arsi to improve this Harness's Skills, edit only Skill files, iterate on my tasks within my budget, and test the results on new tasks.”                                                                                                                                                                  |
+| **Automatically search for configuration parameters that fit your needs** | Provide parameter ranges, optimization metrics, and constraints, and integrate plugins that apply configurations and evaluate their effects.                                                                                   | “Use arsi to tune this configuration within the given ranges and budget, optimize the target metric while meeting constraints, and deliver the best configuration measured in this experiment with comparison results.”                                                                                       |
+| **Evolve an operator toward a correct implementation with lower latency** | Prepare the operator source and a test environment, integrate evaluation plugins, and extend the proposal plugin and Policy to invoke [Memory](docs/users/guides/memory.md) and [Reflection](docs/users/guides/reflection.md). | “Use arsi to iterate on this operator: have Memory summarize effective optimizations and lessons from failures, and Reflection refine the proposing Agent's prompts and guidance for later rounds; check correctness and compare latency within budget, then independently re-evaluate against the baseline.” |
 
 <a id="overview"></a>
 
 ## ℹ️ Overview
 
-`ember-rsi` is a pluggable framework for recursive self-improvement experiments on agents and AI infrastructure.
+`arsi` is a pluggable framework for recursive self-improvement experiments on agents and AI infrastructure.
 
 - **Recipe-driven self-improvement.** A declarative Recipe (`recipe.yaml`) connects an optimization target (Application), a strategy (Policy), and an Evaluator. Each experiment runs within explicit edit boundaries and a fixed budget.
 - **Built-in strategies and extensions.** Built-in strategies include Harness², WikiSkill, and GEPA for agent harness optimization, plus inference parameter search and operator optimization. You can bring other targets into the same framework by defining allowed changes, generating candidates, and measuring their performance.
@@ -89,10 +89,10 @@ _Harness² example · The Proposer references the `agent` binding. Changing that
 Copy this instruction into your coding agent:
 
 ```text
-Install the ember-rsi CLI and companion skill from https://github.com/evolving-foundry/ember-rsi.
+Install the arsi CLI and companion skill from https://github.com/ARSI-LAB/ARSI.
 Follow the README's manual CLI installation instructions: check prerequisites, clone the repository, install dependencies, build, and install the CLI.
-Copy the complete skills/ember-rsi directory, including references and templates, into a skill directory supported by this agent. Ask before replacing an existing skill with the same name.
-Run ember-rsi --help and confirm that this agent can discover and read the skill. Complete installation only; do not start experiments or make model calls.
+Copy the complete skills/arsi directory, including references and templates, into a skill directory supported by this agent. Ask before replacing an existing skill with the same name.
+Run arsi --help and confirm that this agent can discover and read the skill. Complete installation only; do not start experiments or make model calls.
 ```
 
 ### Manual installation
@@ -106,15 +106,15 @@ Requirements
 3. **Git**, required to fetch the AgentBundle and Evaluator SDK dependencies.
 
 ```sh
-# Clone and build ember-rsi.
-git clone git@github.com:evolving-foundry/ember-rsi.git
-cd ember-rsi
+# Clone and build arsi.
+git clone git@github.com:ARSI-LAB/ARSI.git
+cd ARSI
 pnpm install --frozen-lockfile
 pnpm build
 pnpm add -g .
 
 # Verify that the installed CLI is available.
-ember-rsi --help
+arsi --help
 ```
 
 #### 2. Install the skill
@@ -122,29 +122,29 @@ ember-rsi --help
 Run this from your target project and select the coding agent to install to:
 
 ```sh
-npx skills add evolving-foundry/ember-rsi --skill ember-rsi
+npx skills add ARSI-LAB/ARSI --skill arsi
 ```
 
-Add `-g` for a user-wide installation. Reload or restart your agent as required, then confirm that it can discover and read the `ember-rsi` skill.
+Add `-g` for a user-wide installation. Reload or restart your agent as required, then confirm that it can discover and read the `arsi` skill.
 
 Load the RSI Skill in a coding agent and provide the optimization goal, permitted edits, and budget. The agent can choose or write a Recipe, validate the configuration, and, once authorized, run the experiment, inspect results, and diagnose failures.
 
-- **RSI Skill** starts at [SKILL.md](skills/ember-rsi/SKILL.md). Keep the complete `skills/ember-rsi/` directory when loading it so the agent can access its reference material and templates. Use the [minimal example](skills/ember-rsi/references/quickstart.md) to check that the Recipe and plugins work together.
+- **RSI Skill** starts at [SKILL.md](skills/arsi/SKILL.md). Keep the complete `skills/arsi/` directory when loading it so the agent can access its reference material and templates. Use the [minimal example](skills/arsi/references/quickstart.md) to check that the Recipe and plugins work together.
 
-Run all subsequent commands from the `ember-rsi` repository root using the installed `ember-rsi` CLI.
+Run all subsequent commands from the `arsi` repository root using the installed `arsi` CLI.
 
 <a id="usage"></a>
 
-## 🛠️ Using ember-rsi
+## 🛠️ Using arsi
 
 ### Quick start
 
 #### 1. Configure models and the evaluation environment
 
-This walkthrough uses the WorkBuddy Office scenario from the [Harness² example](examples/harness/dsh-harness2/README.md). Follow the [Evaluator's WorkBuddy setup guide](https://github.com/evolving-foundry/ember-evaluator/blob/master/docs/users/benchmarks/workbuddy.md) to prepare Docker, the dataset, and container images. Make sure both the host and the evaluation containers can reach the model endpoint.
+This walkthrough uses the WorkBuddy Office scenario from the [Harness² example](examples/harness/dsh-harness2/README.md). Follow the [Evaluator's WorkBuddy setup guide](https://github.com/ARSI-LAB/ARSI-Evaluator/blob/master/docs/users/benchmarks/workbuddy.md) to prepare Docker, the dataset, and container images. Make sure both the host and the evaluation containers can reach the model endpoint.
 
 ```bash
-# Set these variables in the terminal where you run ember-rsi. ember-rsi does not load .env files automatically.
+# Set these variables in the terminal where you run arsi. arsi does not load .env files automatically.
 
 # Optimizer model used to propose candidate changes.
 export MODEL_NAME="your-optimizer-model"
@@ -164,10 +164,10 @@ The Harness² example optimizes an AgentBundle baseline across 10 tasks, with up
 
 ```sh
 # Validate the Recipe without starting the experiment.
-ember-rsi doctor examples/harness/dsh-harness2/recipe.yaml
+arsi doctor examples/harness/dsh-harness2/recipe.yaml
 
 # Start the experiment with this ID. This makes real model calls.
-ember-rsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task
+arsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task
 ```
 
 - Candidates, evaluation metrics, call receipts, and evidence are stored in `.rsi/` in the current directory by default. Review the evaluation status, scores, and deliverables together.
@@ -177,23 +177,23 @@ Resume an interrupted experiment from the original working directory using the s
 
 ```sh
 # Resume from the saved checkpoint.
-ember-rsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task --resume
+arsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task --resume
 ```
 
 ### Check experiment progress
 
-Run both commands from the same directory where you ran `ember-rsi run`. They read experiment data from that directory's `.rsi/` folder.
+Run both commands from the same directory where you ran `arsi run`. They read experiment data from that directory's `.rsi/` folder.
 
 To check an experiment's status in the terminal, pass its ID to `show`.
 
 ```sh
-ember-rsi show my-harness2-task
+arsi show my-harness2-task
 ```
 
 To view progress in the browser, start the local read-only dashboard and open the address printed in the terminal.
 
 ```sh
-ember-rsi dashboard
+arsi dashboard
 ```
 
 <a id="built-in-rsi-strategies"></a>
@@ -301,4 +301,4 @@ ember-rsi dashboard
 
 ## 🙏 Acknowledgments
 
-Thanks to the maintainers and contributors of the [Cordis project](https://github.com/cordiverse/cordis). ember-rsi uses Cordis to register plugins, isolate experiment contexts, and dispatch runtime events.
+Thanks to the maintainers and contributors of the [Cordis project](https://github.com/cordiverse/cordis). arsi uses Cordis to register plugins, isolate experiment contexts, and dispatch runtime events.

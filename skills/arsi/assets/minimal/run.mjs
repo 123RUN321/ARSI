@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRuntime, Recipe } from 'ember-rsi';
+import { createRuntime, Recipe } from 'arsi';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const runtime = await createRuntime({
   rootDirectory: root,

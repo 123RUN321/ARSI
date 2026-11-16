@@ -941,7 +941,7 @@ test('AISBench uses the final complete workload point for throughput and latency
   };
   const bundleDigest = 'a'.repeat(64);
   const aisbenchVersion = '1.0.0';
-  const { fingerprintConfig } = await import('ember-evaluator');
+  const { fingerprintConfig } = await import('arsi-evaluator');
   const taskId = `aisbench-${fingerprintConfig(workload).slice(-16)}`;
   const snap = snapshot('performance');
   Object.assign(object(snap.run), {

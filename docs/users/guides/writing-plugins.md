@@ -103,14 +103,14 @@ This plugin always keeps the parent candidate to verify registration and calls. 
 
 ### Step 1: Write the plugin
 
-In a TypeScript ESM project with `ember-rsi` installed, place the three files in `src/proposer-keep-parent/` and compile them to `dist/proposer-keep-parent/`.
+In a TypeScript ESM project with `arsi` installed, place the three files in `src/proposer-keep-parent/` and compile them to `dist/proposer-keep-parent/`.
 
 #### 1. Define configuration
 
 Define the configuration type and validation rules in `schema.ts`. This example requires a nonempty `reason`:
 
 ```ts
-import type { JsonSchema } from 'ember-rsi/contracts';
+import type { JsonSchema } from 'arsi/contracts';
 
 // Plugin configuration and its validation rules.
 export type KeepParentConfig = { reason: string };
@@ -135,7 +135,7 @@ import type {
   ProposerInput,
   ProposerOutput,
   RuntimeContext,
-} from 'ember-rsi/contracts';
+} from 'arsi/contracts';
 import type { KeepParentConfig } from './schema.js';
 
 export async function createKeepParent(
@@ -170,7 +170,7 @@ import {
   type OperationDefinition,
   type ProposerInput,
   type ProposerOutput,
-} from 'ember-rsi/contracts';
+} from 'arsi/contracts';
 import { configSchema, type KeepParentConfig } from './schema.js';
 import { createKeepParent } from './service.js';
 
@@ -193,9 +193,9 @@ Runtime finds plugins by registered ID. Creating a file or adding an ID to a Rec
 
 > When maintaining built-in framework plugins, you can place implementations in `src/plugins/`, register them in the [built-in registration file](../../../src/runtime/builtins.ts), and run `pnpm build` to build them with the framework.
 
-1. Run your custom plugin project's own build command to generate `dist/proposer-keep-parent/`. Deploy the compiled files and runtime dependencies to `~/.ember-rsi/plugins/my-extension/`, preserving the relative directory structure.
+1. Run your custom plugin project's own build command to generate `dist/proposer-keep-parent/`. Deploy the compiled files and runtime dependencies to `~/.arsi/plugins/my-extension/`, preserving the relative directory structure.
 
-2. Create `index.mjs` in `~/.ember-rsi/plugins/my-extension/`, exporting `register(registry)`:
+2. Create `index.mjs` in `~/.arsi/plugins/my-extension/`, exporting `register(registry)`:
 
    ```js
    import { keepParentDefinition } from './dist/proposer-keep-parent/index.js';
@@ -205,7 +205,7 @@ Runtime finds plugins by registered ID. Creating a file or adding an ID to a Rec
    }
    ```
 
-3. At startup, the CLI automatically scans the immediate subdirectories of `~/.ember-rsi/plugins/` in directory-name order, loads each directory's `index.mjs`, and calls `register(registry)`.
+3. At startup, the CLI automatically scans the immediate subdirectories of `~/.arsi/plugins/` in directory-name order, loads each directory's `index.mjs`, and calls `register(registry)`.
    - Extensions placed here need no extra arguments. One entrypoint can register multiple plugins and Policies; if one already exists, add the code to its existing `register` function.
 
    - You can also keep an extension in your project or another location and load it explicitly with `--plugin-dir ./my-extension`.
@@ -269,18 +269,18 @@ Omit `plugin` to keep the Policy's default implementation. A replacement must sa
 
 #### 3. Validate and run
 
-With the extension in `~/.ember-rsi/plugins/my-extension/`, use the installed CLI directly from the working directory containing `my-experiment/`:
+With the extension in `~/.arsi/plugins/my-extension/`, use the installed CLI directly from the working directory containing `my-experiment/`:
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml
-ember-rsi run my-experiment/recipe.yaml --id custom-run
+arsi doctor my-experiment/recipe.yaml
+arsi run my-experiment/recipe.yaml --id custom-run
 ```
 
 If the extension is elsewhere, such as `my-extension/` under the working directory, pass the same extension directory when validating, running, and resuming:
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
-ember-rsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
+arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
+arsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
 ```
 
 `doctor` checks contracts, bindings and configuration, then invokes each selected component definition's optional `doctor` function. It incorporates the returned `DoctorResult` into the report.
@@ -306,10 +306,10 @@ Runtime passes `context` to `create` and every `execute` call. Plugins use it to
 | Record usage                         | `charge(metric, amount)`                                 | Record usage and check budgets; call with `await`.                                                                                       |
 | Subscribe to events                  | `event`                                                  | Listen for runtime events and unsubscribe when finished; see [Runtime events](runtime-events.md).                                        |
 
-Inside `execute`, build the managed workspace with `prepareAgentProject` from `ember-rsi`. Put instructions in the second argument and authorized text files in the third. The last two arguments accept skill directories and role definitions. Prepare a workspace for each independent call. Use distinct project content for independent calls from the same plugin execution when they must not share local edits.
+Inside `execute`, build the managed workspace with `prepareAgentProject` from `arsi`. Put instructions in the second argument and authorized text files in the third. The last two arguments accept skill directories and role definitions. Prepare a workspace for each independent call. Use distinct project content for independent calls from the same plugin execution when they must not share local edits.
 
 ```ts
-import { prepareAgentProject } from 'ember-rsi';
+import { prepareAgentProject } from 'arsi';
 
 const cwd = await prepareAgentProject(
   context,
@@ -337,7 +337,7 @@ Besides the CLI, your own program can create a Runtime and register plugins. Thi
 
 ```ts
 import { resolve } from 'node:path';
-import { createRuntime, Recipe } from 'ember-rsi';
+import { createRuntime, Recipe } from 'arsi';
 import { keepParentDefinition } from './my-extension/dist/proposer-keep-parent/index.js';
 
 // Create Runtime, disable user-level extension loading, and register definitions directly.
@@ -369,9 +369,9 @@ Common `createRuntime` options are listed below; see the [Runtime entrypoint](..
 | ------------------- | ---------------------------------------------------------------------------- | -------------------------------- |
 | `rootDirectory`     | Host working root directory.                                                 | Current process directory.       |
 | `directory`         | Directory for Runtime data.                                                  | `.rsi/` under the working root.  |
-| `homeDirectory`     | User-level extension home; set `false` to disable automatic loading.         | `~/.ember-rsi`.                  |
+| `homeDirectory`     | User-level extension home; set `false` to disable automatic loading.         | `~/.arsi`.                  |
 | `pluginDirectories` | Additional extension directories, relative to the current process directory. | No extra directories are loaded. |
 
 Registrations in a host only apply to that Runtime. A separately started CLI loads extensions from the default user-level directory, or from directories selected with `--plugin-dir`.
 
-`Recipe.load` assembles and structurally validates the definition without running prerequisite probes. Use `ember-rsi doctor` with the same extension registrations for CLI preflight. Add optional `doctor` to the component definition for its own diagnostics; see [Connecting custom components](doctor.md#4-connecting-custom-components) for the public callback and a complete registration example.
+`Recipe.load` assembles and structurally validates the definition without running prerequisite probes. Use `arsi doctor` with the same extension registrations for CLI preflight. Add optional `doctor` to the component definition for its own diagnostics; see [Connecting custom components](doctor.md#4-connecting-custom-components) for the public callback and a complete registration example.

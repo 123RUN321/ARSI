@@ -2,7 +2,7 @@
 
 ## Environment and copy
 
-Use Node 24.x and the project's supplied, built `ember-rsi` package. In a source checkout the prerequisite is `pnpm install --frozen-lockfile` and `pnpm build`; the pinned GitHub `ember-evaluator` dependency is installed and built through its own prepare lifecycle. Do not update the lockfile to bypass a missing dependency. A packaged consumer needs only the supplied package and its dependencies, not RSI source. Only `ember-rsi` and `ember-rsi/contracts` are public import paths.
+Use Node 24.x and the project's supplied, built `arsi` package. In a source checkout the prerequisite is `pnpm install --frozen-lockfile` and `pnpm build`; the pinned GitHub `arsi-evaluator` dependency is installed and built through its own prepare lifecycle. Do not update the lockfile to bypass a missing dependency. A packaged consumer needs only the supplied package and its dependencies, not RSI source. Only `arsi` and `arsi/contracts` are public import paths.
 
 Copy `assets/minimal/` from this skill to `.rsi/skill-demo/` beneath a Node workspace that can resolve the package. Keep its files together: `recipe.yaml`, `policy.yaml`, `target.yaml`, the complete `baseline/`, `extension/` and `run.mjs`. Node resolves imports relative to the importing file, not your shell directory.
 
@@ -11,10 +11,10 @@ This is the complete credential-free workflow. For model editing, Memory or Refl
 From the workspace root, with an installed binary:
 
 ```sh
-ember-rsi doctor .rsi/skill-demo/recipe.yaml --plugin-dir .rsi/skill-demo/extension
-ember-rsi run .rsi/skill-demo/recipe.yaml --plugin-dir .rsi/skill-demo/extension --id skill-demo-01
-ember-rsi show skill-demo-01
-ember-rsi list
+arsi doctor .rsi/skill-demo/recipe.yaml --plugin-dir .rsi/skill-demo/extension
+arsi run .rsi/skill-demo/recipe.yaml --plugin-dir .rsi/skill-demo/extension --id skill-demo-01
+arsi show skill-demo-01
+arsi list
 node .rsi/skill-demo/run.mjs
 ```
 

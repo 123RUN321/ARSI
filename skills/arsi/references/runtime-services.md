@@ -34,7 +34,7 @@ Application contract actions are initialize, commit, acquire (`candidateRef`, `i
 
 ## Measurement and evidence
 
-Use the complete public-only [evaluator implementation](../assets/minimal/extension/operations.mjs) as the minimal legal example. Import `typedArtifact`, validation helpers and measurement schemas from `ember-rsi/contracts`, not private subpaths.
+Use the complete public-only [evaluator implementation](../assets/minimal/extension/operations.mjs) as the minimal legal example. Import `typedArtifact`, validation helpers and measurement schemas from `arsi/contracts`, not private subpaths.
 
 A Measurement is not `{ score }`. Supply `schemaVersion: rsi.measurement/v1`, current experiment/call IDs, candidateRef, evaluator `{ pluginId, implementationDigest }`, timestamps, status, coverage, comparisonKey, typed conditions/provenance/profile, metric map, itemsRef, evidenceIndexRef, diagnosticsRef and extensions. Manager creates `ref`; do not manufacture one. Every referenced artifact must exist. `typedArtifact(schemaId, schema, ref)` computes the descriptor's schema digest; it does not validate payload contents for you.
 

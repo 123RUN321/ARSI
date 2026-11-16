@@ -84,7 +84,7 @@ try {
   run(['add', join(temporary, archives[0])], consumer);
   const command = join(
     consumer,
-    'node_modules/ember-rsi/dist/src/entries/cli/main.js',
+    'node_modules/arsi/dist/src/entries/cli/main.js',
   );
   const help = execFileSync(process.execPath, [command, '--help'], {
     env: consumerEnv,
@@ -136,19 +136,16 @@ try {
     );
   }
   const installedManifest = JSON.parse(
-    await readFile(
-      join(consumer, 'node_modules/ember-rsi/package.json'),
-      'utf8',
-    ),
+    await readFile(join(consumer, 'node_modules/arsi/package.json'), 'utf8'),
   );
-  assert.equal(installedManifest.name, 'ember-rsi');
+  assert.equal(installedManifest.name, 'arsi');
   assert.deepEqual(installedManifest.bin, {
-    'ember-rsi': './dist/src/entries/cli/main.js',
+    arsi: './dist/src/entries/cli/main.js',
   });
   const installedBin = join(
     consumer,
     'node_modules/.bin',
-    process.platform === 'win32' ? 'ember-rsi.cmd' : 'ember-rsi',
+    process.platform === 'win32' ? 'arsi.cmd' : 'arsi',
   );
   const binHelp = execFileSync(installedBin, ['--help'], {
     env: consumerEnv,
@@ -195,8 +192,8 @@ try {
     `
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {proposerContract,applicationContract} from 'ember-rsi/contracts';
-import {runDoctorCheck} from 'ember-rsi';
+import {proposerContract,applicationContract} from 'arsi/contracts';
+import {runDoctorCheck} from 'arsi';
 export const customDefinition={
  id:'proposer.consumer-doctor',contract:proposerContract,
  configSchema:{type:'object',properties:{inputFile:{type:'string','x-rsi-path':'file'}},required:['inputFile']},
@@ -311,7 +308,7 @@ export function register(registry){
   await mkdir(extension);
   await writeFile(
     join(extension, 'index.mjs'),
-    `import { defineContract } from 'ember-rsi';
+    `import { defineContract } from 'arsi';
 import { fileURLToPath } from 'node:url';
 export function register(registry) {
   registry.registerOperation({
@@ -398,7 +395,7 @@ export function register(registry) {
     });
   }
   checkSdkConsumer(
-    join(consumer, 'node_modules/ember-rsi'),
+    join(consumer, 'node_modules/arsi'),
     join(outside, 'dsh-harness2/baseline'),
     true,
   );
@@ -416,7 +413,7 @@ export function register(registry) {
   }
   const packagedWorker = join(
     consumer,
-    'node_modules/ember-rsi/dist/src/plugins/proposer-optuna/python/worker.py',
+    'node_modules/arsi/dist/src/plugins/proposer-optuna/python/worker.py',
   );
   assert.ok((await readFile(packagedWorker, 'utf8')).includes('import optuna'));
   assert.match(
@@ -468,14 +465,14 @@ export function register(registry) {
       '-e',
       `import assert from 'node:assert/strict';
        import {readFile} from 'node:fs/promises';
-       const sdk = await import('ember-evaluator');
+       const sdk = await import('arsi-evaluator');
        for (const name of ['Evaluator','parseUserConfig','parseKernelTimingEvidence','auditKernelTimingSample']) assert.equal(typeof sdk[name], 'function');
-       const helper = await readFile(new URL('plugins/benchmarks/operator/kernel/runtime/timing_evidence.py', import.meta.resolve('ember-evaluator')), 'utf8');
+       const helper = await readFile(new URL('plugins/benchmarks/operator/kernel/runtime/timing_evidence.py', import.meta.resolve('arsi-evaluator')), 'utf8');
        assert.match(helper, /def collect_flow_timing/);`,
     ],
     {
       env: consumerEnv,
-      cwd: join(consumer, 'node_modules/ember-rsi'),
+      cwd: join(consumer, 'node_modules/arsi'),
       stdio: 'inherit',
       timeout: 30000,
     },
@@ -498,13 +495,13 @@ import {readFile,realpath,stat,writeFile,mkdir} from 'node:fs/promises';
 import {dirname,isAbsolute,relative,resolve,sep} from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
-import * as publicApi from 'ember-rsi';
-import {createRuntime,Recipe,Policy,Binding,proposerContract,operatorProposerContract,operatorSummarizerContract,gridProposerContract,iterativeProposerContract,applicationContract,defineContract,RuntimeContext,prepareAgentProject} from 'ember-rsi';
-import {RuntimeContext as ContractContext,iterativeProposerContract as ContractsIterativeProposerContract} from 'ember-rsi/contracts';
+import * as publicApi from 'arsi';
+import {createRuntime,Recipe,Policy,Binding,proposerContract,operatorProposerContract,operatorSummarizerContract,gridProposerContract,iterativeProposerContract,applicationContract,defineContract,RuntimeContext,prepareAgentProject} from 'arsi';
+import {RuntimeContext as ContractContext,iterativeProposerContract as ContractsIterativeProposerContract} from 'arsi/contracts';
 assert.equal(RuntimeContext,ContractContext);
 assert.equal(iterativeProposerContract,ContractsIterativeProposerContract);
 assert.equal(Object.hasOwn(publicApi,'validateRecipe'),false);
-const packageDirectory=await realpath(${JSON.stringify(join(consumer, 'node_modules/ember-rsi'))});
+const packageDirectory=await realpath(${JSON.stringify(join(consumer, 'node_modules/arsi'))});
 async function packageResource(path){
  const location=relative(packageDirectory,await realpath(path));
  assert.ok(location!=='..'&&!location.startsWith('..'+sep)&&!isAbsolute(location),'built-in resource resolves within the installed package');
@@ -552,7 +549,7 @@ try {
    assert.equal(recipe.bindings.evaluator.pluginId,'evaluator.inferencebench');
   }
  }
- const installed=new URL('./node_modules/ember-rsi/dist/src/',import.meta.url);
+ const installed=new URL('./node_modules/arsi/dist/src/',import.meta.url);
  const {validate}=await import(new URL('shared/schema.js',installed));
  assert.equal(operatorProposerContract.id,'contract.proposer-operator');
  const firstProposal={action:'propose',phase:'static',entryCandidateRef:'entry',baselineMeasurementRef:'baseline',attempt:1,goal:'Improve',analysisRef:null,historyRef:null};
@@ -569,7 +566,7 @@ try {
  assert.deepEqual(runtime.registry.get('summarizer.operator').contract,operatorSummarizerContract);
  const {prepareDocumentPreviews}=await import(new URL('plugins/reflection-agent/document-previews.js',installed));
  const {validateReflection}=await import(new URL('runtime/revisions/validation.js',installed));
- const require=createRequire(await realpath(fileURLToPath(new URL('./node_modules/ember-rsi/package.json',import.meta.url))));
+ const require=createRequire(await realpath(fileURLToPath(new URL('./node_modules/arsi/package.json',import.meta.url))));
  const ExcelJS=require('exceljs');
  const workbook=new ExcelJS.Workbook();workbook.addWorksheet('Consumer').getCell('A1').value={formula:'1+1',result:2};
  const sourceFiles=${JSON.stringify(previewFixtures)};
@@ -696,9 +693,9 @@ console.log('Installed resources and managed ctx.event subscriptions, publishing
     join(consumer, 'events-consumer.ts'),
     `
 import type { Context, Events } from '@deepseek-ai/cordis';
-import { Registry } from 'ember-rsi';
-import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput } from 'ember-rsi/contracts';
-declare module 'ember-rsi/contracts' {
+import { Registry } from 'arsi';
+import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput } from 'arsi/contracts';
+declare module 'arsi/contracts' {
  interface RuntimeContext { traceId?: string; }
 }
 const base=new RuntimeContext().extend({traceId:'consumer',local:1});
@@ -733,7 +730,7 @@ export type PublicChecks=[
  Check<Equal<ThisParameterType<Notice>,{tag:string}>>,
  Check<Equal<ReturnType<Notice>,ReturnType<Events['consumer/notice']>>>,
  Check<Equal<RuntimeContext['event'],EventPipeline>>,
- Check<Equal<Parameters<RuntimeContext['invoke']>,[binding:string,input:import('ember-rsi/contracts').JsonValue]>>
+ Check<Equal<Parameters<RuntimeContext['invoke']>,[binding:string,input:import('arsi/contracts').JsonValue]>>
 ];
 export const definition:OperationDefinition<JsonObject,JsonObject,{prefix:string}>={
  id:'consumer.typed-events',
@@ -759,15 +756,15 @@ new Registry().registerOperation(definition);
   await writeFile(
     join(consumer, 'contracts-consumer.ts'),
     `
-import { RuntimeContext, type OperationDefinition } from 'ember-rsi/contracts';
-import type { IterativeProposerInput, IterativeProposerOutput } from 'ember-rsi';
-import type { IterativeProposerInput as ContractIterativeProposerInput, IterativeProposerOutput as ContractIterativeProposerOutput } from 'ember-rsi/contracts';
-declare module 'ember-rsi/contracts' {
+import { RuntimeContext, type OperationDefinition } from 'arsi/contracts';
+import type { IterativeProposerInput, IterativeProposerOutput } from 'arsi';
+import type { IterativeProposerInput as ContractIterativeProposerInput, IterativeProposerOutput as ContractIterativeProposerOutput } from 'arsi/contracts';
+declare module 'arsi/contracts' {
  interface RuntimeContext { contractsOnlyTrace?: string; }
 }
 const context=new RuntimeContext().extend({contractsOnlyTrace:'consumer'});
 const signal:AbortSignal=context.signal;
-const result:Promise<import('ember-rsi/contracts').JsonValue>=context.invoke('worker',{});
+const result:Promise<import('arsi/contracts').JsonValue>=context.invoke('worker',{});
 void signal;void result;
 export function checkIterativeProposerInput(candidateRef:string,feedbackTaskIds:string[],selectionTaskIds:string[]):IterativeProposerInput {
  const input:ContractIterativeProposerInput={action:'initialize',parent:candidateRef,feedbackTaskIds,selectionTaskIds};
@@ -794,8 +791,8 @@ export function checkExecution(context:Parameters<OperationDefinition['create']>
   await writeFile(
     join(consumer, 'doctor-consumer.ts'),
     `
-import {proposerContract,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorResult} from 'ember-rsi/contracts';
-import {runDoctorCheck,type OperationDoctor as RootOperationDoctor,type DoctorResult as RootDoctorResult} from 'ember-rsi';
+import {proposerContract,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorResult} from 'arsi/contracts';
+import {runDoctorCheck,type OperationDoctor as RootOperationDoctor,type DoctorResult as RootDoctorResult} from 'arsi';
 type Config={inputFile:string};
 export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Config>):Promise<DoctorResult>=>{
  const path:string=context.binding.config.inputFile;
@@ -851,7 +848,7 @@ export const doctorDefinition:OperationDefinition<ProposerInput,ProposerOutput,C
     const file = `invalid-${name}.ts`;
     await writeFile(
       join(consumer, file),
-      `import './events-consumer.js';import type {RuntimeContext} from 'ember-rsi/contracts';declare const services:RuntimeContext;${source}\n`,
+      `import './events-consumer.js';import type {RuntimeContext} from 'arsi/contracts';declare const services:RuntimeContext;${source}\n`,
     );
     let diagnostics = '';
     try {

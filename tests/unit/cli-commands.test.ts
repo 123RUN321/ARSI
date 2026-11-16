@@ -99,7 +99,7 @@ test('CLI usage errors include focused help like evaluator', () => {
         assert.ok(error instanceof Error && 'helpText' in error);
         assert.match(
           String(error.helpText),
-          new RegExp('Usage: ember-rsi ' + args[0]),
+          new RegExp('Usage: arsi ' + args[0]),
         );
         return true;
       },

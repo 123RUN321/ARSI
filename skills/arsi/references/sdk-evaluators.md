@@ -19,10 +19,10 @@ Follow [TerminalBench runtime preparation](terminalbench-runtime.md) and the bun
 - The user authorizes the benchmark cost. The recipe limits each evaluator run to 300 seconds and the RSI stage to 900000 ms with cleanup reserve. RSI `modelCalls` counts editor calls, **not all benchmark solver requests**. Establish a separate solver/gateway spending limit before real execution; if unavailable, stop at prepared configuration.
 
 ```sh
-ember-rsi doctor .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension
+arsi doctor .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension
 # Run only after the prerequisites and external spending limit above are satisfied.
-ember-rsi run .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension --id terminalbench-01
-ember-rsi show terminalbench-01
+arsi run .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension --id terminalbench-01
+arsi show terminalbench-01
 ```
 
 Record the baseline and proposed candidate refs, both comparable measurements if a proposal was created, selected pair, task/environment versions, native scores, coverage, actual usage and released resources. Confirm the native verifier actually produced a verdict: a timeout may have a valid accounting score of zero without running verification. Do not force improvement: retain the incumbent on a tie or regression according to selector behavior. This one-task adaptation experiment is not a held-out generalization estimate; use a disjoint final test set for that claim and keep its evidence out of proposals.
@@ -37,7 +37,7 @@ This skill supplies the complete orchestration and baseline; it does not distrib
 - `policy.wikiskill` uses disjoint `dataset.trainTaskIds`, `validationTaskIds`, and `testTaskIds`. Its `maxRounds` limit defaults to 3. Held-out test runs after learning. A baseline must contain the editable skills declared in its Target.
 - `policy.parameter-grid` uses grid proposals with an inference instance. Read [inference experiments](inference-experiments.md) for lifecycle and metric constraints.
 
-`ember-rsi catalog` lists IDs only. Use [public schema lookup](plugins.md#discover-schemas-through-public-apis) to obtain a registered Policy's input/config/default schemas and implementation schemas. Prefer the complete starter when writing a new algorithm; do not infer a built-in Policy's binding keys from another Policy's examples. If a domain workflow needs machine-specific scripts, benchmark assets or a particular bundle, those are user/environment inputs; the skill cannot replace them.
+`arsi catalog` lists IDs only. Use [public schema lookup](plugins.md#discover-schemas-through-public-apis) to obtain a registered Policy's input/config/default schemas and implementation schemas. Prefer the complete starter when writing a new algorithm; do not infer a built-in Policy's binding keys from another Policy's examples. If a domain workflow needs machine-specific scripts, benchmark assets or a particular bundle, those are user/environment inputs; the skill cannot replace them.
 
 ## Result checks
 

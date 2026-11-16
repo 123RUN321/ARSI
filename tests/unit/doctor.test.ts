@@ -704,7 +704,7 @@ test('CLI emits one JSON diagnostic for registration/loading errors and reports 
     });
     assert.equal(fresh.code, 1);
     assert.equal(JSON.parse(fresh.stdout).checks[0].id, 'recipe.validate');
-    await assert.rejects(access(join(doctorHome, '.ember-rsi')));
+    await assert.rejects(access(join(doctorHome, '.arsi')));
   } finally {
     await f.dispose();
   }
