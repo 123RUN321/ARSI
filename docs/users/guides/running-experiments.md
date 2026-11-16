@@ -106,6 +106,9 @@ ember-rsi dashboard --port <port>
 
 Run from an experiment workspace that already contains `.rsi/`. The web dashboard displays experiments, summaries, candidates, diffs, measurements, calls, Agent traces, results, and charts, as shown below.
 
+Measurement details show each recorded item's full identifier, subject kind, status, coverage, and metrics. Failed, cancelled, and unknown items show no valid score rather than a numeric result. Missing item evidence is reported explicitly; a successful zero score remains zero.
+Metrics that share a display label include their recorded metric names so distinct values remain identifiable.
+
 - Start, resume, and cancel experiments through the CLI.
 - Harness results include a Delivered column linked to the measurement returned by the saved selection, with its stage, status, and coverage. Its average uses only available scores from recorded deliveries; unselected higher scores are not substituted, and missing selections show “Not recorded”.
 - The development frontend proxies `/api` to port 4317 by default.
