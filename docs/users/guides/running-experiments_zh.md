@@ -107,6 +107,7 @@ ember-rsi dashboard --port <端口号>
 从已有 `.rsi/` 的实验工作区运行。工作台以web的形式展示实验、概览、候选、差异、测量、调用、Agent 轨迹、结果和图表，具体如下所示。
 
 - 当前界面只读，启动、恢复和取消通过 CLI 进行。
+- Harness 结果增加 Delivered 列，链接到保存的选择结果所返回的测量，并显示对应阶段、状态与覆盖范围。交付均分仅使用已记录交付的可用分数，不以未选中的更高分替代；缺少选择记录时显示“Not recorded”。
 - 默认将 `/api` 代理到 4317 端口。
 
 ![rsi-studio-wikiskill-compact](../assets/rsi-studio-wikiskill-compact.gif)
