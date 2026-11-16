@@ -12,10 +12,9 @@ function event(
     sequence,
     at: null,
     type: value.type,
-    content: {
-      text: JSON.stringify({ runId, event: value }),
-      truncated: false,
-    },
+    runId,
+    event: value,
+    native: null,
     payloadRef: null,
   };
 }

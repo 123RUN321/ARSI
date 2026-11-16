@@ -37,7 +37,7 @@ test('DSH consumes committed text, thinking, tools, truncation and its native fi
     { executable: process.execPath },
     f.context,
   );
-  assert.deepEqual(await agent.execute(f.request, f.context), { answer: 'ok' });
+  assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
   assert(records.items.some((r) => r.event?.type === 'observation.gap'));
   assert(records.items.some((r) => r.event?.type === 'tool.completed'));

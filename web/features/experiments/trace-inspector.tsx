@@ -1,11 +1,15 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { parseCallTrace } from '../../api/observation-client';
+import type { JsonValue } from '../../../src/contracts/json.js';
+import {
+  parseCallTrace,
+  parseAgentPayload,
+} from '../../api/observation-client';
 import { Feedback, Timestamp } from '../../components/observation-feedback';
 import { useObservation } from './use-observation';
 import { traceRows, eventText, type TraceRow } from './trace-model';
 import { scoreLabel } from './record-identifiers';
 
-const parsePayload = (value: unknown): unknown => value;
+const parsePayload = (value: unknown): JsonValue => parseAgentPayload(value);
 
 type Filter = 'All' | 'Model' | 'Tools' | 'Errors';
 export function TraceInspector({
@@ -30,24 +34,14 @@ export function TraceInspector({
   useEffect(() => {
     if (result.data) setPages((old) => ({ ...old, [offset]: result.data! }));
   }, [result.data, offset]);
-  const [payloads, setPayloads] = useState<Record<string, unknown>>({});
+  const [payloads, setPayloads] = useState<Record<string, JsonValue>>({});
   const events = useMemo(
     () =>
       Object.values(pages)
         .flatMap((p) => p.items)
         .map((event) => {
           if (!event.payloadRef || !payloads[event.payloadRef]) return event;
-          const metadata = JSON.parse(event.content?.text ?? '{}');
-          return {
-            ...event,
-            content: {
-              text: JSON.stringify({
-                ...metadata,
-                event: payloads[event.payloadRef],
-              }),
-              truncated: false,
-            },
-          };
+          return { ...event, event: payloads[event.payloadRef] };
         }),
     [pages, payloads],
   );
@@ -84,8 +78,9 @@ export function TraceInspector({
     null,
   );
   useEffect(() => {
-    if (payloadRef && payload.data)
-      setPayloads((old) => ({ ...old, [payloadRef]: payload.data }));
+    const data = payload.data;
+    if (payloadRef && data !== undefined)
+      setPayloads((old) => ({ ...old, [payloadRef]: data }));
   }, [payloadRef, payload.data]);
   const start = page * 50 < visible.length ? page * 50 : 0;
   const windowRows = visible.slice(start, start + 50);
@@ -437,7 +432,6 @@ function EventContent({
           {!row.body && !row.thinking ? <p>{row.summary}</p> : null}
         </>
       )}
-      {row.truncated ? <p className="muted">Event preview truncated.</p> : null}
     </>
   );
 }

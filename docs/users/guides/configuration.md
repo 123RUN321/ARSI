@@ -142,13 +142,13 @@ bindings:
 
 `config: {}` uses the native default model. Optional overrides for an experiment are:
 
-| Backend     | Optional settings                                                                     |
-| ----------- | ------------------------------------------------------------------------------------- |
-| All         | `executable`: full CLI path; `timeoutMs`: deadline in milliseconds for one Agent task |
-| Codex       | `model`, `thinkingLevel`                                                              |
-| Claude Code | `model`, `effort`                                                                     |
-| DSH         | Configure the model in the native headless profile                                    |
-| OpenCode    | `model`: `provider/model`, optionally followed by `#variant`                          |
+| Backend     | Optional settings                                                                              |
+| ----------- | ---------------------------------------------------------------------------------------------- |
+| All         | `executable`: full CLI path; `executionTimeoutMs`: deadline in milliseconds for one Agent task |
+| Codex       | `model`, `thinkingLevel`                                                                       |
+| Claude Code | `model`, `effort`                                                                              |
+| DSH         | Configure the model in the native headless profile                                             |
+| OpenCode    | `model`: `provider/model`, optionally followed by `#variant`                                   |
 
 RSI preserves native model, authentication, tools, Hooks, MCP and permission configuration. This version adds no sandbox or permission boundary. Pi runs through its in-process SDK; the four CLI backends have managed process lifecycles on macOS, Linux and Windows.
 
@@ -165,7 +165,7 @@ Resolve Doctor failures before running the experiment. `model-access: unchecked`
 
 When running from the source repository, replace `ember-rsi` with `pnpm ember-rsi`. If the native CLI cannot be found, open a new terminal or set `executable` to its full path under the binding's `config`.
 
-For native CLI backends, add `timeoutMs: 180000` to limit each Agent task to 3 minutes; omitting it leaves that deadline unset. These backends cannot enforce `budget.modelCalls`. The Agent edits the supplied candidate workspace; the Application validates the snapshot; configure prompts and Skills in the calling component, such as the Proposer.
+For native CLI backends, add `executionTimeoutMs: 180000` to limit each Agent task to 3 minutes; omitting it leaves that deadline unset. These backends cannot enforce `budget.modelCalls`. The Agent edits the supplied candidate workspace; the Application validates the snapshot; configure prompts and Skills in the calling component, such as the Proposer.
 
 ## Inference optimization
 
@@ -220,7 +220,7 @@ With `application.inference.config.remote.discoverParameters: true`, the launche
 
 ### Agent conversation records
 
-The Dashboard call trace supports Pi, Codex, Claude Code, DSH and OpenCode through one normalized record format. It shows messages, tools, usage, native session metadata and observable child sessions. Partial native coverage is explicit and does not prevent execution. Large event content is loaded when selected. New conversation records retain full content without redaction; recording failures stop the call and prevent acceptance.
+Every registered `contract.agent` receives framework-owned input/result/failure recording, output Schema validation, execution deadlines and cancellation. No extra plugin hook or wrapper is required. The Dashboard identifies Agent calls by their recorded contract, including third-party IDs. Pi, Codex, Claude Code, DSH and OpenCode can additionally provide native details through the same normalized record format. It shows messages, tools, usage, native session metadata and observable child sessions. Partial native coverage is explicit and does not prevent execution. Large event content is loaded when selected. New conversation records retain full content without redaction; recording failures stop the call and prevent acceptance.
 
 Existing experiment files remain untouched. This architecture reads only new Agent records; it does not migrate or interpret historical Agent traces.
 
@@ -241,7 +241,7 @@ Omitted Recipe binding settings first inherit Policy defaults. The “When omitt
 | Pi                                    | `contextWindow`                                    | Context-window size in tokens used by Pi for context management; match it to the model's capabilities.                                                                                                                | 262144 tokens.                                                                                                    |
 | Pi                                    | `timeoutMs`                                        | Duration limit per model request, in milliseconds.                                                                                                                                                                    | The underlying HTTP client uses 600000 ms (10 minutes).                                                           |
 | Pi                                    | `executionTimeoutMs`                               | Duration limit for a complete Agent call in milliseconds, including requests, tools, compaction, retry waits, and subagents.                                                                                          | No separate duration limit for the complete call.                                                                 |
-| Codex / Claude Code / DSH             | `timeoutMs`                                        | Duration limit for the complete Agent call, in milliseconds.                                                                                                                                                          | RSI sets no separate timeout for the call.                                                                        |
+| Codex / Claude Code / DSH / OpenCode  | `executionTimeoutMs`                               | Duration limit for the complete Agent call, in milliseconds.                                                                                                                                                          | RSI sets no separate timeout for the call.                                                                        |
 | Operator Proposer                     | `modelRequestTimeoutMs`                            | Shared duration limit for a complete model stage in milliseconds, including tool continuations and delegated Agents.                                                                                                  | 120000 ms (2 minutes).                                                                                            |
 | AgentBench Evaluator                  | `services.<service>.maxTokens`                     | Per-turn output-token limit for the model service used by the evaluated Agent.                                                                                                                                        | Determined by Solver or model-service defaults.                                                                   |
 | AgentBench / InferenceBench Evaluator | `run.timeoutSeconds`                               | Duration limit for one benchmark task attempt, in seconds.                                                                                                                                                            | Use the SDK benchmark profile's value; fall back to 7200 seconds (2 hours) if the profile omits it.               |

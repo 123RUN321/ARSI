@@ -331,6 +331,14 @@ try {
 }
 ```
 
+### Agent execution and observations
+
+An Agent is an ordinary `OperationDefinition` implementing `agentContract`; implement `create`, `execute` and `dispose` normally. Both explicit registration and plugin-directory loading use the same Registry path. The Runtime automatically records the task input, structured result, errors and terminal outcome, validates the requested output Schema and manages `executionTimeoutMs` and cancellation. No Agent-specific definition hook or opt-in execution helper is required.
+
+During Agent execution, `context.directory` is the prepared project root and `context.signal` includes the task deadline. CLI adapters use `context.runAgentProcess` for owned process-tree cleanup. SDK adapters use the same signal and await `context.charge('modelCalls', 1)` before model requests; native CLI execution rejects a configured hard model-call budget it cannot enforce.
+
+Native message/tool/subagent details may be published as `context.event.emit('rsi/agent-observation', observation)`. This is optional enrichment: an Agent emitting nothing still has basic records and appears in the Dashboard by its contract. Invalid optional details produce an observation gap; recording storage failures stop execution. The Runtime owns the writer and its close lifecycle.
+
 ### Calls and resource cleanup
 
 - Loading a Recipe only assembles definitions. Execution calls `create` to create instances and `execute` to perform business work. Runtime validates input/output and records calls.

@@ -1,6 +1,6 @@
+import { leaseAgentProject } from '../storage/workspaces.js';
 import { OperationRejectedError } from '../../contracts/runtime/errors.js';
-import { lstat, mkdir, writeFile, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import {
   agentContract,
   memoryContract,
@@ -56,7 +56,6 @@ export interface CallExecutor {
 
 export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
   const { id, context, charge } = options;
-  const projectLeases = new Map<string, string>();
   const active = new Map<string, Promise<JsonValue>>();
   const uncertain = new Map<string, () => Promise<void>>();
   const childFailures = new Map<string, unknown>();
@@ -122,32 +121,18 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
     const job = (async (): Promise<JsonValue> => {
       let ctx = context(bindingId, callId, caller);
       let projectArtifactRef: string | undefined;
-      let projectLeaseFile: string | undefined;
+      let projectLease:
+        | Awaited<ReturnType<typeof leaseAgentProject>>
+        | undefined;
       let projectUncertain = false;
       try {
         if (projectRef !== undefined) {
-          const workspace = await ctx.workspaces.read(projectRef);
-          if (
-            !workspace.project ||
-            workspace.project.ownerCallId !== caller.callId
-          )
-            throw new Error(
-              'Agent project must be owned by the calling operation',
-            );
-          const project = dirname(workspace.directory);
-          if (!(await lstat(join(project, '.rsi-project'))).isFile())
-            throw new Error('Invalid authorized Agent project');
-          if (projectLeases.has(projectRef))
-            throw new Error('Agent project is already executing');
-          const leaseFile = join(dirname(project), 'agent-lease.json');
-          await writeFile(leaseFile, JSON.stringify({ callId }), {
-            flag: 'wx',
-            mode: 0o600,
-          });
-          projectLeaseFile = leaseFile;
-          projectLeases.set(projectRef, callId);
-          projectArtifactRef = workspace.project.inputRef;
-          ctx = ctx.extend({ agentProject: project });
+          projectLease = await leaseAgentProject(
+            ctx,
+            projectRef,
+            caller.callId,
+          );
+          projectArtifactRef = projectLease.inputRef;
         }
 
         let prior: JsonObject | undefined;
@@ -225,6 +210,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           const receipt: JsonObject = {
             ...info,
             pluginId: binding.plugin,
+            contractId: definition.contract.id,
             status: 'running',
             input,
             ...(projectArtifactRef === undefined
@@ -403,7 +389,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           error.status === 'unknown';
         throw error;
       } finally {
-        if (projectLeaseFile && !projectUncertain) await rm(projectLeaseFile);
+        await projectLease?.release(projectUncertain);
       }
     })();
     const supervised = job.catch((error) => {
@@ -418,8 +404,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
     void supervised
       .finally(() => {
         active.delete(callId);
-        if (projectRef && projectLeases.get(projectRef) === callId)
-          projectLeases.delete(projectRef);
       })
       .catch(() => {});
     return supervised;

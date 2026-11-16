@@ -1,18 +1,6 @@
 import { recordSchema } from './measurement.js';
 import type { JsonObject, JsonValue } from '../json.js';
 
-export type AgentCoverage = 'complete' | 'partial' | 'unavailable';
-export interface AgentCapabilities {
-  edit: boolean;
-  delegation: boolean;
-  hardModelCallLimit: boolean;
-  observation: {
-    messages: AgentCoverage;
-    tools: AgentCoverage;
-    children: AgentCoverage;
-    thinking: AgentCoverage;
-  };
-}
 export type AgentEvent =
   | { type: 'run.started'; parentRunId: string | null; backend: string }
   | {
@@ -70,22 +58,6 @@ export interface AgentRecord {
   native?: AgentObservation['native'];
   event: AgentEvent | null;
   payload: AgentPayload | null;
-}
-export interface AgentRecordPage {
-  items: AgentRecord[];
-  nextAfter: number;
-  recording: 'open' | 'closed' | 'interrupted';
-}
-export interface AgentManifest {
-  version: 1;
-  backend: string;
-  capabilities: AgentCapabilities;
-  input: JsonObject;
-}
-export interface AgentRecorder {
-  /** Append synchronously: a storage error must stop the producing execution. */
-  record(observation: AgentObservation): void;
-  close(): void;
 }
 
 const text = { type: 'string' };

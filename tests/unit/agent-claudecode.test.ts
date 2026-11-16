@@ -48,7 +48,7 @@ test('Claude translates text, thinking and correlated tool results while returni
     { executable: process.execPath },
     f.context,
   );
-  assert.deepEqual(await agent.execute(f.request, f.context), { answer: 'ok' });
+  assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
   assert(
     records.items.some(
@@ -82,9 +82,6 @@ test('Claude rejects invalid final output without correction or a second launch'
     { executable: process.execPath },
     f.context,
   );
-  await assert.rejects(
-    agent.execute(f.request, f.context),
-    /agent output|Agent output/,
-  );
+  await assert.rejects(f.execute(agent), /agent output|Agent output/);
   assert.equal(launches, 1);
 });

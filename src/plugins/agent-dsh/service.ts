@@ -1,4 +1,4 @@
-import { parseAgentResult } from '../shared/agent-backend/output.js';
+import { parseAgentResult } from '../shared/native-agent/result.js';
 import { writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
@@ -8,10 +8,7 @@ import type {
 } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
 import { parseConfig } from '../../shared/schema.js';
-import {
-  agentBackend,
-  nativeCapabilities,
-} from '../shared/agent-backend/runner.js';
+
 import { configSchema, type AgentDshConfig } from './schema.js';
 import { runDshProcess } from './process.js';
 import { dshObservations } from './observations.js';
@@ -26,13 +23,13 @@ export const createAgentDsh: OperationDefinition<
     rawConfig,
     'agent.dsh config',
   );
-  return agentBackend({
-    id: 'agent.dsh',
-    capabilities: nativeCapabilities(true),
-    timeoutMs: config.timeoutMs,
-    async run(session) {
-      const launch = session.launch;
-      const patch = join(session.directory, 'scratch', 'dsh-launch.json');
+  return {
+    async execute(request, context) {
+      const launch: import('../../contracts/index.js').AgentProcessLauncher = (
+        spec,
+        onLine,
+      ) => context.runAgentProcess(spec, onLine);
+      const patch = join(context.directory, 'scratch', 'dsh-launch.json');
       await writeFile(
         patch,
         JSON.stringify([
@@ -47,13 +44,15 @@ export const createAgentDsh: OperationDefinition<
           {
             id: 'skill-filesystem',
             config: {
-              customSkillDirs: [join(session.directory, '.agents', 'skills')],
+              customSkillDirs: [join(context.directory, '.agents', 'skills')],
             },
           },
         ]),
         { mode: 0o600 },
       );
-      const observe = dshObservations(session.record);
+      const observe = dshObservations((observation) =>
+        context.event.emit('rsi/agent-observation', observation),
+      );
       let sessionId: string | undefined;
       let finalText: string | undefined;
       try {
@@ -61,10 +60,10 @@ export const createAgentDsh: OperationDefinition<
           config.executable,
           patch,
           JSON.stringify({
-            goal: session.request.goal,
+            goal: request.goal,
             instruction:
               'Read AGENTS.md. Edit candidate/ directly only when authorized. Return only the JSON object matching outputSchema.',
-            outputSchema: session.request.outputSchema,
+            outputSchema: request.outputSchema,
           }),
           (line) => {
             const event = object(JSON.parse(line));
@@ -96,5 +95,6 @@ export const createAgentDsh: OperationDefinition<
         await rm(patch, { force: true });
       }
     },
-  });
+    async dispose() {},
+  };
 };

@@ -10,19 +10,23 @@ import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { constants } from 'node:fs';
 import type {
-  AgentManifest,
   AgentObservation,
   AgentRecord,
-  AgentRecorder,
-  AgentRecordPage,
 } from '../../contracts/models/agent-record.js';
 
 /** One call owns one writer, stored separately from the editable project. */
-export class FileAgentRecorder implements AgentRecorder {
+export class FileAgentRecorder {
   private sequence = 0;
   private descriptor: number | undefined;
   readonly directory: string;
-  constructor(callDirectory: string, manifest: AgentManifest) {
+  constructor(
+    callDirectory: string,
+    manifest: {
+      version: 1;
+      backend: string;
+      input: import('../../contracts/json.js').JsonObject;
+    },
+  ) {
     this.directory = join(callDirectory, 'agent');
     mkdirSync(join(this.directory, 'payloads'), {
       recursive: true,
@@ -106,7 +110,13 @@ export async function readAgentRecords(
   after: number,
   limit: number,
   finished: boolean,
-): Promise<AgentRecordPage & { total: number; terminalStatus?: string }> {
+): Promise<{
+  items: AgentRecord[];
+  nextAfter: number;
+  recording: 'open' | 'closed' | 'interrupted';
+  total: number;
+  terminalStatus?: string;
+}> {
   if (
     !Number.isSafeInteger(after) ||
     after < 0 ||
@@ -206,15 +216,30 @@ export async function streamAgentPayload(
   }
 }
 
-export async function readAgentManifest(
-  callDirectory: string,
-): Promise<AgentManifest> {
+/** Reflection receives the same new records, with lazy payloads resolved for its evidence packet. */
+export async function readAgentTrace(callDirectory: string): Promise<string> {
   const file = await open(
-    join(callDirectory, 'agent', 'manifest.json'),
+    join(callDirectory, 'agent', 'events.jsonl'),
     constants.O_RDONLY | constants.O_NOFOLLOW,
   );
   try {
-    return JSON.parse(await file.readFile('utf8'));
+    const source = await file.readFile('utf8');
+    const lines = source
+      .slice(0, source.lastIndexOf('\n') + 1)
+      .split('\n')
+      .filter(Boolean);
+    const output: string[] = [];
+    for (const line of lines) {
+      const record: AgentRecord = JSON.parse(line);
+      if (record.payload)
+        record.event = JSON.parse(
+          (await readAgentPayload(callDirectory, record.payload.ref)).toString(
+            'utf8',
+          ),
+        );
+      output.push(JSON.stringify(record));
+    }
+    return output.join('\n') + '\n';
   } finally {
     await file.close();
   }

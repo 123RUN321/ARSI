@@ -13,8 +13,3 @@ export type AgentProcessLauncher = (
   spec: AgentProcessSpec,
   onLine: AgentLineHandler,
 ) => Promise<void>;
-export interface AgentLaunchScope {
-  directory: string;
-  project: string;
-  signal: AbortSignal;
-}

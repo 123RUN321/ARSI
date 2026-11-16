@@ -1,4 +1,4 @@
-import { parseAgentResult } from '../shared/agent-backend/output.js';
+import { parseAgentResult } from '../shared/native-agent/result.js';
 import { openCodeObservations } from './observations.js';
 import type {
   AgentObservation,

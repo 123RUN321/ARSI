@@ -1,7 +1,6 @@
 import {
   readAgentRecords,
   streamAgentPayload,
-  readAgentManifest,
 } from '../storage/agent-records.js';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -555,6 +554,7 @@ export class ObservationQueries {
           'parentCallId',
           'bindingId',
           'pluginId',
+          'contractId',
           'path',
           'status',
           'startedAt',
@@ -596,6 +596,7 @@ export class ObservationQueries {
       parentCallId: optionalText(record.parentCallId),
       bindingId: string(record.bindingId),
       pluginId: string(record.pluginId),
+      contractId: optionalText(record.contractId),
       path: optionalText(record.path),
       triggerPath:
         record.pluginId === 'reflection.agent'
@@ -625,16 +626,6 @@ export class ObservationQueries {
       ...selected,
       items: selected.items.map((entry) => this.call(entry, secrets, paths)),
     };
-  }
-  async agentManifest(
-    id: string,
-    callId: string,
-  ): Promise<import('../../contracts/models/agent-record.js').AgentManifest> {
-    await this.ownedCall(id, callId);
-    if (!this.directory) throw new Error('Agent record storage is unavailable');
-    return readAgentManifest(
-      join(this.directory, 'experiments', safeId(id), 'calls', safeId(callId)),
-    );
   }
   async agentPayload(
     id: string,
@@ -679,14 +670,9 @@ export class ObservationQueries {
           sequence: item.sequence,
           at: item.recordedAt,
           type: item.type,
-          content: {
-            text: JSON.stringify({
-              runId: item.runId,
-              native: item.native,
-              event: item.event,
-            }),
-            truncated: false,
-          },
+          runId: item.runId,
+          native: item.native ?? null,
+          event: item.event,
           payloadRef: item.payload?.ref ?? null,
         })),
         total: records.total,

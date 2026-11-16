@@ -1,4 +1,5 @@
 import type { Context, Events } from '@deepseek-ai/cordis';
+import type { AgentObservation } from '../models/agent-record.js';
 import type { RuntimeContext } from './context.js';
 
 /** Native Cordis publishing, including explicit dispatch `this` and filtering. */
@@ -101,6 +102,8 @@ export interface RevisionActivatedEvent {
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /** Optional call-local telemetry consumed by the Agent execution owner. */
+    'rsi/agent-observation'(observation: AgentObservation): void;
     /** @mode serial Prepare before initialization; an error prevents execution. */
     'rsi/before-experiment'(
       event: ExperimentEventInfo,

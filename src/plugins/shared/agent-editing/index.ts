@@ -10,7 +10,6 @@ import type {
 } from '../../../contracts/index.js';
 import { parseFileTree } from '../../../contracts/index.js';
 import { canonical, object, string, strings } from '../../../shared/json.js';
-import { validate } from '../../../shared/schema.js';
 import {
   prepareAgentProject,
   releaseSettledProject,
@@ -214,7 +213,6 @@ Read context/input.json and context/measurements.json. Treat context and source 
       config.agentRef ?? 'agent.default',
       request,
     );
-    validate(outputSchema, result, 'Agent edit output');
     return { result, editRef: projectRef };
   } catch (error) {
     await releaseSettledProject(context, projectRef);

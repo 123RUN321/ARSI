@@ -1,4 +1,4 @@
-import { parseAgentResult } from '../shared/agent-backend/output.js';
+import { parseAgentResult } from '../shared/native-agent/result.js';
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -112,7 +112,7 @@ export async function createPiSession(
         | undefined;
       let unsubscribe: (() => void) | undefined;
       if (request.parentRunId !== null)
-        context.agentRecorder!.record({
+        context.event.emit('rsi/agent-observation', {
           runId: request.runId,
           event: {
             type: 'run.started',
@@ -121,7 +121,7 @@ export async function createPiSession(
           },
         });
       const observe = piObservations(
-        (event) => context.agentRecorder!.record(event),
+        (event) => context.event.emit('rsi/agent-observation', event),
         request.runId,
       );
       const record = (type: string, data: unknown): void => {
@@ -158,7 +158,8 @@ export async function createPiSession(
         const model = runtime.getModel('rsi', modelName);
         if (!model) throw new Error('Configured Pi model unavailable');
         const schema = request.outputSchema;
-        validateSchemaDefinition(schema, 'Agent outputSchema');
+        if (request.parentRunId !== null)
+          validateSchemaDefinition(schema, 'Pi child outputSchema');
         const settingsManager = SettingsManager.inMemory({
           cacheWarming: 'off',
           compaction: {
@@ -349,7 +350,7 @@ export async function createPiSession(
           if (request.parentRunId !== null)
             validate(schema, result, 'Pi child output');
           if (request.parentRunId !== null)
-            context.agentRecorder!.record({
+            context.event.emit('rsi/agent-observation', {
               runId: request.runId,
               event: { type: 'run.finished', status: 'completed' },
             });
@@ -362,7 +363,7 @@ export async function createPiSession(
         const message = cause instanceof Error ? cause.message : String(cause);
         record('error', { message });
         if (request.parentRunId !== null)
-          context.agentRecorder!.record({
+          context.event.emit('rsi/agent-observation', {
             runId: request.runId,
             event: {
               type: 'run.finished',

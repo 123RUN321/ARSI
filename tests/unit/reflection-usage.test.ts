@@ -376,25 +376,23 @@ test('real Proposer calls without Measurements expose linked versions, actual Ag
             ),
             /Inspect source asset before editing/,
           );
-        await writeFile(
-          join(context.directory, 'diagnostics.jsonl'),
-          JSON.stringify({
-            event: 'read_file',
-            path: 'asset.md',
-            result: await readFile(
-              join(
-                dirname(
-                  (await context.workspaces.read(string(request.projectRef)))
-                    .directory,
-                ),
-                'candidate',
-                'asset.md',
+        context.event.emit('rsi/agent-observation', {
+          runId: 'main',
+          event: {
+            type: 'tool.completed',
+            toolCallId: 'source-read',
+            name: 'read_file',
+            status: 'succeeded',
+            output: {
+              path: 'asset.md',
+              result: await readFile(
+                join(context.directory, 'candidate', 'asset.md'),
+                'utf8',
               ),
-              'utf8',
-            ),
-            observation: 'actual captured source read',
-          }) + '\n',
-        );
+              observation: 'actual captured source read',
+            },
+          },
+        });
         return await directAgentResult(context, raw, {
           edits: [
             {

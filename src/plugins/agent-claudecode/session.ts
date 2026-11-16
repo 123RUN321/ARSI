@@ -6,7 +6,7 @@ import type {
 import type { AgentInput, JsonObject } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
 import type { ResolvedAgentClaudeCodeConfig } from './schema.js';
-import { runClaudeProcess } from './process.js';
+import { runNativeJsonProcess as runClaudeProcess } from '../shared/native-agent/json-process.js';
 
 /** Native CLI owns model access, tools, structured-output generation and retries. */
 export async function runSession(options: {

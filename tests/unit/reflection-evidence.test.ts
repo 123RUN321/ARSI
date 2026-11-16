@@ -1,3 +1,4 @@
+import { FileAgentRecorder } from '../../src/runtime/storage/agent-records.js';
 import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
@@ -262,23 +263,35 @@ test('actual request, workspace, diagnostic trace and patch files are readable a
   await f.call('agent', 'agent', 1, {
     parentCallId: 'proposal',
     input: {
-      cwd: join(f.root, 'project'),
+      projectRef: 'project',
+      mode: 'analyze',
       goal: 'actual agent task',
       outputSchema: {},
     },
     agentProjectArtifactRef,
-    output: { edits: [] },
+    output: { reason: 'Inspected source' },
   });
   const callDirectory = join(f.root, 'experiments/experiment/calls/agent');
   await mkdir(callDirectory, { recursive: true });
-  await writeFile(
-    join(callDirectory, 'diagnostics.jsonl'),
-    JSON.stringify({
-      event: 'read_file',
-      path: 'source.md',
-      scores: { forbidden: 'grading trace marker' },
-    }),
-  );
+  const writer = new FileAgentRecorder(callDirectory, {
+    version: 1,
+    backend: 'test.agent',
+    input: {},
+  });
+  writer.record({
+    runId: 'main',
+    event: {
+      type: 'tool.completed',
+      toolCallId: 'read',
+      name: 'read_file',
+      status: 'succeeded',
+      output: {
+        path: 'source.md',
+        scores: { forbidden: 'grading trace marker' },
+      },
+    },
+  });
+  writer.close();
   const { snapshot } = await f.collect('r1', 3);
   const files = object(snapshot.files);
   assert.match(

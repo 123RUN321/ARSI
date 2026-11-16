@@ -39,19 +39,11 @@ declare module './context.js' {
     rootDirectory: string;
     /** Stable local runtime data root; plugins own their subdirectories and cleanup. */
     dataDirectory: string;
-    /** The workspace authorized for a running Agent and its delegates. */
-    agentProject?: string;
-    agentRecorder?: import('../models/agent-record.js').AgentRecorder;
-    agentLimits?: Readonly<Record<string, number>>;
     runAgentProcess(
       this: RuntimeContext,
       spec: import('./agent-execution.js').AgentProcessSpec,
       onLine: import('./agent-execution.js').AgentLineHandler,
     ): Promise<void>;
-    openAgentRecord(
-      this: RuntimeContext,
-      manifest: import('../models/agent-record.js').AgentManifest,
-    ): import('../models/agent-record.js').AgentRecorder;
     artifacts: ArtifactStore;
     facts: FactStore;
     workspaces: WorkspaceService;

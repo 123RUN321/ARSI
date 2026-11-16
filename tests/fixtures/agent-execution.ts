@@ -1,3 +1,5 @@
+import { agentContract } from '../../src/contracts/index.js';
+import { ManagedEvents } from '../../src/runtime/services/events.js';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -6,6 +8,8 @@ import type {
   AgentLineHandler,
   AgentProcessSpec,
   RuntimeContext,
+  Operation,
+  JsonObject,
 } from '../../src/contracts/index.js';
 import { Manager } from '../../src/runtime/manager/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
@@ -49,21 +53,20 @@ export async function agentFixture(
   const context = owner.extend({
     callId: 'agent',
     directory: join(root, 'agent-call'),
-    agentProject: directory,
     async charge(metric: string, amount: number) {
       charges.push({ metric, amount });
     },
-    ...(onLaunch
-      ? {
-          runAgentProcess: async function (
-            this: RuntimeContext,
-            spec: AgentProcessSpec,
-            onLine: AgentLineHandler,
-          ) {
-            await onLaunch(spec, onLine, this);
-          },
-        }
-      : {}),
+    event: new ManagedEvents({ context: () => owner, diagnostic() {} }).event,
+    async runAgentProcess(
+      this: RuntimeContext,
+      spec: AgentProcessSpec,
+      onLine: AgentLineHandler,
+    ) {
+      if (this.scope?.limits.modelCalls !== undefined)
+        throw new Error('Native CLI cannot enforce modelCalls');
+      if (onLaunch) await onLaunch(spec, onLine, this);
+      else throw new Error('Unexpected CLI launch');
+    },
   });
   await mkdir(context.directory, { recursive: true });
   const request: AgentInput = {
@@ -72,7 +75,30 @@ export async function agentFixture(
     goal: 'Return an answer',
     outputSchema: answerSchema,
   };
+  let serial = 0;
   return {
+    async execute(
+      operation: Operation,
+      input = request,
+      scope: RuntimeContext = context,
+      config: JsonObject = {},
+    ) {
+      const id = `agent.fixture-${serial++}`;
+      registry.registerOperation({
+        id,
+        contract: agentContract,
+        configSchema: { type: 'object' },
+        async create() {
+          return operation;
+        },
+      });
+      const managed = await registry.createManagedOperation(id, config, scope);
+      try {
+        return await managed.execute(input, scope);
+      } finally {
+        await managed.dispose();
+      }
+    },
     root,
     manager,
     owner,

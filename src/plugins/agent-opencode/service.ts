@@ -4,10 +4,7 @@ import type {
   OperationDefinition,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
-import {
-  agentBackend,
-  nativeCapabilities,
-} from '../shared/agent-backend/runner.js';
+
 import {
   configSchema,
   type AgentOpenCodeConfig,
@@ -25,19 +22,20 @@ export const createAgentOpenCode: OperationDefinition<
     rawConfig,
     'agent.opencode config',
   );
-  return agentBackend({
-    id: 'agent.opencode',
-    capabilities: nativeCapabilities(false),
-    timeoutMs: config.timeoutMs,
-    async run(session) {
+  return {
+    async execute(request, context) {
+      if (request.requirements?.delegation)
+        throw new Error('agent.opencode does not support native delegation');
       return runSession({
         config,
-        directory: session.directory,
-        request: session.request,
-        signal: session.signal,
-        launch: session.launch,
-        record: session.record,
+        directory: context.directory,
+        request,
+        signal: context.signal,
+        launch: (spec, onLine) => context.runAgentProcess(spec, onLine),
+        record: (observation) =>
+          context.event.emit('rsi/agent-observation', observation),
       });
     },
-  });
+    async dispose() {},
+  };
 };

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAgentOpenCode } from '../../src/plugins/agent-opencode/service.js';
@@ -44,13 +45,14 @@ test('OpenCode records its V2 parts and returns only the stopped final message',
     { executable: process.execPath },
     f.context,
   );
-  assert.deepEqual(await agent.execute(f.request, f.context), { answer: 'ok' });
+  assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
   assert(records.items.some((r) => r.event?.type === 'tool.completed'));
   await assert.rejects(
-    agent.execute(
+    f.execute(
+      agent,
       { ...f.request, requirements: { delegation: true } },
-      f.context,
+      f.context.extend({ directory: join(f.context.directory, 'second') }),
     ),
     /does not support native delegation/,
   );

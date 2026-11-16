@@ -1,14 +1,12 @@
 import { windowsCommand } from './windows-command.js';
 import { spawn } from 'node:child_process';
-import type {
-  AgentLaunchScope,
-  AgentProcessLauncher,
-} from '../../../contracts/runtime/agent-execution.js';
+import type { AgentProcessLauncher } from '../../../contracts/runtime/agent-execution.js';
 
 /** The caller waits for process and pipe settlement before publishing any result. */
-export function agentProcessLauncher(
-  scope: AgentLaunchScope,
-): AgentProcessLauncher {
+export function agentProcessLauncher(scope: {
+  project: string;
+  signal: AbortSignal;
+}): AgentProcessLauncher {
   return async (spec, onLine) => {
     scope.signal.throwIfAborted();
     const command = {

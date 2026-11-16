@@ -1,5 +1,4 @@
 import { FileAgentRecorder } from '../../src/runtime/storage/agent-records.js';
-import { nativeCapabilities } from '../../src/plugins/shared/agent-backend/runner.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -17,7 +16,8 @@ test('agent records preserve content without redaction and enforce call ownershi
   await facts.write('calls', 'agent-call', {
     experimentId: 'run-alpha',
     callId: 'agent-call',
-    pluginId: 'agent.codex',
+    pluginId: 'custom.chat',
+    contractId: 'contract.agent',
     bindingId: 'agent',
     status: 'running',
   });
@@ -32,7 +32,6 @@ test('agent records preserve content without redaction and enforce call ownershi
   const writer = new FileAgentRecorder(location, {
     version: 1,
     backend: 'agent.codex',
-    capabilities: nativeCapabilities(true),
     input: {},
   });
   writer.record({
@@ -49,10 +48,18 @@ test('agent records preserve content without redaction and enforce call ownershi
     event: { type: 'run.finished', status: 'completed' },
   });
   writer.close();
+  assert.equal(
+    (await query.calls('run-alpha', 0, 100)).items.find(
+      (call) => call.callId === 'agent-call',
+    )?.contractId,
+    'contract.agent',
+  );
   const result = parseCallTrace(
     await query.callTrace('run-alpha', 'agent-call', 0, 1),
   );
-  assert(result.items[0].content?.text.includes('fixture-private-value'));
+  assert(
+    JSON.stringify(result.items[0].event).includes('fixture-private-value'),
+  );
   assert.equal(result.total, 2);
   assert.equal(result.nextOffset, 1);
   assert.equal(traceRows(result.items)[0].body, 'fixture-private-value');

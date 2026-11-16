@@ -4,10 +4,7 @@ import type {
   OperationDefinition,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
-import {
-  agentBackend,
-  nativeCapabilities,
-} from '../shared/agent-backend/runner.js';
+
 import {
   configSchema,
   type AgentClaudeCodeConfig,
@@ -25,19 +22,18 @@ export const createAgentClaudeCode: OperationDefinition<
     rawConfig,
     'agent.claudecode config',
   );
-  return agentBackend({
-    id: 'agent.claudecode',
-    capabilities: nativeCapabilities(true),
-    timeoutMs: config.timeoutMs,
-    async run(session) {
+  return {
+    async execute(request, context) {
       return runSession({
         config,
-        directory: session.directory,
-        request: session.request,
-        signal: session.signal,
-        launch: session.launch,
-        record: session.record,
+        directory: context.directory,
+        request,
+        signal: context.signal,
+        launch: (spec, onLine) => context.runAgentProcess(spec, onLine),
+        record: (observation) =>
+          context.event.emit('rsi/agent-observation', observation),
       });
     },
-  });
+    async dispose() {},
+  };
 };

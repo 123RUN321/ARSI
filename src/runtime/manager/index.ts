@@ -1,5 +1,4 @@
 import { agentProcessLauncher } from '../services/agent-execution/process.js';
-import { FileAgentRecorder } from '../storage/agent-records.js';
 import { errorText } from '../../shared/errors.js';
 import { mkdir } from 'node:fs/promises';
 import { lock as acquireProcessLock } from 'proper-lockfile';
@@ -133,18 +132,6 @@ export class Manager {
       artifacts: this.artifacts,
       facts: this.facts,
       workspaces: this.workspaces,
-      runAgentProcess(this: RuntimeContext, spec, onLine) {
-        if (!this.agentProject)
-          throw new Error('Agent project is not authorized');
-        return agentProcessLauncher({
-          directory: this.directory,
-          project: this.agentProject,
-          signal: this.signal,
-        })(spec, onLine);
-      },
-      openAgentRecord(this: RuntimeContext, manifest) {
-        return new FileAgentRecorder(this.directory, manifest);
-      },
     });
   }
   async cancel(id: string): Promise<void> {
@@ -495,18 +482,18 @@ export class Manager {
         artifacts: manager.artifacts,
         facts: manager.facts,
         workspaces: manager.workspaces,
-        agentLimits: recipe.budget,
         runAgentProcess(this: RuntimeContext, spec, onLine) {
-          if (!this.agentProject)
-            throw new Error('Agent project is not authorized');
+          if (
+            recipe.budget.modelCalls !== undefined ||
+            this.scope?.limits.modelCalls !== undefined
+          )
+            throw new Error(
+              'Native CLI execution cannot enforce the configured modelCalls budget',
+            );
           return agentProcessLauncher({
-            directory: this.directory,
-            project: this.agentProject,
+            project: this.directory,
             signal: this.signal,
           })(spec, onLine);
-        },
-        openAgentRecord(this: RuntimeContext, manifest) {
-          return new FileAgentRecorder(this.directory, manifest);
         },
         async charge(this: RuntimeContext, metric, amount) {
           return charge(metric, amount, this);

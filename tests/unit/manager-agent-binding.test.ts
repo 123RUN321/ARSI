@@ -1,3 +1,5 @@
+import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { OperationDefinition } from '../../src/contracts/index.js';
@@ -61,6 +63,33 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
         await context.facts.read('budgets', context.experimentId),
         before,
       );
+      const receipts = (await context.facts.list('calls')).filter(
+        (call) => call.pluginId === agent.id,
+      );
+      assert.equal(receipts.length, 3);
+      for (const receipt of receipts) {
+        assert.equal(receipt.contractId, 'contract.agent');
+        const records = await readAgentRecords(
+          join(
+            context.dataDirectory,
+            'experiments',
+            context.experimentId,
+            'calls',
+            string(receipt.callId),
+          ),
+          0,
+          100,
+          true,
+        );
+        assert.equal(records.terminalStatus, 'completed');
+        assert(
+          records.items.some(
+            (item) =>
+              item.event?.type === 'message.completed' &&
+              item.event.messageId === 'result',
+          ),
+        );
+      }
       assert.equal(executions, 3);
       return {};
     },

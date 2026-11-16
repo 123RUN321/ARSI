@@ -17,10 +17,7 @@ test('Pi stays in process and reports invalid model configuration without launch
     { model: '${RSI_PI_FIXTURE_MISSING_MODEL}' },
     f.context,
   );
-  await assert.rejects(
-    agent.execute(f.request, f.context),
-    /missing environment variable/,
-  );
+  await assert.rejects(f.execute(agent), /missing environment variable/);
 });
 
 test('Pi resolves explicit model environment references and rejects removed unrestricted bash config', async (t) => {

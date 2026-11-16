@@ -331,6 +331,14 @@ try {
 }
 ```
 
+### Agent 执行与观察
+
+Agent 是实现 `agentContract` 的普通 `OperationDefinition`，正常实现 `create`、`execute` 和 `dispose` 即可。显式注册和插件目录加载都经过同一 Registry 路径。Runtime 自动记录任务输入、结构化结果、异常和终态，校验请求的输出 Schema，并管理 `executionTimeoutMs` 和取消，不需要新增 Agent 专用定义钩子或主动调用执行包装器。
+
+Agent 执行期间，`context.directory` 是准备好的项目根目录，`context.signal` 包含任务执行期限。CLI 适配使用 `context.runAgentProcess` 管理进程树；SDK 适配使用同一取消信号，并在模型请求前等待 `context.charge('modelCalls', 1)`。原生 CLI 无法执行已配置的模型调用次数硬限制时，会在启动前拒绝运行。
+
+原生消息、工具和子会话细节可通过 `context.event.emit('rsi/agent-observation', observation)` 发布。这是可选增强：不发布事件的 Agent 也有基础记录，并按契约出现在 Dashboard 中。格式错误的可选细节记为观察缺口；记录存储失败会停止执行。记录器及其关闭生命周期由 Runtime 管理。
+
 ### 调用与资源清理
 
 - 加载 Recipe 时只装配定义；运行时再调用 `create` 创建实例、调用 `execute` 执行业务。Runtime 负责校验输入输出并记录调用。

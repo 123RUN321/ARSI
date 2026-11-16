@@ -4,10 +4,7 @@ import type {
   OperationDefinition,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
-import {
-  agentBackend,
-  nativeCapabilities,
-} from '../shared/agent-backend/runner.js';
+
 import {
   configSchema,
   type AgentCodexConfig,
@@ -25,21 +22,20 @@ export const createAgentCodex: OperationDefinition<
     rawConfig,
     'agent.codex config',
   );
-  return agentBackend({
-    id: 'agent.codex',
-    capabilities: nativeCapabilities(true),
-    timeoutMs: config.timeoutMs,
-    async run(session) {
+  return {
+    async execute(request, context) {
       return runSession({
         executable: config.executable,
-        directory: session.directory,
         model: config.model,
         reasoningEffort: config.thinkingLevel,
-        request: session.request,
-        signal: session.signal,
-        launch: session.launch,
-        record: session.record,
+        directory: context.directory,
+        request,
+        signal: context.signal,
+        launch: (spec, onLine) => context.runAgentProcess(spec, onLine),
+        record: (observation) =>
+          context.event.emit('rsi/agent-observation', observation),
       });
     },
-  });
+    async dispose() {},
+  };
 };

@@ -10,7 +10,6 @@ try {
   await mkdir(project);
   const controller = new AbortController();
   const launch = agentProcessLauncher({
-    directory: join(root, 'call'),
     project,
     signal: controller.signal,
   });

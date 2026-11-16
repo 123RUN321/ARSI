@@ -66,7 +66,7 @@ test('Codex drives app-server, records commentary and tools, and validates the t
     { executable: process.execPath },
     f.context,
   );
-  assert.deepEqual(await agent.execute(f.request, f.context), { answer: 'ok' });
+  assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   assert.equal(sent.length, 3);
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
   assert(
@@ -88,9 +88,16 @@ test('native agents reject an unenforceable modelCalls budget before launch', as
     f.context,
   );
   await assert.rejects(
-    agent.execute(
+    f.execute(
+      agent,
       f.request,
-      f.context.extend({ agentLimits: { modelCalls: 1 } }),
+      f.context.extend({
+        scope: {
+          id: 'test',
+          signal: f.context.signal,
+          limits: { modelCalls: 1 },
+        },
+      }),
     ),
     /cannot enforce/,
   );

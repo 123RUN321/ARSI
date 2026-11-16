@@ -9,7 +9,10 @@ import {
 import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import type { JsonObject, RuntimeContext } from '../../../contracts/index.js';
-import { excludedArtifactEntries } from '../../../runtime/storage/index.js';
+import {
+  createAgentProject,
+  excludedArtifactEntries,
+} from '../../../runtime/storage/index.js';
 import { object } from '../../../shared/json.js';
 import { safePath } from '../file-application/target.js';
 
@@ -135,41 +138,10 @@ export async function prepareAgentProject(
         join(staging, 'candidate'),
       );
     const artifact = await context.artifacts.capture(staging);
-    const workspace = await context.workspaces.create(
-      undefined,
-      base?.parentCandidateRef,
-      {
-        ownerCallId: context.callId,
-        inputRef: artifact,
-      },
-    );
-    try {
-      await rm(workspace.directory, { recursive: true });
-      await context.artifacts.materialize(
-        artifact,
-        dirname(workspace.directory),
-      );
-      await mkdir(workspace.directory, { recursive: true });
-      for (const name of ['roles', 'scratch'])
-        await mkdir(join(dirname(workspace.directory), name), {
-          recursive: true,
-        });
-      return workspace.ref;
-    } catch (error) {
-      await context.workspaces.release(workspace.ref);
-      throw error;
-    }
+    return createAgentProject(context, artifact, base?.parentCandidateRef);
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
 }
 
-/** Unknown executions retain their workspace for explicit reconciliation. */
-export async function releaseSettledProject(
-  context: RuntimeContext,
-  ref: string,
-): Promise<boolean> {
-  if ((await context.workspaces.read(ref)).leaseOwner) return false;
-  await context.workspaces.release(ref);
-  return true;
-}
+export { releaseSettledProject } from '../../../runtime/storage/workspaces.js';

@@ -4,7 +4,7 @@ export type AgentCodexConfig = {
   executable?: string;
   model?: string;
   thinkingLevel?: string;
-  timeoutMs?: number;
+  executionTimeoutMs?: number;
 };
 export type ResolvedAgentCodexConfig = AgentCodexConfig & {
   executable: string;
@@ -17,7 +17,7 @@ export const configSchema: JsonSchema = {
     executable: { type: 'string', minLength: 1, default: 'codex' },
     model: { type: 'string', minLength: 1, pattern: '\\S' },
     thinkingLevel: { type: 'string', minLength: 1, pattern: '\\S' },
-    timeoutMs: {
+    executionTimeoutMs: {
       type: 'integer',
       minimum: 1,
       maximum: 2147483647,

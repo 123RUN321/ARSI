@@ -50,7 +50,6 @@ test(
       process.kill = original;
     });
     const launch = agentProcessLauncher({
-      directory,
       project: directory,
       signal: new AbortController().signal,
     });

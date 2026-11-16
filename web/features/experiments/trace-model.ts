@@ -14,7 +14,6 @@ export interface TraceRow {
   body?: string;
   args?: unknown;
   result?: unknown;
-  truncated: boolean;
   aliases?: string[];
 }
 export function eventObject(value: unknown): Record<string, unknown> {
@@ -40,9 +39,8 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
   const tools = new Map<string, TraceRow>();
   let step = 0;
   for (const record of [...events].sort((a, b) => a.sequence - b.sequence)) {
-    const data = eventObject(JSON.parse(record.content?.text ?? '{}'));
-    const event = eventObject(data.event);
-    const runId = typeof data.runId === 'string' ? data.runId : 'main';
+    const event = eventObject(record.event);
+    const runId = record.runId;
     const row: TraceRow = {
       id: String(record.sequence),
       runId,
@@ -53,7 +51,6 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
       status: 'Recorded',
       at: record.at,
       duration: null,
-      truncated: !!record.content?.truncated,
     };
     if (record.payloadRef && !event.type) {
       row.summary = 'Select to load the complete recorded content';

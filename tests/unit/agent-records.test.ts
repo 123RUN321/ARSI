@@ -8,10 +8,6 @@ import {
   readAgentRecords,
   readAgentPayload,
 } from '../../src/runtime/storage/agent-records.js';
-import {
-  nativeCapabilities,
-  agentBackend,
-} from '../../src/plugins/shared/agent-backend/runner.js';
 import { agentFixture } from '../fixtures/agent-execution.js';
 
 test('record pagination reaches beyond the former 4 MiB prefix without dropping full payloads', async (t) => {
@@ -20,7 +16,6 @@ test('record pagination reaches beyond the former 4 MiB prefix without dropping 
   const writer = new FileAgentRecorder(root, {
     version: 1,
     backend: 'test',
-    capabilities: nativeCapabilities(false),
     input: {},
   });
   for (let index = 0; index < 5000; index++)
@@ -69,7 +64,6 @@ test('an interrupted trailing append exposes only complete records', async (t) =
   const writer = new FileAgentRecorder(root, {
     version: 1,
     backend: 'test',
-    capabilities: nativeCapabilities(false),
     input: {},
   });
   writer.record({
@@ -87,15 +81,16 @@ test('a recording failure cancels execution and cannot publish a successful resu
   const f = await agentFixture();
   t.after(() => f.close());
   let stopped = false;
-  const agent = agentBackend({
-    id: 'test',
-    capabilities: nativeCapabilities(false),
-    async run(session) {
+  const agent = {
+    async execute(
+      _input: import('../../src/contracts/index.js').JsonValue,
+      context: import('../../src/contracts/index.js').RuntimeContext,
+    ) {
       await rm(join(f.context.directory, 'agent', 'payloads'), {
         recursive: true,
       });
       assert.throws(() =>
-        session.record({
+        context.event.emit('rsi/agent-observation', {
           runId: 'main',
           event: {
             type: 'message.completed',
@@ -105,11 +100,12 @@ test('a recording failure cancels execution and cannot publish a successful resu
           },
         }),
       );
-      stopped = session.signal.aborted;
+      stopped = context.signal.aborted;
       return { answer: 'must not be accepted' };
     },
-  });
-  await assert.rejects(agent.execute(f.request, f.context));
+    async dispose() {},
+  };
+  await assert.rejects(f.execute(agent));
   assert(stopped);
 });
 
@@ -120,28 +116,35 @@ test('unconfirmed process cleanup remains unknown when terminal recording and cl
     new Error('Process stop could not be confirmed'),
     { status: 'unknown' },
   );
-  const context = f.context.extend({
-    openAgentRecord() {
-      return {
-        record(observation) {
-          if (observation.event.type === 'run.finished')
-            throw new Error('Disk write failed');
-        },
-        close() {
-          throw new Error('Disk sync failed');
-        },
-      };
+  const originalClose = FileAgentRecorder.prototype.close;
+  const originalRecord = FileAgentRecorder.prototype.record;
+  t.mock.method(
+    FileAgentRecorder.prototype,
+    'record',
+    function (
+      this: FileAgentRecorder,
+      observation: import('../../src/contracts/index.js').AgentObservation,
+    ) {
+      if (observation.event.type === 'run.finished')
+        throw new Error('Disk write failed');
+      originalRecord.call(this, observation);
     },
-  });
-  const agent = agentBackend({
-    id: 'test',
-    capabilities: nativeCapabilities(false),
-    async run() {
-      throw unknown;
+  );
+  t.mock.method(
+    FileAgentRecorder.prototype,
+    'close',
+    function (this: FileAgentRecorder) {
+      originalClose.call(this);
+      throw new Error('Disk sync failed');
     },
-  });
+  );
   await assert.rejects(
-    agent.execute(f.request, context),
+    f.execute({
+      async execute() {
+        throw unknown;
+      },
+      async dispose() {},
+    }),
     (error) => error === unknown,
   );
 });

@@ -1,7 +1,7 @@
 import { ViewBoundary } from '../../components/view-boundary';
 import { TraceInspector } from './trace-inspector';
 import { PluginCallSummary } from './plugin-call-summary';
-import { callLabels, ownerCallId } from './call-labels';
+import { callLabels, ownerCallId, isAgentCall } from './call-labels';
 import { useCallRecords, useRoundLabels } from './round-labels';
 import { type HarnessStage } from './round-label-model';
 import React from 'react';
@@ -107,11 +107,10 @@ function CallPayload({
   const summary = calls.find((item) => item.callId === callId);
   const finished = !!summary?.finishedAt;
   const children = calls.filter(
-    (item) =>
-      item.pluginId.startsWith('agent.') && ownerCallId(item, calls) === callId,
+    (item) => isAgentCall(item) && ownerCallId(item, calls) === callId,
   );
   const [agentId, setAgentId] = React.useState(children[0]?.callId ?? '');
-  const agent = summary?.pluginId.startsWith('agent.')
+  const agent = isAgentCall(summary)
     ? summary
     : (children.find((item) => item.callId === agentId) ?? children[0]);
   const summaryPayload =
@@ -194,15 +193,14 @@ function CallPayload({
               {children.map((item) => {
                 const isSubagent = calls.some(
                   (parent) =>
-                    parent.callId === item.parentCallId &&
-                    parent.pluginId.startsWith('agent.'),
+                    parent.callId === item.parentCallId && isAgentCall(parent),
                 );
                 const siblings = children.filter(
                   (child) =>
                     calls.some(
                       (parent) =>
                         parent.callId === child.parentCallId &&
-                        parent.pluginId.startsWith('agent.'),
+                        isAgentCall(parent),
                     ) === isSubagent,
                 );
                 const label = isSubagent ? 'Sub-agent' : 'Main agent';

@@ -2,14 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type {
   AgentInput,
   AgentOutput,
-  AgentRecorder,
   OperationDefinition,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
-import {
-  agentBackend,
-  nativeCapabilities,
-} from '../shared/agent-backend/runner.js';
+
 import {
   configSchema,
   type AgentPiConfig,
@@ -31,21 +27,11 @@ export const createAgentPi: OperationDefinition<
   );
   if (config.maxTokens !== undefined && config.maxTokens > config.contextWindow)
     throw new Error('agent.pi maxTokens must not exceed contextWindow');
-  const capabilities = nativeCapabilities(true);
-  capabilities.hardModelCallLimit = true;
-  return agentBackend({
-    id: 'agent.pi',
-    capabilities,
-    timeoutMs: config.executionTimeoutMs,
-    async run(execution, context) {
-      const recorder: AgentRecorder = { record: execution.record, close() {} };
-      const scope = context.extend({
-        signal: execution.signal,
-        agentRecorder: recorder,
-      });
+  return {
+    async execute(request, context) {
       async function runTask(task: PiTask): Promise<AgentOutput> {
         if (task.parentRunId !== null)
-          execution.record({
+          context.event.emit('rsi/agent-observation', {
             runId: task.runId,
             event: {
               type: 'message.completed',
@@ -70,14 +56,15 @@ export const createAgentPi: OperationDefinition<
             },
           }),
         );
-        return session.execute(task, scope);
+        return session.execute(task, context);
       }
       return runTask({
-        ...execution.request,
-        cwd: execution.directory,
+        ...request,
+        cwd: context.directory,
         runId: 'main',
         parentRunId: null,
       });
     },
-  });
+    async dispose() {},
+  };
 };

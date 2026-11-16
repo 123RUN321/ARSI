@@ -1,11 +1,10 @@
-import { AgentOutputError } from '../agent-backend/output.js';
+import { AgentOutputError } from '../../../contracts/runtime/errors.js';
 import { fileURLToPath } from 'node:url';
 import {
   type JsonObject,
   type RuntimeContext,
 } from '../../../contracts/index.js';
 import { digest, object } from '../../../shared/json.js';
-import { validate } from '../../../shared/schema.js';
 import {
   prepareAgentProject,
   releaseSettledProject,
@@ -110,14 +109,6 @@ export async function requestOperatorAgent(
       outputSchema: request.outputSchema,
     });
     context.signal.throwIfAborted();
-    try {
-      validate(request.outputSchema, result, `Operator ${stage} response`);
-    } catch (error) {
-      throw new OperatorModelOutputError(
-        error instanceof Error ? error.message : String(error),
-        { cause: error },
-      );
-    }
     if (stage === 'generate' || stage === 'repair') {
       handedOff = true;
       return { ...result, editRef: projectRef };

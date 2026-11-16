@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readAgentTrace } from '../storage/agent-records.js';
 import { join } from 'node:path';
 import type {
   RuntimeContext,
@@ -312,16 +312,14 @@ export async function collectReflectionEvidence(
       const childPath = `context/reflection/calls/${id}-descendant-${safeId(childId)}.json`;
       store(childPath, safeText(child.record));
       try {
-        const diagnostic = await readFile(
+        const diagnostic = await readAgentTrace(
           join(
             options.directory,
             'experiments',
             safeId(context.experimentId),
             'calls',
             safeId(childId),
-            'diagnostics.jsonl',
           ),
-          'utf8',
         );
         store(
           `context/reflection/calls/${id}-trace-${childId}.jsonl`,

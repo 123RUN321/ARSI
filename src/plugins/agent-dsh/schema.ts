@@ -2,7 +2,7 @@ import type { JsonSchema } from '../../contracts/index.js';
 
 export type AgentDshConfig = {
   executable?: string;
-  timeoutMs?: number;
+  executionTimeoutMs?: number;
 };
 
 export const configSchema: JsonSchema = {
@@ -10,6 +10,6 @@ export const configSchema: JsonSchema = {
   additionalProperties: false,
   properties: {
     executable: { type: 'string', minLength: 1, default: 'dsh' },
-    timeoutMs: { type: 'integer', minimum: 1, maximum: 2147483647 },
+    executionTimeoutMs: { type: 'integer', minimum: 1, maximum: 2147483647 },
   },
 };
