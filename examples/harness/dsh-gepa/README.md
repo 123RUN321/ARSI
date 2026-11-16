@@ -58,7 +58,7 @@ uses its existing GEPA sampling, comparison and crossover rules; the shared
 The Policy invokes `evaluator` and `proposer` explicitly. The search plugin owns
 GEPA's selection, comparison, and population bookkeeping; it does not route
 calls to those plugins. Mutation uses `proposer.agent`, which invokes `agent`,
-validates edits, and commits through the Application. The Recipe configures the
+validates the final rationale, and commits the actual workspace through the Application. The Recipe configures the
 Evaluator and Agent and keeps algorithm parameters in `bindings.evolutionProposer.config`.
 The task split and its Schema belong to the Policy, with the task IDs configured
 in `policy.config.dataset`. The search plugin owns its algorithm configuration
@@ -176,8 +176,7 @@ the sampled tasks. This bounded projection may omit or truncate content and
 does not expose the complete archived trajectories in the Agent project. The
 Proposer prepares a managed workspace with candidate files under `candidate/`,
 the training summary in `context/measurements.json`, and edit constraints and
-target metadata in `context/input.json`. The Agent receives `cwd`, `goal`, and
-`outputSchema`; final edit paths are relative to `candidate/` without that prefix.
+target metadata in `context/input.json`. The Agent receives `projectRef`, `mode`, `goal`, and `outputSchema`. It edits candidate/ directly and returns only reason.
 Full execution artifacts remain in Runtime storage for separate inspection. Private
 verifier files and hidden grading answers are excluded from the execution
 projection. The selected module is enforced by existing Proposer edit

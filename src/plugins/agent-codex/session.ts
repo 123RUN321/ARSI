@@ -1,4 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { parseAgentResult } from '../shared/agent-backend/output.js';
+import { codexObservations } from './observations.js';
+import type {
+  AgentObservation,
+  AgentProcessLauncher,
+} from '../../contracts/index.js';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -7,7 +12,6 @@ import {
 } from '../shared/agent-editing/project.js';
 import type { AgentInput, JsonObject } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
 import { runCodexProcess } from './process.js';
 
 function nativeError(value: unknown): string {
@@ -29,13 +33,14 @@ export async function runSession(options: {
   reasoningEffort?: string;
   request: AgentInput;
   signal: AbortSignal;
-  record: (type: string, data: unknown) => void;
+  record: (event: AgentObservation) => void;
+  launch: AgentProcessLauncher;
 }): Promise<JsonObject> {
-  const { request, signal, record } = options;
+  const { request, record } = options;
+  const observe = codexObservations(record);
   let threadId = '';
   let response = '';
   let result: JsonObject | undefined;
-  const permissions = `rsi-agent-${randomUUID()}`;
   const prompt = JSON.stringify({
     goal: request.goal,
     instruction:
@@ -43,8 +48,6 @@ export async function runSession(options: {
   });
   const launchConfig = [
     `project_root_markers=[${JSON.stringify(projectMarker)}]`,
-    `default_permissions=${JSON.stringify(permissions)}`,
-    `permissions.${permissions}.filesystem={":root"="deny",":minimal"="read",":workspace_roots"="read"${process.platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : ''}}`,
   ];
   const agentsDir = join(options.directory, '.codex', 'agents');
   const roles = await readdir(agentsDir, { withFileTypes: true }).catch(
@@ -76,7 +79,6 @@ export async function runSession(options: {
     launchConfig.push('agents.max_depth=1', 'features.multi_agent=true');
   await runCodexProcess(
     options.executable,
-    options.directory,
     JSON.stringify({
       id: 1,
       method: 'initialize',
@@ -85,9 +87,9 @@ export async function runSession(options: {
         capabilities: { experimentalApi: true },
       },
     }) + '\n',
-    signal,
     (line, send) => {
       const message = object(JSON.parse(line));
+      observe(message, threadId);
       if (message.error)
         throw new Error(
           `Codex app-server request failed${nativeError(message.error)}`,
@@ -106,16 +108,21 @@ export async function runSession(options: {
               : {
                   config: { model_reasoning_effort: options.reasoningEffort },
                 }),
-            permissions,
           },
         });
       } else if (message.method === undefined && message.id === 2) {
         const configuration = object(message.result);
         threadId = string(object(configuration.thread).id);
-        record('session_started', {
-          model: configuration.model ?? null,
-          provider: configuration.modelProvider ?? null,
-          reasoningEffort: configuration.reasoningEffort ?? null,
+        record({
+          runId: 'main',
+          native: { sessionId: threadId },
+          event: {
+            type: 'session.started',
+            sessionId: threadId,
+            ...(typeof configuration.model === 'string'
+              ? { model: configuration.model }
+              : {}),
+          },
         });
         send({
           id: 3,
@@ -137,34 +144,6 @@ export async function runSession(options: {
             throw new Error('Invalid Codex agent message');
           response = item.text;
         }
-        if (item.type === 'contextCompaction') record('context_compaction', {});
-      } else if (message.method === 'thread/tokenUsage/updated') {
-        const params = object(message.params);
-        if (typeof params.threadId === 'string' && params.threadId !== threadId)
-          return;
-        const usage = object(params.tokenUsage);
-        const counts = (value: unknown): JsonObject => {
-          const raw = object(value);
-          return Object.fromEntries(
-            [
-              'inputTokens',
-              'cachedInputTokens',
-              'outputTokens',
-              'reasoningOutputTokens',
-              'totalTokens',
-            ]
-              .filter((key) => typeof raw[key] === 'number')
-              .map((key) => [key, raw[key]!]),
-          );
-        };
-        record('token_usage', {
-          total: counts(usage.total),
-          last: counts(usage.last),
-          modelContextWindow:
-            typeof usage.modelContextWindow === 'number'
-              ? usage.modelContextWindow
-              : null,
-        });
       } else if (message.method === 'turn/completed') {
         const params = object(message.params);
         if (typeof params.threadId === 'string' && params.threadId !== threadId)
@@ -174,12 +153,7 @@ export async function runSession(options: {
           throw new Error(
             `Codex turn ${string(turn.status)}${nativeError(turn.error)}`,
           );
-        const trimmed = response.trim();
-        const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(trimmed);
-        const output: unknown = JSON.parse(fenced?.[1] ?? trimmed);
-        validate(request.outputSchema, output, 'agent output');
-        result = object(output);
-        record('validation_succeeded', {});
+        result = parseAgentResult(response);
         return true;
       } else if (message.method && message.id !== undefined) {
         throw new Error(
@@ -187,6 +161,7 @@ export async function runSession(options: {
         );
       }
     },
+    options.launch,
     launchConfig,
   );
   if (!result) throw new Error('Codex returned no validated output');

@@ -10,7 +10,7 @@ Return the parent unchanged only when no material source change remains to merge
 
 Compare observable source executions and deliverables against the task requirements. Scores, rewards, grading rubrics, reference answers and verifier failure reports are unavailable. Do not infer them from ordering, labels or self-reported success. Explain the behavioral mechanism for retained edits without claiming an external grade or copying task answers into the application.
 
-Submit edits and reason as the final JSON response matching outputSchema. Base every patch on the parent snapshot. Apply the no-change conditions above when returning an empty edits array.
+Edit candidate/ directly and submit only reason as the final JSON response matching outputSchema. Base every patch on the parent snapshot. Apply the no-change conditions above when leaving candidate/ unchanged.
 
 This verifier-blind RSI adaptation follows the composition choices of [Harness² appendix H](https://arxiv.org/html/2610.14224v1); the paper does not expose scores to the Composer.
 

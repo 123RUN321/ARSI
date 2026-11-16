@@ -3,8 +3,6 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  realpath,
-  rename,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -35,6 +33,7 @@ export async function prepareAgentProject(
   files: JsonObject,
   skills: readonly string[],
   roles: readonly AgentRole[],
+  base?: { artifactRef: string; parentCandidateRef?: string },
 ): Promise<string> {
   await mkdir(context.directory, { recursive: true });
   const staging = await mkdtemp(join(context.directory, 'agent-input-'));
@@ -82,6 +81,8 @@ export async function prepareAgentProject(
           join(staging, native, 'skills', name),
         );
     }
+    await mkdir(join(staging, 'roles'), { recursive: true });
+    await mkdir(join(staging, 'scratch'), { recursive: true });
     const roleNames = new Set<string>();
     for (const role of roles) {
       if (!validName.test(role.name) || roleNames.has(role.name))
@@ -95,7 +96,7 @@ export async function prepareAgentProject(
       await write(`roles/${role.name}.md`, body);
       await write(
         `.claude/agents/${role.name}.md`,
-        `---\n${stringify({ name: role.name, description: role.description, tools: ['Read', 'Glob', 'Grep', 'Skill'] })}---\n${body}\n`,
+        `---\n${stringify({ name: role.name, description: role.description })}---\n${body}\n`,
       );
       await write(
         `.codex/agents/${role.name}.toml`,
@@ -103,7 +104,7 @@ export async function prepareAgentProject(
       );
     }
     const catalog = roles.length
-      ? '\n\n## Delegation\n\nDelegate self-contained tasks with subagent in Pi, spawn_agent in Codex, Agent in Claude Code, or native DSH subagents reading roles/<name>.md. Subagents share this project and return findings. Only the main agent proposes final edits.\n\n' +
+      ? '\n\n## Delegation\n\nDelegate self-contained tasks with subagent in Pi, spawn_agent in Codex, Agent in Claude Code, or native DSH subagents reading roles/<name>.md. Subagents share this project and return findings. The main agent owns the final file changes and result.\n\n' +
         roles
           .map(({ name, description }) => `- ${name}: ${description}`)
           .join('\n')
@@ -128,67 +129,47 @@ export async function prepareAgentProject(
         throw new Error(`Expected text for project file ${path}`);
       await write(path, content);
     }
+    if (base)
+      await context.artifacts.materialize(
+        base.artifactRef,
+        join(staging, 'candidate'),
+      );
     const artifact = await context.artifacts.capture(staging);
-    const hash = artifact.slice('artifact:'.length);
-    const project = join(context.directory, 'agent-projects', hash, 'project');
-    let parent = context.directory;
-    for (const segment of ['agent-projects', hash]) {
-      parent = join(parent, segment);
-      try {
-        await mkdir(parent);
-      } catch (error) {
-        if (
-          !(error instanceof Error) ||
-          !('code' in error) ||
-          error.code !== 'EEXIST'
-        )
-          throw error;
-      }
-      if (!(await lstat(parent)).isDirectory())
-        throw new Error('Agent project parent must be a regular directory');
-    }
-    const owner = await realpath(context.directory);
-    if (
-      (await realpath(dirname(project))) !== join(owner, 'agent-projects', hash)
-    )
-      throw new Error('Agent project parent is outside its owning call');
-    const published = async (): Promise<boolean> => {
-      let existing;
-      try {
-        existing = await lstat(project);
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          'code' in error &&
-          error.code === 'ENOENT'
-        )
-          return false;
-        throw error;
-      }
-      if (!existing.isDirectory())
-        throw new Error('Agent project must be a regular directory');
-      const marker = await lstat(join(project, projectMarker));
-      if (!marker.isFile() || marker.size !== 0)
-        throw new Error('Agent project marker must be a regular empty file');
-      return true;
-    };
-    if (await published()) return project;
-    // Keep the input snapshot immutable and use a stable, separate path for execution.
+    const workspace = await context.workspaces.create(
+      undefined,
+      base?.parentCandidateRef,
+      {
+        ownerCallId: context.callId,
+        inputRef: artifact,
+      },
+    );
     try {
-      await rename(staging, project);
+      await rm(workspace.directory, { recursive: true });
+      await context.artifacts.materialize(
+        artifact,
+        dirname(workspace.directory),
+      );
+      await mkdir(workspace.directory, { recursive: true });
+      for (const name of ['roles', 'scratch'])
+        await mkdir(join(dirname(workspace.directory), name), {
+          recursive: true,
+        });
+      return workspace.ref;
     } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !('code' in error) ||
-        !['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(String(error.code))
-      )
-        throw error;
-      // Windows reports a concurrent directory publication as EPERM. Only a
-      // verified, already-published project fulfills this call; other errors stay errors.
-      if (!(await published())) throw error;
+      await context.workspaces.release(workspace.ref);
+      throw error;
     }
-    return project;
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
+}
+
+/** Unknown executions retain their workspace for explicit reconciliation. */
+export async function releaseSettledProject(
+  context: RuntimeContext,
+  ref: string,
+): Promise<boolean> {
+  if ((await context.workspaces.read(ref)).leaseOwner) return false;
+  await context.workspaces.release(ref);
+  return true;
 }

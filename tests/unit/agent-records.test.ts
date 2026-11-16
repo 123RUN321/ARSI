@@ -1,0 +1,147 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { appendFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  FileAgentRecorder,
+  readAgentRecords,
+  readAgentPayload,
+} from '../../src/runtime/storage/agent-records.js';
+import {
+  nativeCapabilities,
+  agentBackend,
+} from '../../src/plugins/shared/agent-backend/runner.js';
+import { agentFixture } from '../fixtures/agent-execution.js';
+
+test('record pagination reaches beyond the former 4 MiB prefix without dropping full payloads', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'rsi-agent-records-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const writer = new FileAgentRecorder(root, {
+    version: 1,
+    backend: 'test',
+    capabilities: nativeCapabilities(false),
+    input: {},
+  });
+  for (let index = 0; index < 5000; index++)
+    writer.record({
+      runId: 'main',
+      event: {
+        type: 'message.completed',
+        messageId: String(index),
+        role: 'assistant',
+        text: 'x'.repeat(1000),
+      },
+    });
+  const text = '完整内容'.repeat(20000);
+  writer.record({
+    runId: 'main',
+    event: {
+      type: 'message.completed',
+      messageId: 'large',
+      role: 'assistant',
+      text,
+    },
+  });
+  writer.record({
+    runId: 'main',
+    event: { type: 'run.finished', status: 'completed' },
+  });
+  writer.close();
+  const page = await readAgentRecords(root, 4999, 100, true);
+  assert.equal(page.total, 5002);
+  assert.equal(page.items[0]?.sequence, 5000);
+  const large = page.items[1]!;
+  assert.equal(large.event, null);
+  assert(large.payload);
+  assert.equal(
+    JSON.parse((await readAgentPayload(root, large.payload.ref)).toString())
+      .text,
+    text,
+  );
+  assert.equal(page.recording, 'closed');
+  await assert.rejects(readAgentPayload(root, '../manifest.json'), /Invalid/);
+});
+
+test('an interrupted trailing append exposes only complete records', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'rsi-agent-interrupted-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const writer = new FileAgentRecorder(root, {
+    version: 1,
+    backend: 'test',
+    capabilities: nativeCapabilities(false),
+    input: {},
+  });
+  writer.record({
+    runId: 'main',
+    event: { type: 'run.started', backend: 'test', parentRunId: null },
+  });
+  writer.close();
+  await appendFile(join(root, 'agent', 'events.jsonl'), '{"sequence":2');
+  const page = await readAgentRecords(root, 0, 100, true);
+  assert.equal(page.items.length, 1);
+  assert.equal(page.recording, 'interrupted');
+});
+
+test('a recording failure cancels execution and cannot publish a successful result', async (t) => {
+  const f = await agentFixture();
+  t.after(() => f.close());
+  let stopped = false;
+  const agent = agentBackend({
+    id: 'test',
+    capabilities: nativeCapabilities(false),
+    async run(session) {
+      await rm(join(f.context.directory, 'agent', 'payloads'), {
+        recursive: true,
+      });
+      assert.throws(() =>
+        session.record({
+          runId: 'main',
+          event: {
+            type: 'message.completed',
+            messageId: 'large',
+            role: 'assistant',
+            text: 'x'.repeat(10000),
+          },
+        }),
+      );
+      stopped = session.signal.aborted;
+      return { answer: 'must not be accepted' };
+    },
+  });
+  await assert.rejects(agent.execute(f.request, f.context));
+  assert(stopped);
+});
+
+test('unconfirmed process cleanup remains unknown when terminal recording and close also fail', async (t) => {
+  const f = await agentFixture();
+  t.after(() => f.close());
+  const unknown = Object.assign(
+    new Error('Process stop could not be confirmed'),
+    { status: 'unknown' },
+  );
+  const context = f.context.extend({
+    openAgentRecord() {
+      return {
+        record(observation) {
+          if (observation.event.type === 'run.finished')
+            throw new Error('Disk write failed');
+        },
+        close() {
+          throw new Error('Disk sync failed');
+        },
+      };
+    },
+  });
+  const agent = agentBackend({
+    id: 'test',
+    capabilities: nativeCapabilities(false),
+    async run() {
+      throw unknown;
+    },
+  });
+  await assert.rejects(
+    agent.execute(f.request, context),
+    (error) => error === unknown,
+  );
+});

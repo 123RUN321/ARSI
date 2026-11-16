@@ -21,9 +21,15 @@ export interface Workspace {
   ref: string;
   directory: string;
   parentCandidateRef: string | null;
+  project?: { ownerCallId: string; inputRef: string };
+  leaseOwner?: string;
 }
 export interface WorkspaceService {
-  create(artifactRef?: string, parentCandidateRef?: string): Promise<Workspace>;
+  create(
+    artifactRef?: string,
+    parentCandidateRef?: string,
+    project?: { ownerCallId: string; inputRef: string },
+  ): Promise<Workspace>;
   read(ref: string): Promise<Workspace>;
   release(ref: string): Promise<void>;
 }
@@ -35,6 +41,17 @@ declare module './context.js' {
     dataDirectory: string;
     /** The workspace authorized for a running Agent and its delegates. */
     agentProject?: string;
+    agentRecorder?: import('../models/agent-record.js').AgentRecorder;
+    agentLimits?: Readonly<Record<string, number>>;
+    runAgentProcess(
+      this: RuntimeContext,
+      spec: import('./agent-execution.js').AgentProcessSpec,
+      onLine: import('./agent-execution.js').AgentLineHandler,
+    ): Promise<void>;
+    openAgentRecord(
+      this: RuntimeContext,
+      manifest: import('../models/agent-record.js').AgentManifest,
+    ): import('../models/agent-record.js').AgentRecorder;
     artifacts: ArtifactStore;
     facts: FactStore;
     workspaces: WorkspaceService;

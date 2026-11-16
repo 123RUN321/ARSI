@@ -1,8 +1,9 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import ExcelJS from 'exceljs';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import {
@@ -507,16 +508,20 @@ test('Reflection supplies preview files in its workspace and rejects evidence ed
   let reads = 0;
   const context = new RuntimeContext().extend({
     experimentId: 'preview',
+    callId: 'reflection',
     directory,
     artifacts,
     facts,
     workspaces,
     signal: new AbortController().signal,
     async invokeAgent(
+      this: import('../../src/contracts/index.js').RuntimeContext,
       _binding: string,
       request: JsonObject,
     ): Promise<JsonObject> {
-      const cwd = string(request.cwd);
+      const cwd = dirname(
+        (await context.workspaces.read(string(request.projectRef))).directory,
+      );
       const index = JSON.parse(
         await readFile(join(cwd, 'context/reflection/index.json'), 'utf8'),
       );
@@ -528,12 +533,12 @@ test('Reflection supplies preview files in its workspace and rejects evidence ed
       }
       assert.match(content, /source value/);
       reads++;
-      return {
+      return await directAgentResult(this, request, {
         edits: editEvidence
           ? [{ path: string(preview.path), content: 'not allowed' }]
           : [],
         reason: 'Inspected the preview',
-      };
+      });
     },
   });
   const operation = await createReflectionAgent(
@@ -549,7 +554,10 @@ test('Reflection supplies preview files in its workspace and rejects evidence ed
   };
   assert.equal((await operation.execute(input, context)).status, 'no-change');
   editEvidence = true;
-  await assert.rejects(operation.execute(input, context), /read.only/);
+  await assert.rejects(
+    operation.execute(input, context),
+    /protected path|does not authorize/,
+  );
   assert.equal(reads, 2);
   editEvidence = false;
   previewBudget = 128;

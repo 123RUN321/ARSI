@@ -10,21 +10,21 @@
 
 根据插件要完成的工作选择契约。契约规定调用的输入和输出，插件负责具体实现及其配置。已有契约符合需求时，直接复用对应的契约对象和类型：
 
-| 契约与字段定义                                                                           | 用途                                         | 导入的契约对象             |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------- |
-| [contract.application](../../../src/contracts/plugin-types/application.ts)               | 管理优化目标、提交候选、获取和释放运行实例。 | `applicationContract`      |
-| [contract.agent](../../../src/contracts/plugin-types/agent.ts)                           | 执行模型请求与工具调用。                     | `agentContract`            |
-| [contract.proposer](../../../src/contracts/plugin-types/proposer.ts)                     | 根据目标和证据生成候选。                     | `proposerContract`         |
-| [contract.proposer-operator](../../../src/contracts/plugin-types/proposer-operator.ts)   | 生成并修复算子候选。                         | `operatorProposerContract` |
-| [contract.agentbench](../../../src/contracts/plugin-types/agentbench.ts)                 | 按任务列表评测候选。                         | `agentbenchContract`       |
-| [contract.inferencebench](../../../src/contracts/plugin-types/inferencebench.ts)         | 评测推理应用候选。                           | `inferencebenchContract`   |
-| [contract.operatorbench](../../../src/contracts/plugin-types/operatorbench.ts)           | 检查算子正确性、测量性能或收集性能分析数据。 | `operatorbenchContract`    |
-| [contract.selector-metrics](../../../src/contracts/plugin-types/selector-metrics.ts)     | 比较测量指标并选择候选。                     | `metricSelectorContract`   |
-| [contract.selector-artifacts](../../../src/contracts/plugin-types/selector-artifacts.ts) | 按给定标准比较候选内容并选择候选。           | `artifactSelectorContract` |
-| [contract.memory](../../../src/contracts/plugin-types/memory.ts)                         | 将证据和观察整理成可复用的经验。             | `memoryContract`           |
-| [contract.reflection](../../../src/contracts/plugin-types/reflection.ts)                 | 根据执行证据提出插件修订。                   | `reflectionContract`       |
-| [contract.proposer-grid](../../../src/contracts/plugin-types/proposer-grid.ts)           | 按网格搜索顺序生成参数候选。                 | `gridProposerContract`     |
-| [contract.proposer-iterative](../../../src/contracts/plugin-types/proposer-iterative.ts)                         | 管理有状态搜索、请求工作并接收反馈。         | `iterativeProposerContract`           |
+| 契约与字段定义                                                                           | 用途                                         | 导入的契约对象              |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------- |
+| [contract.application](../../../src/contracts/plugin-types/application.ts)               | 管理优化目标、提交候选、获取和释放运行实例。 | `applicationContract`       |
+| [contract.agent](../../../src/contracts/plugin-types/agent.ts)                           | 执行模型请求与工具调用。                     | `agentContract`             |
+| [contract.proposer](../../../src/contracts/plugin-types/proposer.ts)                     | 根据目标和证据生成候选。                     | `proposerContract`          |
+| [contract.proposer-operator](../../../src/contracts/plugin-types/proposer-operator.ts)   | 生成并修复算子候选。                         | `operatorProposerContract`  |
+| [contract.agentbench](../../../src/contracts/plugin-types/agentbench.ts)                 | 按任务列表评测候选。                         | `agentbenchContract`        |
+| [contract.inferencebench](../../../src/contracts/plugin-types/inferencebench.ts)         | 评测推理应用候选。                           | `inferencebenchContract`    |
+| [contract.operatorbench](../../../src/contracts/plugin-types/operatorbench.ts)           | 检查算子正确性、测量性能或收集性能分析数据。 | `operatorbenchContract`     |
+| [contract.selector-metrics](../../../src/contracts/plugin-types/selector-metrics.ts)     | 比较测量指标并选择候选。                     | `metricSelectorContract`    |
+| [contract.selector-artifacts](../../../src/contracts/plugin-types/selector-artifacts.ts) | 按给定标准比较候选内容并选择候选。           | `artifactSelectorContract`  |
+| [contract.memory](../../../src/contracts/plugin-types/memory.ts)                         | 将证据和观察整理成可复用的经验。             | `memoryContract`            |
+| [contract.reflection](../../../src/contracts/plugin-types/reflection.ts)                 | 根据执行证据提出插件修订。                   | `reflectionContract`        |
+| [contract.proposer-grid](../../../src/contracts/plugin-types/proposer-grid.ts)           | 按网格搜索顺序生成参数候选。                 | `gridProposerContract`      |
+| [contract.proposer-iterative](../../../src/contracts/plugin-types/proposer-iterative.ts) | 管理有状态搜索、请求工作并接收反馈。         | `iterativeProposerContract` |
 
 每个普通插件只实现一个公共契约。Application 等契约包含多种动作，由同一个 `execute` 按 `input.action` 区分。
 
@@ -36,15 +36,15 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 
 `OperationDefinition<I, O, C>` 描述插件定义，三个类型参数分别是输入、输出和配置，详见[接口定义](../../../src/contracts/operation.ts)。
 
-| 字段                   | 含义                                           | 填写方式                                                                              |
-| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `id`                   | 插件实现的唯一 ID，供绑定选择。                | 必填，如 `proposer.keep-parent`；不能与已注册的插件或 Policy 重名。                   |
-| `description`          | 说明插件的用途。                               | 可选，填写简短说明。                                                                  |
-| `contract`             | 声明插件遵循的公共契约。                       | 必填，填写导入的契约对象，如 `proposerContract`。                                     |
-| `configSchema`         | 校验该实现的配置。                             | 必填，填写 JSON Schema；没有配置时也声明对象 Schema。                                 |
-| `create`               | 根据配置创建插件实例。                         | 必填，填写异步函数 `create(config, context)`，返回含 `execute` 和 `dispose` 的对象。  |
-| `doctor`               | 在实验前诊断该组件的运行前提。                 | 可选的 `OperationDoctor<C>` 函数，接收 `DoctorContext<C>` 并返回 `DoctorResult`。 |
-| `implementationDigest` | 标识实现版本，恢复实验时用于检查实现是否变化。 | 可选，填写覆盖实际实现代码的摘要；代码变化时更新。                                    |
+| 字段                   | 含义                                           | 填写方式                                                                             |
+| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `id`                   | 插件实现的唯一 ID，供绑定选择。                | 必填，如 `proposer.keep-parent`；不能与已注册的插件或 Policy 重名。                  |
+| `description`          | 说明插件的用途。                               | 可选，填写简短说明。                                                                 |
+| `contract`             | 声明插件遵循的公共契约。                       | 必填，填写导入的契约对象，如 `proposerContract`。                                    |
+| `configSchema`         | 校验该实现的配置。                             | 必填，填写 JSON Schema；没有配置时也声明对象 Schema。                                |
+| `create`               | 根据配置创建插件实例。                         | 必填，填写异步函数 `create(config, context)`，返回含 `execute` 和 `dispose` 的对象。 |
+| `doctor`               | 在实验前诊断该组件的运行前提。                 | 可选的 `OperationDoctor<C>` 函数，接收 `DoctorContext<C>` 并返回 `DoctorResult`。    |
+| `implementationDigest` | 标识实现版本，恢复实验时用于检查实现是否变化。 | 可选，填写覆盖实际实现代码的摘要；代码变化时更新。                                   |
 
 - 省略 `implementationDigest` 时，Registry 根据 `create` 函数文本、契约和配置 Schema 生成摘要。
 
@@ -306,23 +306,29 @@ Runtime 将 `context` 传给 `create` 和每次 `execute`。插件通过它读�
 | 记录用量           | `charge(metric, amount)`                                 | 记录用量并检查预算，调用时必须 `await`。                                 |
 | 订阅事件           | `event`                                                  | 监听运行事件，结束时取消订阅；见 [Runtime 事件](runtime-events_zh.md)。  |
 
-在 `execute` 中，使用 `ember-rsi` 导出的 `prepareAgentProject` 创建受 Runtime 管理的工作目录。第二个参数传指令，第三个参数传授权的文本文件，最后两个参数分别传 Skill 目录和角色定义。每次独立调用都应准备工作目录。同一次插件执行内，如果多个 Agent 调用需要隔离本地修改，需提供不同的项目内容。
+在 `execute` 中，使用 `ember-rsi` 导出的 `prepareAgentProject` 创建受 Runtime 管理的工作目录。第二个参数传指令，第三个参数传授权的文本文件，最后两个参数分别传 Skill 目录和角色定义。每次独立调用都应准备工作目录。每次准备都会返回不同的 projectRef，只能由创建它的调用发起 Agent 执行。使用后释放已结束的项目；进程结果未知时保留租约以便核对。mode 表示任务意图，不构成安全边界。
 
 ```ts
-import { prepareAgentProject } from 'ember-rsi';
+import { prepareAgentProject, releaseSettledProject } from 'ember-rsi';
 
-const cwd = await prepareAgentProject(
+const projectRef = await prepareAgentProject(
   context,
   'Read context/input.json and return your findings.',
   { 'context/input.json': JSON.stringify({ target: 'example' }) },
   [],
   [],
 );
-const result = await context.invokeAgent('agent', {
-  cwd,
-  goal: 'Inspect the target',
-  outputSchema: { type: 'object' },
-});
+let result;
+try {
+  result = await context.invokeAgent('agent', {
+    projectRef,
+    mode: 'analyze',
+    goal: 'Inspect the target',
+    outputSchema: { type: 'object' },
+  });
+} finally {
+  await releaseSettledProject(context, projectRef);
+}
 ```
 
 ### 调用与资源清理

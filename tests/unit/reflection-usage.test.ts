@@ -1,3 +1,4 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -8,7 +9,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   agentContract,
@@ -104,11 +105,23 @@ test('Reflection without a local budget exceeds 50 calls and a subsequent Propos
             assert.equal(context.scope?.limits.elapsedWallMs, undefined);
             assert.ok(
               (
-                await readFile(join(string(request.cwd), 'AGENTS.md'), 'utf8')
+                await readFile(
+                  join(
+                    dirname(
+                      (
+                        await context.workspaces.read(
+                          string(request.projectRef),
+                        )
+                      ).directory,
+                    ),
+                    'AGENTS.md',
+                  ),
+                  'utf8',
+                )
               ).trim(),
             );
             for (let i = 0; i < 51; i++) await context.charge('modelCalls', 1);
-            return {
+            return await directAgentResult(context, raw, {
               edits: [
                 {
                   path: 'bindings/proposer/resources/guidance/rules.md',
@@ -116,12 +129,24 @@ test('Reflection without a local budget exceeds 50 calls and a subsequent Propos
                 },
               ],
               reason: 'Deterministic guidance update',
-            };
+            });
           }
           prompts.push(
-            await readFile(join(string(request.cwd), 'AGENTS.md'), 'utf8'),
+            await readFile(
+              join(
+                dirname(
+                  (await context.workspaces.read(string(request.projectRef)))
+                    .directory,
+                ),
+                'AGENTS.md',
+              ),
+              'utf8',
+            ),
           );
-          return { edits: [], reason: 'Keep the candidate' };
+          return await directAgentResult(context, raw, {
+            edits: [],
+            reason: 'Keep the candidate',
+          });
         },
         async dispose() {},
       };
@@ -285,19 +310,45 @@ test('real Proposer calls without Measurements expose linked versions, actual Ag
   });
   let proposals = 0,
     reflections = 0;
-  const reflectionProjects: string[] = [];
+  const reflectionProjects: { body: string; hasPatch: boolean }[] = [];
   registry.registerOperation({
     id: 'comparison.agent',
     contract: agentContract,
     configSchema: { type: 'object' },
     create: async () => ({
-      execute: async (raw, context) => {
+      execute: async function (
+        this: import('../../src/contracts/index.js').RuntimeContext,
+        raw,
+        context,
+      ) {
         const request = object(raw);
         await context.charge('modelCalls', 1);
         if (request.goal === 'Inspect proposer changes') {
           reflections++;
-          reflectionProjects.push(string(request.cwd));
-          return {
+          const project = dirname(
+            (await context.workspaces.read(string(request.projectRef)))
+              .directory,
+          );
+          const entries = await readdir(project, {
+            recursive: true,
+            withFileTypes: true,
+          });
+          const files = entries.filter(
+            (entry) => entry.isFile() && entry.parentPath !== project,
+          );
+          reflectionProjects.push({
+            body: (
+              await Promise.all(
+                files.map((file) =>
+                  readFile(join(file.parentPath, file.name), 'utf8'),
+                ),
+              )
+            ).join('\n'),
+            hasPatch: files.some((file) =>
+              file.name.endsWith('-difference.patch'),
+            ),
+          });
+          return await directAgentResult(context, raw, {
             edits:
               reflections === 1
                 ? [
@@ -308,12 +359,21 @@ test('real Proposer calls without Measurements expose linked versions, actual Ag
                   ]
                 : [],
             reason: 'Controlled resource comparison',
-          };
+          });
         }
         proposals++;
         if (proposals === 2)
           assert.match(
-            await readFile(join(string(request.cwd), 'AGENTS.md'), 'utf8'),
+            await readFile(
+              join(
+                dirname(
+                  (await context.workspaces.read(string(request.projectRef)))
+                    .directory,
+                ),
+                'AGENTS.md',
+              ),
+              'utf8',
+            ),
             /Inspect source asset before editing/,
           );
         await writeFile(
@@ -322,13 +382,20 @@ test('real Proposer calls without Measurements expose linked versions, actual Ag
             event: 'read_file',
             path: 'asset.md',
             result: await readFile(
-              join(string(request.cwd), 'candidate', 'asset.md'),
+              join(
+                dirname(
+                  (await context.workspaces.read(string(request.projectRef)))
+                    .directory,
+                ),
+                'candidate',
+                'asset.md',
+              ),
               'utf8',
             ),
             observation: 'actual captured source read',
           }) + '\n',
         );
-        return {
+        return await directAgentResult(context, raw, {
           edits: [
             {
               op: 'replace',
@@ -337,7 +404,7 @@ test('real Proposer calls without Measurements expose linked versions, actual Ag
             },
           ],
           reason: `proposed revision ${proposals}`,
-        };
+        });
       },
       dispose: async () => {},
     }),
@@ -413,22 +480,13 @@ test('real Proposer calls without Measurements expose linked versions, actual Ag
   assert.equal(object(object(result.output).reflection).status, 'no-change');
   assert.equal(reflections, 2);
   assert.deepEqual(await manager.facts.list('measurements'), []);
-  const cwd = reflectionProjects[1]!;
-  const entries = await readdir(cwd, { recursive: true, withFileTypes: true });
-  const files = entries.filter(
-    (entry) => entry.isFile() && entry.parentPath !== cwd,
-  );
-  const body = (
-    await Promise.all(
-      files.map((file) => readFile(join(file.parentPath, file.name), 'utf8')),
-    )
-  ).join('\n');
+  const { body, hasPatch } = reflectionProjects[1]!;
   assert.match(body, /actual candidate patch: candidate revision 2/);
   assert.match(body, /actual captured source read/);
   assert.match(body, /Use the current evidence to propose a concrete edit/);
   assert.match(body, /retrospective-comparison/);
   assert.match(body, /Inspect source asset before editing/);
-  assert.ok(files.some((file) => file.name.endsWith('-difference.patch')));
+  assert.ok(hasPatch);
   const calls = (await manager.facts.list('calls')).filter(
     (record) => record.bindingId === 'proposer',
   );

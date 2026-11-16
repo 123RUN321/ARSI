@@ -1,6 +1,9 @@
+import {
+  readAgentRecords,
+  streamAgentPayload,
+  readAgentManifest,
+} from '../storage/agent-records.js';
 import { createHash } from 'node:crypto';
-import { open } from 'node:fs/promises';
-import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type {
   CallTrace,
@@ -623,6 +626,28 @@ export class ObservationQueries {
       items: selected.items.map((entry) => this.call(entry, secrets, paths)),
     };
   }
+  async agentManifest(
+    id: string,
+    callId: string,
+  ): Promise<import('../../contracts/models/agent-record.js').AgentManifest> {
+    await this.ownedCall(id, callId);
+    if (!this.directory) throw new Error('Agent record storage is unavailable');
+    return readAgentManifest(
+      join(this.directory, 'experiments', safeId(id), 'calls', safeId(callId)),
+    );
+  }
+  async agentPayload(
+    id: string,
+    callId: string,
+    ref: string,
+  ): Promise<import('node:fs').ReadStream> {
+    await this.ownedCall(id, callId);
+    if (!this.directory) throw new Error('Agent record storage is unavailable');
+    return streamAgentPayload(
+      join(this.directory, 'experiments', safeId(id), 'calls', safeId(callId)),
+      ref,
+    );
+  }
   async callTrace(
     id: string,
     callId: string,
@@ -630,79 +655,57 @@ export class ObservationQueries {
     limit = 50,
   ): Promise<CallTrace> {
     const call = await this.ownedCall(id, callId);
-    page([], offset, limit);
-    const empty = (unavailable: string): CallTrace => ({
-      ...page([], offset, limit),
-      unavailable,
-      incomplete: false,
-    });
-    if (call.pluginId !== 'agent.pi' || !this.directory)
-      return empty('No supported agent trace is available for this call.');
-    let file;
+    if (!this.directory)
+      return {
+        ...page([], offset, limit),
+        unavailable: 'Agent record storage is unavailable',
+        incomplete: false,
+      };
     try {
-      file = await open(
+      const records = await readAgentRecords(
         join(
           this.directory,
           'experiments',
           safeId(id),
           'calls',
           safeId(callId),
-          'diagnostics.jsonl',
         ),
-        constants.O_RDONLY | constants.O_NOFOLLOW,
+        offset,
+        limit,
+        typeof call.finishedAt === 'string',
       );
+      return {
+        items: records.items.map((item) => ({
+          sequence: item.sequence,
+          at: item.recordedAt,
+          type: item.type,
+          content: {
+            text: JSON.stringify({
+              runId: item.runId,
+              native: item.native,
+              event: item.event,
+            }),
+            truncated: false,
+          },
+          payloadRef: item.payload?.ref ?? null,
+        })),
+        total: records.total,
+        nextOffset:
+          records.nextAfter < records.total ? records.nextAfter : null,
+        unavailable: null,
+        incomplete:
+          records.recording === 'interrupted' ||
+          (['failed', 'cancelled', 'unknown'].includes(String(call.status)) &&
+            records.terminalStatus === 'completed'),
+      };
     } catch (error) {
       if (missing(error))
-        return empty('No trace has been recorded for this call.');
+        return {
+          ...page([], offset, limit),
+          unavailable: 'No agent record has been saved for this call',
+          incomplete: false,
+        };
       throw error;
-    }
-    try {
-      const secrets = this.payloadSecrets(
-        call.output ?? null,
-        this.payloadSecrets(call.input ?? null, await this.secrets(id)),
-      );
-      const size = (await file.stat()).size;
-      const buffer = Buffer.alloc(Math.min(size, 4 * 1024 * 1024));
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      const raw = buffer.subarray(0, bytesRead).toString('utf8');
-      const complete = raw.slice(0, raw.lastIndexOf('\n') + 1);
-      let incomplete = bytesRead < size || complete.length !== raw.length;
-      const items: CallTrace['items'] = [];
-      for (const [sequence, line] of complete.split('\n').entries()) {
-        if (!line) continue;
-        try {
-          const event: unknown = JSON.parse(line);
-          if (
-            !event ||
-            typeof event !== 'object' ||
-            !('type' in event) ||
-            typeof event.type !== 'string' ||
-            !('data' in event)
-          ) {
-            incomplete = true;
-            continue;
-          }
-          // Match serialized values so replacement cannot split a JSON escape.
-          const content = redactText(
-            JSON.stringify(event.data, null, 2),
-            secrets.map((secret) => JSON.stringify(secret).slice(1, -1)),
-          );
-          items.push({
-            sequence,
-            at: 'at' in event && typeof event.at === 'string' ? event.at : null,
-            type: event.type,
-            content: {
-              text: content.slice(0, 32768),
-              truncated: content.length > 32768,
-            },
-          });
-        } catch {
-          incomplete = true;
-        }
-      }
-      return { ...page(items, offset, limit), unavailable: null, incomplete };
-    } finally {
-      await file.close();
     }
   }
   private async ownedCall(id: string, callId: string): Promise<JsonObject> {

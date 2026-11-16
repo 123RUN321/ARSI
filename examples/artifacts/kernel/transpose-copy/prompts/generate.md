@@ -126,16 +126,10 @@ Never copy historical time_taken_ms metadata into a new measurement or claim.
 
 ## Output
 
-Return exactly the JSON edit object required by outputSchema:
+Edit the actual files under candidate/ using exact editablePaths. Return only the rationale required by outputSchema:
 
 ```json
 {
-  "edits": [
-    {
-      "path": "<one exact path from editablePaths in context/input.json>",
-      "content": "The complete valid Python source, JSON-escaped"
-    }
-  ],
   "reason": "Source evidence; one main optimization hypothesis; concrete changes; what the Evaluator must verify"
 }
 ```
@@ -143,8 +137,8 @@ Return exactly the JSON edit object required by outputSchema:
 The edited file must be complete and define kernel_function with the preserved
 public signature. Include only imports, constants, helpers, kernels and wrapper
 code required for that implementation; no tests, timing code or external writes.
-Return one complete replacement per changed file from `editablePaths`. Do not edit read-only comparison or task files.
-When no supported modification remains, return {"edits":[],"reason":"Explain why no supported change remains"}.
+Write each changed file directly under candidate/ using `editablePaths`. Do not edit read-only comparison or task files.
+When no supported modification remains, leave candidate/ unchanged and return {"reason":"Explain why no supported change remains"}.
 
 Return JSON only, without a Markdown fence or prose. Do not return a Python code
 block. Do not emit placeholders, stubs or input/zero-tensor shortcuts. Before the
@@ -173,11 +167,11 @@ experiment distinct; explain that difference.
 A candidate needs a concrete, plausible mechanism and a contract-preserving edit;
 it does not need a demonstrated speedup. State the hypothesis and what formal
 evaluation would falsify. Uncertainty about performance alone is not a reason
-for empty edits. Do not run timing sweeps or use ad hoc local timings to decide
+to leave candidate/ unchanged. Do not run timing sweeps or use ad hoc local timings to decide
 which candidate the Policy should see. Evaluator measures candidates and Selector
 decides promotion. Cheap static checks of bounds and coverage are appropriate.
 
 If the recommended implementation violates an invariant, correct the implementation
-while preserving the hypothesis when possible. Return empty edits only when no
+while preserving the hypothesis when possible. Leave candidate/ unchanged only when no
 reasonable, distinct, testable edit can be formed within the authorized scope;
 explain the concrete obstacle. Do not claim that this proves global optimality.

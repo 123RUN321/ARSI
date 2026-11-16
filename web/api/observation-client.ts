@@ -319,6 +319,8 @@ export function parseCallTrace(raw: unknown): CallTrace {
         at: nullable(item.at),
         type: text(item.type),
         content: preview(item.content),
+        payloadRef:
+          item.payloadRef === undefined ? null : nullable(item.payloadRef),
       };
     }),
   };

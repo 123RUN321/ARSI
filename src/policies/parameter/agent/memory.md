@@ -3,7 +3,7 @@
 Read context/input.json, context/measurements.json and the supplied candidate
 sources. Update existing memory instead of copying the trial history. Keep a
 compact index.md and supporting Markdown entries when useful. Return only memory
-edits using outputSchema; no useful new evidence is a valid no-change result.
+file changes under candidate/ and return reason using outputSchema; no useful new evidence is a valid no-change result.
 
 Record the configuration delta, measured outcome, units, selector decision and
 candidate/measurement references. Preserve applicability conditions supplied by

@@ -102,6 +102,7 @@ export interface CallTrace
     at: string | null;
     type: string;
     content: JsonPreview | null;
+    payloadRef?: string | null;
   }> {
   unavailable: string | null;
   incomplete: boolean;

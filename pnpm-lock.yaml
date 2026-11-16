@@ -202,9 +202,6 @@ importers:
       mammoth:
         specifier: 1.11.0
         version: 1.11.0
-      node-diff3:
-        specifier: 3.2.1
-        version: 3.2.1
       pdfjs-dist:
         specifier: 5.4.449
         version: 5.4.449
@@ -1634,7 +1631,7 @@ packages:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
   ember-evaluator@https://codeload.github.com/evolving-foundry/ember-evaluator/tar.gz/7f84931d3bf74facd45fecc561e6ff82786dfee1:
-    resolution: {gitHosted: true, integrity: sha512-QpRRBrLBmxecBAJXOoVkXRbJ68UEVph0KKHgPp/pj75ll7DHRHhLrTkvkI4kQg5Tzra0mVDGsJ7Tajh8WkcU6w==, tarball: https://codeload.github.com/evolving-foundry/ember-evaluator/tar.gz/7f84931d3bf74facd45fecc561e6ff82786dfee1}
+    resolution: {gitHosted: true, integrity: sha512-C2gRK9ZohZga9OFp/cpLoQqe5MfFlSACjJOFAPGAzcZY73mmCIOC4qhNwuLcxPIXaJf9M1BnScxFgqAvv/QHJA==, tarball: https://codeload.github.com/evolving-foundry/ember-evaluator/tar.gz/7f84931d3bf74facd45fecc561e6ff82786dfee1}
     version: 0.1.0
     engines: {node: '>=24.19.0'}
     hasBin: true
@@ -2426,10 +2423,6 @@ packages:
   negotiator@1.1.0:
     resolution: {integrity: sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg==}
     engines: {node: '>=18'}
-
-  node-diff3@3.2.1:
-    resolution: {integrity: sha512-eKZcJ8RtMQ3cIaA15EgmtwG927fYnRlhtdA4Q9HAcCpAZPQhhU2XptnTH9GeAkMiX2bAXxlJSAFa9shFbztPgw==}
-    engines: {bun: '>=1.3.10'}
 
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
@@ -5470,8 +5463,6 @@ snapshots:
   negotiator@1.1.0:
     dependencies:
       content-type: 2.1.0
-
-  node-diff3@3.2.1: {}
 
   node-domexception@1.0.0: {}
 

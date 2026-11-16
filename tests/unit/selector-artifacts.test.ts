@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { RuntimeContext } from '../../src/contracts/index.js';
 import {
   FileArtifacts,
@@ -11,7 +11,6 @@ import {
 } from '../../src/runtime/storage/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
 import { artifactSelectorDefinition } from '../../src/plugins/selector-artifacts/index.js';
-import { string } from '../../src/shared/json.js';
 
 test('registered artifact selector explicitly requests delivery evidence', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-artifact-selector-'));
@@ -50,7 +49,9 @@ test('registered artifact selector explicitly requests delivery evidence', async
         return { delivery: 'public result' };
       },
       invokeAgent: async (_binding, request) => {
-        const cwd = string(request.cwd);
+        const cwd = dirname(
+          (await services.workspaces.read(request.projectRef)).directory,
+        );
         assert.match(
           await readFile(join(cwd, 'AGENTS.md'), 'utf8'),
           /Read context\/instructions\.md/,

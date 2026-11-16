@@ -1,3 +1,4 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -9,7 +10,7 @@ import {
   rm,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import {
   FileArtifacts,
@@ -29,6 +30,7 @@ async function fixture(t: TestContext) {
   const artifacts = new FileArtifacts(join(root, 'artifacts'));
   const context = new RuntimeContext().extend({
     experimentId: 'experiment',
+    callId: 'reflection',
     directory: root,
     facts,
     artifacts,
@@ -732,12 +734,15 @@ test('authorized empty execution files remain readable by the Reflection Agent a
   const context = f.context.extend({
     signal: new AbortController().signal,
     workspaces: new FileWorkspaces(join(f.root, 'workspaces'), f.artifacts),
-    invokeAgent: async (
+    invokeAgent: async function (
+      this: import('../../src/contracts/index.js').RuntimeContext,
       _binding: string,
       request: JsonObject,
-    ): Promise<JsonObject> => {
+    ) {
       modelRequests++;
-      const cwd = string(request.cwd);
+      const cwd = dirname(
+        (await context.workspaces.read(string(request.projectRef))).directory,
+      );
       assert.equal(await readFile(join(cwd, emptyPath), 'utf8'), '');
       assert.equal(
         await readFile(join(cwd, 'candidate', resourcePath), 'utf8'),
@@ -756,10 +761,10 @@ test('authorized empty execution files remain readable by the Reflection Agent a
         contents.filter((content) => content === 'available output').length,
         1,
       );
-      return {
+      return await directAgentResult(this, request, {
         edits: [],
         reason: 'Empty captured stderr is readable evidence',
-      };
+      });
     },
   });
   const operation = await createReflectionAgent(
@@ -833,12 +838,15 @@ test('ASCII PDF delivery reaches the Reflection Agent as page previews through e
   const context = f.context.extend({
     signal: new AbortController().signal,
     workspaces: new FileWorkspaces(join(f.root, 'workspaces'), f.artifacts),
-    invokeAgent: async (
+    invokeAgent: async function (
+      this: import('../../src/contracts/index.js').RuntimeContext,
       _binding: string,
       request: JsonObject,
-    ): Promise<JsonObject> => {
+    ) {
       requests++;
-      const directory = string(request.cwd);
+      const directory = dirname(
+        (await context.workspaces.read(string(request.projectRef))).directory,
+      );
       const index = object(
         JSON.parse(
           await readFile(
@@ -872,7 +880,10 @@ test('ASCII PDF delivery reaches the Reflection Agent as page previews through e
           await readFile(join(file.parentPath, file.name), 'utf8'),
           /%PDF-/,
         );
-      return { edits: [], reason: 'Read all three pages' };
+      return await directAgentResult(this, request, {
+        edits: [],
+        reason: 'Read all three pages',
+      });
     },
   });
   const operation = await createReflectionAgent(

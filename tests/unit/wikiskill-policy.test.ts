@@ -1,8 +1,9 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import { memoryDefinition } from '../../src/plugins/memory-agent/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
@@ -87,8 +88,14 @@ test('memory receives authorized summary and current skills, persists Wiki and r
         assert.deepEqual(refs, ['train-measurement']);
         return { training: 'Observed execution' };
       },
-      invokeAgent: async (_binding, request) => {
-        const cwd = string(request.cwd);
+      invokeAgent: async function (
+        this: import('../../src/contracts/index.js').RuntimeContext,
+        _binding,
+        request,
+      ) {
+        const cwd = dirname(
+          (await services.workspaces.read(request.projectRef)).directory,
+        );
         const supplied = object(
           JSON.parse(await readFile(join(cwd, 'context/input.json'), 'utf8')),
         );
@@ -107,17 +114,21 @@ test('memory receives authorized summary and current skills, persists Wiki and r
           'Check completed work.',
         );
         calls++;
-        return calls === 1
-          ? {
-              edits: [
-                {
-                  path: 'wiki/index.md',
-                  content: 'Rejected trial; retain existing skill.',
-                },
-              ],
-              reason: 'Recorded feedback.',
-            }
-          : { edits: [], reason: 'Already recorded.' };
+        return await directAgentResult(
+          this,
+          request,
+          calls === 1
+            ? {
+                edits: [
+                  {
+                    path: 'wiki/index.md',
+                    content: 'Rejected trial; retain existing skill.',
+                  },
+                ],
+                reason: 'Recorded feedback.',
+              }
+            : { edits: [], reason: 'Already recorded.' },
+        );
       },
     });
     const context: RuntimeContext = new RuntimeContext().extend({
@@ -156,12 +167,14 @@ test('memory receives authorized summary and current skills, persists Wiki and r
       assert.equal(retained.changeRef, null);
       assert.deepEqual(await readdir(join(root, 'workspaces')), []);
       for (const content of ['Tampered source.', null]) {
-        services.invokeAgent = async () => ({
-          edits: [
-            { path: 'sources/0/plugins/base/skills/check/SKILL.md', content },
-          ],
-          reason: 'Attempt to modify read-only source.',
-        });
+        services.invokeAgent = async function (_binding, request) {
+          return directAgentResult(this, request, {
+            edits: [
+              { path: 'sources/0/plugins/base/skills/check/SKILL.md', content },
+            ],
+            reason: 'Attempt to add source content to Memory.',
+          });
+        };
         const failed = object(
           await memory.execute(
             { ...input, memoryRef: updated.memoryRef! },
@@ -171,7 +184,7 @@ test('memory receives authorized summary and current skills, persists Wiki and r
         assert.equal(failed.status, 'failed');
         assert.equal(failed.memoryRef, updated.memoryRef);
         assert.equal(failed.changeRef, null);
-        assert.match(string(failed.reason), /read-only source/);
+        assert.match(string(failed.reason), /protected path|ENOENT/);
         assert.deepEqual(await readdir(join(root, 'workspaces')), []);
       }
       const shadow = await artifacts.putJson({

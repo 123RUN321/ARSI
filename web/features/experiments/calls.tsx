@@ -108,13 +108,12 @@ function CallPayload({
   const finished = !!summary?.finishedAt;
   const children = calls.filter(
     (item) =>
-      item.pluginId === 'agent.pi' && ownerCallId(item, calls) === callId,
+      item.pluginId.startsWith('agent.') && ownerCallId(item, calls) === callId,
   );
   const [agentId, setAgentId] = React.useState(children[0]?.callId ?? '');
-  const agent =
-    summary?.pluginId === 'agent.pi'
-      ? summary
-      : (children.find((item) => item.callId === agentId) ?? children[0]);
+  const agent = summary?.pluginId.startsWith('agent.')
+    ? summary
+    : (children.find((item) => item.callId === agentId) ?? children[0]);
   const summaryPayload =
     !!summary && /^(selector|application)\./.test(summary.pluginId);
   const result = useObservation(

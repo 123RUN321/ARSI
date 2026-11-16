@@ -51,19 +51,12 @@ The selected candidate's immutable full tree is retained by the artifact store a
 
 Preserve supported earlier experience and its sources. Qualify an obsolete interpretation instead of silently turning an uncertain result into a verified success. No useful new contrast is a valid no-change result.
 
-Honor `editConstraints` and supplied file/byte limits. Submit complete replacement contents only for changed memory files using the provided `outputSchema`:
+Honor `editConstraints` and supplied file/byte limits. Edit memory files directly under candidate/. Return the rationale using the provided `outputSchema`:
 
 ```json
 {
-  "edits": [
-    {
-      "path": "experiences/example-pattern.md",
-      "content": "Complete updated experience text."
-    },
-    { "path": "index.md", "content": "Complete updated index." }
-  ],
   "reason": "The supported observation, attribution limits, and why the entry is reusable."
 }
 ```
 
-Paths above are illustrative and must be authorized. Use `edits: []` with a concrete reason when nothing is justified. Use null content only when deletion is explicitly allowed. Return only the JSON object matching outputSchema as your final response; do not wrap it in a result field or add prose. Do not return memoryRef/changeRef or claim activation. Once accepted, stop.
+Paths above are illustrative and must be authorized. Leave candidate/ unchanged with a concrete reason when nothing is justified. Delete a file only when deletion is explicitly allowed. Return only the JSON object matching outputSchema as your final response; do not wrap it in a result field or add prose. Do not return memoryRef/changeRef or claim activation. Once accepted, stop.

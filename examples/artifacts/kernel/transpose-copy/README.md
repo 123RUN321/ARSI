@@ -19,7 +19,7 @@ The fixed case uses seed 42 and zero numerical tolerance. The entry point is
 
 ## Configuration and execution
 
-The Recipe selects `input.py` with `application.config.entryFile`. To rename it, move the baseline file and update the entry path and its edit rule in the Target. The Agent reads a snapshot at `context/sources/<sourcePath>` and returns edits for paths in `editablePaths` in its stage input.
+The Recipe selects `input.py` with `application.config.entryFile`. To rename it, move the baseline file and update the entry path and its edit rule in the Target. The Agent reads a snapshot at `context/sources/<sourcePath>` and edits the corresponding candidate files directly using `editablePaths` in its stage input, then returns only `reason`.
 
 Use a Linux NPU host with CANN, torch, torch_npu, triton-ascend, and the profiling
 dependencies required by the pinned Evaluator SDK. Set `MODEL_NAME`,

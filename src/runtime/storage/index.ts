@@ -184,14 +184,18 @@ export class FileWorkspaces implements WorkspaceService {
   async create(
     artifactRef?: string,
     parentCandidateRef?: string,
+    project?: { ownerCallId: string; inputRef: string },
   ): Promise<Workspace> {
     const ref = randomUUID();
-    const directory = join(this.directory, ref, 'files');
+    const directory = project
+      ? join(this.directory, ref, 'project', 'candidate')
+      : join(this.directory, ref, 'files');
     await mkdir(directory, { recursive: true });
     const workspace = {
       ref,
       directory,
       parentCandidateRef: parentCandidateRef ?? null,
+      ...(project ? { project } : {}),
     };
     await atomic(join(this.directory, ref, 'workspace.json'), workspace);
     try {
@@ -212,14 +216,48 @@ export class FileWorkspaces implements WorkspaceService {
       ),
     );
     const directory = string(value.directory);
-    if (directory !== join(this.directory, ref, 'files'))
+    const project =
+      value.project === undefined ? undefined : object(value.project);
+    if (
+      directory !==
+      (project
+        ? join(this.directory, ref, 'project', 'candidate')
+        : join(this.directory, ref, 'files'))
+    )
       throw new Error('Workspace identity mismatch');
     const stat = await lstat(directory);
     if (!stat.isDirectory() || stat.isSymbolicLink())
       throw new Error('Workspace is not a real directory');
+    let leaseOwner: string | undefined;
+    try {
+      leaseOwner = string(
+        object(
+          JSON.parse(
+            await readFile(
+              join(this.directory, ref, 'agent-lease.json'),
+              'utf8',
+            ),
+          ),
+        ).callId,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      )
+        throw error;
+    }
     return {
       ref,
       directory,
+      ...(leaseOwner ? { leaseOwner } : {}),
+      ...(project
+        ? {
+            project: {
+              ownerCallId: string(project.ownerCallId),
+              inputRef: string(project.inputRef),
+            },
+          }
+        : {}),
       parentCandidateRef:
         typeof value.parentCandidateRef === 'string'
           ? value.parentCandidateRef
@@ -227,6 +265,17 @@ export class FileWorkspaces implements WorkspaceService {
     };
   }
   async release(ref: string): Promise<void> {
+    try {
+      await readFile(join(this.directory, safeId(ref), 'agent-lease.json'));
+      throw new Error(
+        'Cannot release a workspace with an active or unconfirmed Agent execution',
+      );
+    } catch (error) {
+      if (
+        !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      )
+        throw error;
+    }
     await rm(join(this.directory, safeId(ref)), {
       recursive: true,
       force: true,

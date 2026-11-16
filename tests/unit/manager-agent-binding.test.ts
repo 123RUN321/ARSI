@@ -31,7 +31,8 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
     async (context) => {
       const request = {
         goal: 'test routing',
-        cwd: await prepareAgentProject(context, 'test', {}, [], []),
+        mode: 'analyze' as const,
+        projectRef: await prepareAgentProject(context, 'test', {}, [], []),
         outputSchema: { type: 'object' },
       };
       assert.deepEqual(await context.invokeAgent('second', request), {
@@ -74,6 +75,68 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
   );
   try {
     assert.equal((await fixture.run()).status, 'succeeded');
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test('Runtime exclusively leases an owned project and retains an unknown execution for reconciliation', async () => {
+  let release: (() => void) | undefined;
+  let started: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const agent: OperationDefinition = {
+    id: 'test.leased-agent',
+    contract: agentContract,
+    configSchema: { type: 'object' },
+    async create() {
+      return {
+        async execute() {
+          started!();
+          await gate;
+          throw Object.assign(new Error('Stop is unconfirmed'), {
+            status: 'unknown',
+          });
+        },
+        async dispose() {},
+      };
+    },
+  };
+  const fixture = await managerFixture(
+    async (context) => {
+      const projectRef = await prepareAgentProject(context, 'test', {}, [], []);
+      const request = {
+        projectRef,
+        mode: 'analyze' as const,
+        goal: 'test',
+        outputSchema: { type: 'object' },
+      };
+      const running = context.invokeAgent('agent', request);
+      await ready;
+      try {
+        await assert.rejects(
+          context.invokeAgent('agent', { ...request, goal: 'another task' }),
+          /executing/i,
+        );
+      } finally {
+        release!();
+      }
+      await assert.rejects(running, /unconfirmed/);
+      assert.ok((await context.workspaces.read(projectRef)).leaseOwner);
+      await assert.rejects(
+        context.workspaces.release(projectRef),
+        /leased|active|in use|executing/i,
+      );
+      return {};
+    },
+    { plugins: [agent], bindings: { agent: { plugin: agent.id, config: {} } } },
+  );
+  try {
+    await assert.rejects(fixture.run(), /unconfirmed|executing/);
   } finally {
     await fixture.dispose();
   }

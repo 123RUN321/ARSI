@@ -1,7 +1,8 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   agentContract,
@@ -96,9 +97,12 @@ for (const customized of [false, true]) {
       configSchema: { type: 'object' },
       async create() {
         return {
-          async execute(raw): Promise<JsonObject> {
+          async execute(raw, context): Promise<JsonObject> {
             const request = object(raw);
-            const cwd = string(request.cwd);
+            const cwd = dirname(
+              (await context.workspaces.read(string(request.projectRef)))
+                .directory,
+            );
             const metadata = object(
               JSON.parse(
                 await readFile(join(cwd, 'context/input.json'), 'utf8'),
@@ -121,17 +125,21 @@ for (const customized of [false, true]) {
               assert.ok(Array.isArray(object(metadata.observations).trials));
               if (memories === 2)
                 throw new Error('Simulated Memory backend failure');
-              return memories === 1
-                ? {
-                    edits: [
-                      {
-                        path: 'index.md',
-                        content: 'Measured lesson: check graph coverage.',
-                      },
-                    ],
-                    reason: 'Record evidence',
-                  }
-                : { edits: [], reason: 'Existing lesson remains sufficient' };
+              return await directAgentResult(
+                context,
+                raw,
+                memories === 1
+                  ? {
+                      edits: [
+                        {
+                          path: 'index.md',
+                          content: 'Measured lesson: check graph coverage.',
+                        },
+                      ],
+                      reason: 'Record evidence',
+                    }
+                  : { edits: [], reason: 'Existing lesson remains sufficient' },
+              );
             }
             if (string(request.goal).includes(reflectionGoal)) {
               reflections++;
@@ -144,18 +152,22 @@ for (const customized of [false, true]) {
                 ),
                 /proposer/,
               );
-              return reflections === 1
-                ? {
-                    edits: [
-                      {
-                        path: 'bindings/proposer/resources/guidance/search.md',
-                        content:
-                          'Revised method: distinguish graph coverage from batch capacity.',
-                      },
-                    ],
-                    reason: 'Improve hypothesis discrimination',
-                  }
-                : { edits: [], reason: 'No further guidance change' };
+              return await directAgentResult(
+                context,
+                raw,
+                reflections === 1
+                  ? {
+                      edits: [
+                        {
+                          path: 'bindings/proposer/resources/guidance/search.md',
+                          content:
+                            'Revised method: distinguish graph coverage from batch capacity.',
+                        },
+                      ],
+                      reason: 'Improve hypothesis discrimination',
+                    }
+                  : { edits: [], reason: 'No further guidance change' },
+              );
             }
             proposals++;
             events.push('propose');
@@ -168,14 +180,14 @@ for (const customized of [false, true]) {
             if (proposals === 1) {
               assert.equal(metadata.memory, null);
               assert.match(instructions, /Initial research method/);
-              return {
+              return await directAgentResult(context, raw, {
                 proposals: [
                   {
                     edits: [],
                     reason: 'Need a different supported mechanism.',
                   },
                 ],
-              };
+              });
             } else if (proposals === 2) {
               assert.equal(metadata.memory, null);
               assert.equal(
@@ -196,7 +208,7 @@ for (const customized of [false, true]) {
                 /Revised method: distinguish graph coverage/,
               );
             }
-            return {
+            return await directAgentResult(context, raw, {
               proposals: [
                 {
                   edits: [
@@ -209,7 +221,7 @@ for (const customized of [false, true]) {
                   reason: 'Test a discriminating configuration',
                 },
               ],
-            };
+            });
           },
           async dispose() {},
         };

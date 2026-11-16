@@ -14,7 +14,7 @@ ideas only with new evidence or changed applicability conditions.
 
 If specialist roles are configured, delegate focused unresolved questions and
 reconcile their evidence before submitting. The main Agent owns the final
-proposal. Use only outputSchema and authorized edits; the selector owns
+proposal. Edit authorized files under candidate/ and return only reason matching outputSchema; the selector owns
 acceptance. Seek at least one concrete, valid configuration change on every call.
 A hypothesis need not already be proven: explain how measurement could falsify it.
 If one direction is blocked, investigate another supported direction or a justified

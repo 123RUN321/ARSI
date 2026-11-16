@@ -1,7 +1,8 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   agentContract,
@@ -114,8 +115,11 @@ test('Manager runs the Agent Policy with direct evaluation, bounded search, and 
         candidateParents.set(event.candidateRef, event.parentRef);
       });
       return {
-        async execute(input): Promise<JsonObject> {
-          const cwd = string(object(input).cwd);
+        async execute(input, context): Promise<JsonObject> {
+          const cwd = dirname(
+            (await context.workspaces.read(string(object(input).projectRef)))
+              .directory,
+          );
           modelCalls++;
           const instructions = await readFile(join(cwd, 'AGENTS.md'), 'utf8');
           const metadata = await readFile(
@@ -141,7 +145,7 @@ test('Manager runs the Agent Policy with direct evaluation, bounded search, and 
           );
           assert.equal(current.max_num_seqs, 8);
           assert.equal(object(JSON.parse(metadata)).maxCandidates, 3);
-          return {
+          return await directAgentResult(context, input, {
             proposals: [
               {
                 edits: [
@@ -174,7 +178,7 @@ test('Manager runs the Agent Policy with direct evaluation, bounded search, and 
                 reason: 'Try an intermediate value',
               },
             ],
-          };
+          });
         },
         async dispose() {},
       };
@@ -259,7 +263,7 @@ test('Manager runs the Agent Policy with direct evaluation, bounded search, and 
     assert.deepEqual(launches, [8, 16, 8, 12]);
     assert.deepEqual(benchmarks, [8, 16, 8, 12]);
     assert.deepEqual(releases, [8, 16, 8, 12]);
-    assert.equal(modelCalls, 1);
+    assert.equal(modelCalls, 3);
     assert.ok(Array.isArray(output.trials));
     const repeated = object(output.trials[1]);
     assert.equal(repeated.status, 'measured');

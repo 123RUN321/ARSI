@@ -83,22 +83,14 @@ test('metric analysis requires measured numeric evidence and keeps model inferen
   );
 });
 
-test('operator edits accept complete source only at the literal Target path', () => {
-  const sourcePath = 'kernels/transpose[0].py';
-  const schema = operatorEditOutputSchema([sourcePath]);
+test('operator response contains rationale while Application owns file validation', () => {
+  const schema = operatorEditOutputSchema(['kernels/transpose[0].py']);
   assert.doesNotThrow(() =>
-    validate(schema, {
-      edits: [{ path: sourcePath, content: '\u20ac'.repeat(12000) }],
-      reason: 'Complete source subject to the Application Target',
-    }),
+    validate(schema, { reason: 'Updated the candidate source directly' }),
   );
-  for (const path of ['input.py', 'kernels/transpose0.py', 'context/source.py'])
-    assert.throws(() =>
-      validate(schema, {
-        edits: [{ path, content: 'invalid replacement' }],
-        reason: 'Outside the Target',
-      }),
-    );
+  assert.throws(() =>
+    validate(schema, { edits: [], reason: 'Obsolete patch plan' }),
+  );
 });
 
 test('metric diagnosis distinguishes an unsupported search direction from an invalid diagnosis', () => {

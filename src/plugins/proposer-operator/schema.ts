@@ -9,18 +9,8 @@ import {
   type StaticIssue,
   type OperatorAgentStage,
 } from '../shared/operator-attempt/schema.js';
-export function operatorEditOutputSchema(editablePaths: string[]): JsonObject {
-  return recordSchema({
-    edits: {
-      type: 'array',
-      maxItems: editablePaths.length,
-      items: recordSchema({
-        path: { enum: editablePaths },
-        content: { type: 'string' },
-      }),
-    },
-    reason: { type: 'string' },
-  });
+export function operatorEditOutputSchema(_editablePaths: string[]): JsonObject {
+  return recordSchema({ reason: { type: 'string' } });
 }
 
 export type EmbeddingConfig = {

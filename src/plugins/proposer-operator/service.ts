@@ -11,7 +11,6 @@ import { operatorProposerContract } from '../../contracts/plugin-types/proposer-
 import { string } from '../../shared/json.js';
 import { parseConfig, validate } from '../../shared/schema.js';
 import { literalPathPattern } from '../shared/file-application/target.js';
-import { applyEdits } from '../shared/agent-editing/index.js';
 import {
   operatorEditOutputSchema,
   type OperatorProposerConfig,
@@ -43,12 +42,8 @@ async function commitOperatorEdits(
   context: RuntimeContext,
   services: RuntimeContext,
 ): Promise<OperatorProposerOutput> {
-  const workspace = await services.workspaces.create(
-    parent.artifactRef,
-    parent.ref,
-  );
+  const workspace = await services.workspaces.read(string(response.editRef));
   try {
-    await applyEdits(workspace.directory, response, context, editConstraints);
     const result = await context.application({
       action: 'commit',
       parentCandidateRef: parent.ref,

@@ -171,4 +171,44 @@ export function registerObservationRoutes(
         request.query.limit,
       ),
   );
+  app.get<{ Params: { id: string; callId: string } }>(
+    '/api/observation/experiments/:id/calls/:callId/agent',
+    {
+      schema: {
+        params: {
+          ...params,
+          properties: { id, callId: id },
+          required: ['id', 'callId'],
+        },
+      },
+    },
+    (request) =>
+      queries.agentManifest(request.params.id, request.params.callId),
+  );
+  app.get<{ Params: { id: string; callId: string; ref: string } }>(
+    '/api/observation/experiments/:id/calls/:callId/agent/payloads/:ref',
+    {
+      schema: {
+        params: {
+          ...params,
+          properties: {
+            id,
+            callId: id,
+            ref: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          },
+          required: ['id', 'callId', 'ref'],
+        },
+      },
+    },
+    async (request, reply) =>
+      reply
+        .type('application/json')
+        .send(
+          await queries.agentPayload(
+            request.params.id,
+            request.params.callId,
+            request.params.ref,
+          ),
+        ),
+  );
 }

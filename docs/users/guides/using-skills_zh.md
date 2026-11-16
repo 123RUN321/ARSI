@@ -47,7 +47,7 @@ RSI Skill 用来指导编程助手编写 Recipe、校验配置和排查实验。
 
 ### 配置子 Agent
 
-在同一个 `proposer.agent` 绑定中配置 `subagents`。角色指令和 Skill 会随 Recipe 锁定。父子 Agent 共享工作目录，各自使用独立会话。Pi 通过 RSI 的 `subagent` 工具委派，Codex 使用生成的角色 TOML 和原生委派。Pi 的 workspace `bash` 在 macOS 上使用 `sandbox-exec`，在 Linux 上需要安装 `bubblewrap`。
+在同一个 `proposer.agent` 绑定中配置 `subagents`。角色指令和 Skill 会随 Recipe 锁定。父子 Agent 共享工作目录，各自使用独立会话。Pi 通过 RSI 的 `subagent` 工具委派，Codex 使用生成的角色 TOML 和原生委派。Pi 的父子 SDK 会话在同一进程中执行，共享 Manager 计费。原生 CLI 保留各自的委派和重试行为。子会话记录在所属调用中，不产生独立 Runtime 调用。
 
 ```yaml
 subagents:

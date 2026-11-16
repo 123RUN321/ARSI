@@ -45,23 +45,17 @@ uncertainty.
 
 ## Output
 
-Return exactly one JSON object matching outputSchema:
+Write the repair directly to candidate/ using exact editablePaths. Return exactly one JSON object matching outputSchema:
 
 ```json
 {
-  "edits": [
-    {
-      "path": "<one exact path from editablePaths in context/input.json>",
-      "content": "The complete repaired Python source, JSON-escaped"
-    }
-  ],
   "reason": "The reported defect, the minimal repair and the invariant preserved"
 }
 ```
 
-A supported repair supplies one complete replacement per changed file from editablePaths. Do not edit task or
+A supported repair changes the actual files under candidate/ selected by editablePaths. Do not edit task or
 comparison files, introduce tests, timing code or external writes, or emit
-placeholders. When no supported repair exists, return an empty edits array and
+placeholders. When no supported repair exists, leave candidate/ unchanged and return
 an explicit reason. Uncertainty is not a successful repair. Return JSON only,
 without fences or surrounding prose; the Policy decides whether to continue.
 

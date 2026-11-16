@@ -28,20 +28,14 @@ grader internals, dataset answers, or external material. Do not delete files;
 remove obsolete text by replacing their content. Preserve useful existing rules.
 
 Work within the remaining budget and use the inventory to batch relevant reads.
-Return complete replacement text in the supplied output schema:
+Edit the authorized files directly under candidate/. Return the rationale in the supplied output schema:
 
 ```json
 {
-  "edits": [
-    {
-      "path": "an actually authorized target path",
-      "content": "complete revised content"
-    }
-  ],
   "reason": "the observation, intended improvement, and uncertainty"
 }
 ```
 
-If no useful edit is supported, return `{"edits":[],"reason":"why no useful change follows"}`.
+If no useful edit is supported, return `{"reason":"why no useful change follows"}`.
 Do not force an edit, invent evidence, or return a runtime proposal envelope.
 Return only the JSON object matching the supplied output schema, then stop.

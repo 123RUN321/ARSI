@@ -1,16 +1,20 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import { environmentSummary } from '../../src/plugins/evaluator-inferencebench/conditions.js';
 import { metricEvidence } from '../../src/plugins/proposer-agent/metric-evidence.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   RuntimeContext,
   type ProposerInput,
 } from '../../src/contracts/index.js';
 import { object, string } from '../../src/shared/json.js';
-import { FileArtifacts } from '../../src/runtime/storage/index.js';
+import {
+  FileArtifacts,
+  FileWorkspaces,
+} from '../../src/runtime/storage/index.js';
 import { projectEvidenceFiles } from '../../src/runtime/services/facts/evidence-files.js';
 import { createProposerAgent } from '../../src/plugins/proposer-agent/service.js';
 import { proposerExecutionContext } from '../../src/plugins/proposer-agent/execution-context.js';
@@ -105,6 +109,17 @@ test('Proposer can read every non-thinking event and full arguments while only t
       creates = 0,
       releases = 0;
     let forbidden = false;
+    const spaces = new FileWorkspaces(join(root, 'workspaces'), artifacts);
+    const create = spaces.create.bind(spaces),
+      release = spaces.release.bind(spaces);
+    spaces.create = async (...args) => {
+      creates++;
+      return create(...args);
+    };
+    spaces.release = async (ref) => {
+      releases++;
+      return release(ref);
+    };
     const services: RuntimeContext = new RuntimeContext().extend({
       rootDirectory: root,
       dataDirectory: root,
@@ -118,18 +133,7 @@ test('Proposer can read every non-thinking event and full arguments while only t
         write: unused,
         list: unused,
       },
-      workspaces: {
-        create: async () => {
-          creates++;
-          const directory = join(root, 'edit');
-          await mkdir(directory);
-          return { ref: 'ws', directory, parentCandidateRef: 'base' };
-        },
-        read: unused,
-        release: async () => {
-          releases++;
-        },
-      },
+      workspaces: spaces,
       readCandidate: async (ref) => ({
         ref,
         artifactRef: base,
@@ -159,15 +163,24 @@ test('Proposer can read every non-thinking event and full arguments while only t
           maxBytes: 2_000_000,
         });
       },
-      invokeAgent: async (binding, request) => {
+      invokeAgent: async function (
+        this: import('../../src/contracts/index.js').RuntimeContext,
+        binding,
+        request,
+      ) {
         assert.equal(binding, 'configured-agent');
         requests++;
         assert.deepEqual(Object.keys(request).sort(), [
-          'cwd',
           'goal',
+          'mode',
           'outputSchema',
+          'projectRef',
         ]);
-        const cwd = string(request.cwd);
+        const cwd = string(
+          dirname(
+            (await services.workspaces.read(request.projectRef)).directory,
+          ),
+        );
         const instructions = await readFile(join(cwd, 'AGENTS.md'), 'utf8');
         assert.match(instructions, /context\/measurements.json/);
         assert.match(
@@ -213,12 +226,11 @@ test('Proposer can read every non-thinking event and full arguments while only t
           /MIDDLE_ACTION/,
         );
         assert.match(complete, /PUBLIC_TOOL_RESULT/);
-        return {
-          edits: forbidden
-            ? [{ op: 'replace', path, content: 'overwrite evidence' }]
-            : [],
+        if (forbidden) throw new Error('Controlled Agent failure');
+        return await directAgentResult(this, request, {
+          edits: [],
           reason: 'No supported edit.',
-        };
+        });
       },
       invoke: unused,
       withInstance: unused,
@@ -247,12 +259,12 @@ test('Proposer can read every non-thinking event and full arguments while only t
     forbidden = true;
     await assert.rejects(
       operation.execute(input, context.extend(services)),
-      /read.only/i,
+      /Controlled Agent failure/,
     );
     assert.equal(requests, 2);
     assert.equal(commits, 1);
-    assert.equal(creates, 1);
-    assert.equal(releases, 1);
+    assert.equal(creates, 2);
+    assert.equal(releases, 2);
     await operation.dispose();
   } finally {
     await rm(root, { recursive: true, force: true });

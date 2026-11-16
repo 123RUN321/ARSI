@@ -110,9 +110,10 @@ test('a complete mutation round uses sampled evidence, admits strict improvement
     assert.equal(run.agentCalls[0]!.moduleId, 'a');
     const request = run.agentCalls[0]!;
     assert.deepEqual(Object.keys(request.request).sort(), [
-      'cwd',
       'goal',
+      'mode',
       'outputSchema',
+      'projectRef',
     ]);
     assert.equal(request.evidence.view, 'training-summary');
     assert.deepEqual(object(request.metadata.editConstraints).allowedPaths, [
@@ -620,9 +621,13 @@ for (const [name, edit, reason] of [
   [
     'another module',
     { op: 'replace', path: 'b.md', content: 'B1' },
-    /not authorized/,
+    /not authorized|does not authorize/,
   ],
-  ['deleted module', { op: 'delete', path: 'a.md' }, /not authorized/],
+  [
+    'deleted module',
+    { op: 'delete', path: 'a.md' },
+    /not authorized|does not authorize/,
+  ],
   [
     'empty module',
     { op: 'replace', path: 'a.md', content: '' },
@@ -719,7 +724,7 @@ test('mutation treats module path metacharacters literally and rejects an expand
         : {}),
     };
     if (editSibling) {
-      await expectRunFailure(options, /not authorized/);
+      await expectRunFailure(options, /not authorized|does not authorize/);
       continue;
     }
     const run = await runGepa(options);
@@ -778,8 +783,7 @@ for (const entry of constraintCases) {
 test('malformed reflective outputs fail before committing or evaluating a proposal', async () => {
   const malformedOutputs: JsonObject[] = [
     {
-      edits: [{ op: 'replace', path: 'a.md', content: 42 }],
-      reason: 'Invalid replacement type',
+      reason: 42,
     },
     { edits: [{ op: 'replace', path: 'a.md', content: 'A1' }] },
   ];

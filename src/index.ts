@@ -18,6 +18,7 @@ export type * from './contracts/index.js';
 export { runDoctorCheck } from './shared/doctor-check.js';
 export {
   prepareAgentProject,
+  releaseSettledProject,
   type AgentRole,
 } from './plugins/shared/agent-editing/project.js';
 

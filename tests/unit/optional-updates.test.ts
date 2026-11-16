@@ -52,28 +52,42 @@ test('Pi exhausts request retries while Memory and Reflection retain effective s
     let body = '';
     for await (const chunk of request) body += String(chunk);
     requests.push(object(JSON.parse(body)));
-    if (requests.length > 2) {
+    if (requests.length > 4) {
       response.writeHead(503, { 'content-type': 'application/json' });
       response.end(
         JSON.stringify({ error: { message: 'Fixture model unavailable' } }),
       );
       return;
     }
-    const result = {
-      edits: [
-        {
-          path:
-            requests.length === 1
-              ? 'wiki.md'
-              : 'bindings/memoryUpdater/resources/prompt',
-          content:
-            requests.length === 1
-              ? 'Retained experience.'
-              : 'Revised Memory guidance.',
-        },
-      ],
-      reason: 'Initial successful update.',
-    };
+    const write = requests.length === 1 || requests.length === 3;
+    const delta = write
+      ? {
+          role: 'assistant',
+          tool_calls: [
+            {
+              index: 0,
+              id: `write-${requests.length}`,
+              type: 'function',
+              function: {
+                name: 'write',
+                arguments: JSON.stringify({
+                  path:
+                    requests.length === 1
+                      ? 'candidate/wiki.md'
+                      : 'candidate/bindings/memoryUpdater/resources/prompt',
+                  content:
+                    requests.length === 1
+                      ? 'Retained experience.'
+                      : 'Revised Memory guidance.',
+                }),
+              },
+            },
+          ],
+        }
+      : {
+          role: 'assistant',
+          content: JSON.stringify({ reason: 'Initial successful update.' }),
+        };
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.end(
       'data: ' +
@@ -85,8 +99,8 @@ test('Pi exhausts request retries while Memory and Reflection retain effective s
           choices: [
             {
               index: 0,
-              delta: { role: 'assistant', content: JSON.stringify(result) },
-              finish_reason: 'stop',
+              delta,
+              finish_reason: write ? 'tool_calls' : 'stop',
             },
           ],
         }) +
@@ -203,14 +217,14 @@ test('Pi exhausts request retries while Memory and Reflection retain effective s
   );
   assert.equal((await fixture.manager.get('test')).status, 'cancelled');
   assert.equal(deliveries, 1);
-  assert.equal(requests.length, 6);
+  assert.equal(requests.length, 8);
   const result = await fixture.manager.run(recipePath, {
     id: 'test',
     resume: true,
   });
   assert.equal(result.status, 'succeeded');
   assert.equal(deliveries, 3);
-  assert.equal(requests.length, 18);
+  assert.equal(requests.length, 20);
   const calls = await fixture.manager.facts.list('calls');
   const memories = calls.filter((call) => call.bindingId === 'memoryUpdater');
   const succeeded = memories.find((call) => call.status === 'succeeded');
@@ -246,11 +260,11 @@ test('Pi exhausts request retries while Memory and Reflection retain effective s
   );
   assert.ok(revision);
   assert.ok(failed.every((call) => call.revisionRef === revision.ref));
-  assert.match(JSON.stringify(requests[2]), /Revised Memory guidance/);
-  assert.match(JSON.stringify(requests[10]), /Revised Memory guidance/);
+  assert.match(JSON.stringify(requests[4]), /Revised Memory guidance/);
+  assert.match(JSON.stringify(requests[12]), /Revised Memory guidance/);
   assert.equal(
     (await fixture.manager.facts.read('budgets', 'test')).modelCalls,
-    18,
+    20,
   );
   assert.equal(
     await readFile(join(root, 'memory.md'), 'utf8'),
@@ -258,7 +272,7 @@ test('Pi exhausts request retries while Memory and Reflection retain effective s
   );
   assert.deepEqual(await readdir(join(root, '.rsi', 'workspaces')), []);
   await fixture.manager.run(recipePath, { id: 'test', resume: true });
-  assert.equal(requests.length, 18);
+  assert.equal(requests.length, 20);
   assert.equal(deliveries, 3);
 });
 

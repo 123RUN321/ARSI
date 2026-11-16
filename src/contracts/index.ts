@@ -37,3 +37,6 @@ export type {
 } from './runtime/services.js';
 export * from './runtime/events.js';
 export * from './plugin-types/index.js';
+
+export * from './models/agent-record.js';
+export * from './runtime/agent-execution.js';

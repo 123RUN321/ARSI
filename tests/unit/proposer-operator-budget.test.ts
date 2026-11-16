@@ -3,20 +3,26 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import { piDefinition } from '../../src/plugins/agent-pi/index.js';
-import { object } from '../../src/shared/json.js';
-import { FileArtifacts } from '../../src/runtime/storage/index.js';
+import { object, string } from '../../src/shared/json.js';
+import {
+  FileArtifacts,
+  FileWorkspaces,
+} from '../../src/runtime/storage/index.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
 import { requestOperatorAgent } from '../../src/plugins/shared/operator-attempt/agent.js';
 
 async function projectContext(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'rsi-operator-stage-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
+  const artifacts = new FileArtifacts(join(directory, 'artifacts'));
   return new RuntimeContext().extend({
     directory,
-    artifacts: new FileArtifacts(join(directory, 'artifacts')),
+    callId: 'stage',
+    artifacts,
+    workspaces: new FileWorkspaces(join(directory, 'workspaces'), artifacts),
   });
 }
 
@@ -29,22 +35,40 @@ test('operator stages derive separate scopes, preserve cancellation and reject a
     async invokeAgent(this: RuntimeContext, binding, request) {
       assert.equal(binding, 'agent');
       assert.equal(this.scope?.limits.modelCalls, undefined);
-      assert.ok(typeof request.cwd === 'string');
+      assert.ok(
+        typeof dirname(
+          (await context.workspaces.read(request.projectRef)).directory,
+        ) === 'string',
+      );
       assert.deepEqual(Object.keys(request).sort(), [
-        'cwd',
         'goal',
+        'mode',
         'outputSchema',
+        'projectRef',
       ]);
       assert.equal(
         await readFile(
-          join(request.cwd, 'context/sources/kernels/add.py'),
+          join(
+            dirname(
+              (await context.workspaces.read(request.projectRef)).directory,
+            ),
+            'context/sources/kernels/add.py',
+          ),
           'utf8',
         ),
         'authorized source',
       );
       assert.deepEqual(
         JSON.parse(
-          await readFile(join(request.cwd, 'context/input.json'), 'utf8'),
+          await readFile(
+            join(
+              dirname(
+                (await context.workspaces.read(request.projectRef)).directory,
+              ),
+              'context/input.json',
+            ),
+            'utf8',
+          ),
         ),
         {
           hardwareContext: 'authorized hardware context',
@@ -54,7 +78,15 @@ test('operator stages derive separate scopes, preserve cancellation and reject a
         },
       );
       assert.match(
-        await readFile(join(request.cwd, 'AGENTS.md'), 'utf8'),
+        await readFile(
+          join(
+            dirname(
+              (await context.workspaces.read(request.projectRef)).directory,
+            ),
+            'AGENTS.md',
+          ),
+          'utf8',
+        ),
         /context\/input\.json/,
       );
       assert.equal(this.scope?.signal, this.signal);
@@ -107,7 +139,12 @@ test('operator profile snapshots remain readable in chunks by the Agent read too
     signal: new AbortController().signal,
     async invokeAgent(_binding, request) {
       const text = await readFile(
-        join(request.cwd, 'context/input.json'),
+        join(
+          dirname(
+            (await context.workspaces.read(request.projectRef)).directory,
+          ),
+          'context/input.json',
+        ),
         'utf8',
       );
       assert.ok(Buffer.byteLength(text) > 50 * 1024);
@@ -145,7 +182,12 @@ test('operator stages forward authorized snapshots above 2 MiB without an implic
     async invokeAgent(this: RuntimeContext, _binding, request) {
       assert.equal(
         await readFile(
-          join(request.cwd, 'context/sources/kernels/add.py'),
+          join(
+            dirname(
+              (await context.workspaces.read(request.projectRef)).directory,
+            ),
+            'context/sources/kernels/add.py',
+          ),
           'utf8',
         ),
         source,
@@ -154,24 +196,23 @@ test('operator stages forward authorized snapshots above 2 MiB without an implic
       return { accepted: true };
     },
   });
-  assert.deepEqual(
-    await requestOperatorAgent(
-      'generate',
-      'agent',
-      {
-        goal: 'Inspect the complete authorized source',
-        prompt: 'Return JSON',
-        sourcePath: 'kernels/add.py',
-        sourceFiles: ['kernels/add.py'],
-        editablePaths: ['kernels/add.py'],
-        files: { 'context/sources/kernels/add.py': source },
-        input: {},
-        outputSchema: { type: 'object' },
-      },
-      context,
-    ),
-    { accepted: true },
+  const output = await requestOperatorAgent(
+    'generate',
+    'agent',
+    {
+      goal: 'Inspect the complete authorized source',
+      prompt: 'Return JSON',
+      sourcePath: 'kernels/add.py',
+      sourceFiles: ['kernels/add.py'],
+      editablePaths: ['kernels/add.py'],
+      files: { 'context/sources/kernels/add.py': source },
+      input: {},
+      outputSchema: { type: 'object' },
+    },
+    context,
   );
+  assert.equal(output.accepted, true);
+  await context.workspaces.release(string(output.editRef));
 });
 
 test('operator stage timeout can be disabled while parent cancellation still propagates', async (t) => {
@@ -350,7 +391,8 @@ test('operator stage completes tool continuations and delegated review beyond 24
   t.after(() => fixture.close());
   const result = await fixture.run();
   assert.equal(result.status, 'succeeded');
-  assert.deepEqual(result.output, { accepted: true });
+  assert.equal(object(result.output).accepted, true);
+  assert.equal(typeof object(result.output).editRef, 'string');
   assert.equal(fixture.requestCount(), 27);
   const budget = await fixture.manager.facts.read('budgets', 'test');
   assert.equal(budget.modelCalls, 27);
@@ -360,16 +402,8 @@ test('operator stage completes tool continuations and delegated review beyond 24
   const calls = (await fixture.manager.facts.list('calls')).filter(
     (call) => call.bindingId === 'agent',
   );
-  assert.equal(calls.length, 2);
-  assert.ok(calls.every((call) => call.status === 'succeeded'));
-  const delegate = calls.find(
-    (call) => object(call.input).role === 'operator-reviewer',
-  );
-  assert.ok(delegate);
-  const parent = calls.find((call) => call.callId === delegate.parentCallId);
-  assert.ok(parent);
-  assert.equal(object(delegate.input).goal, 'Review the authorized source');
-  assert.equal(object(delegate.input).cwd, object(parent.input).cwd);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.status, 'succeeded');
 });
 
 test('lower Manager model budget stops an operator stage before its next external request', async (t) => {

@@ -10,12 +10,12 @@ if (args.includes('--version')) {
     JSON.stringify([
       {
         type: 'document',
-        info: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT),
+        info: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}'),
       },
     ]),
   );
 } else {
-  const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT);
+  const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}');
   const agent = args[args.indexOf('--agent') + 1];
   fs.writeFileSync(
     'audit.json',

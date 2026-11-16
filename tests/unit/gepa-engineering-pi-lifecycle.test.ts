@@ -3,7 +3,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
 import type { JsonObject } from '../../src/contracts/index.js';
-import { object } from '../../src/shared/json.js';
 import { runGepa } from '../fixtures/gepa-runtime.js';
 
 function sseChunk(delta: object, finish: string | null): string {
@@ -32,28 +31,27 @@ async function localModel(onRequest?: (count: number) => void, readTurns = 4) {
     for (const message of request.messages ?? [])
       if (message.role === 'tool')
         seenTools.set(message.tool_call_id, String(message.content));
-    const toolUse = requests <= readTurns;
+    const toolUse = requests <= readTurns + 1;
     const delta = toolUse
       ? {
           role: 'assistant',
-          tool_calls: [0, 1].map((index) => ({
+          tool_calls: (requests <= readTurns ? [0, 1] : [0]).map((index) => ({
             index,
             id: 'read-' + requests + '-' + index,
             type: 'function',
             function: {
-              name: 'read',
-              arguments: JSON.stringify({
-                path: 'candidate/a.md',
-                offset: 1,
-                limit: 1,
-              }),
+              name: requests <= readTurns ? 'read' : 'write',
+              arguments: JSON.stringify(
+                requests <= readTurns
+                  ? { path: 'candidate/a.md', offset: 1, limit: 1 }
+                  : { path: 'candidate/a.md', content: 'A1' },
+              ),
             },
           })),
         }
       : {
           role: 'assistant',
           content: JSON.stringify({
-            edits: [{ op: 'replace', path: 'a.md', content: 'A1' }],
             reason: `Completed ${readTurns} tool turns, then final schema-valid JSON.`,
           }),
         };
@@ -103,55 +101,6 @@ const common = {
   proposals: { a: 'A1' },
 };
 
-for (const failures of [1, 2]) {
-  test(`GEPA reuses its successful Pi receipt across ${failures} pre-commit failures and fresh Managers`, async () => {
-    const previous = process.env.GEPA_LOCAL_FIXTURE_KEY;
-    process.env.GEPA_LOCAL_FIXTURE_KEY = 'localhost-fixture-only';
-    const model = await localModel(undefined, 0);
-    let run: Awaited<ReturnType<typeof runGepa>> | undefined;
-    try {
-      run = await runGepa({
-        ...common,
-        realAgentEndpoint: model.endpoint,
-        editWorkspaceFailures: failures,
-        restartOnResume: true,
-      });
-      assert.equal(run.interruptions.length, failures);
-      assert(run.interruptions.every((record) => record.status === 'failed'));
-      assert.equal(run.output.completedRounds, 1);
-      assert.equal(model.requests, 1);
-      assert.equal(
-        object((await run.manager.get('gepa-runtime')).usage).modelCalls,
-        1,
-      );
-      assert.equal(run.evaluationCalls.length, 4);
-      const calls = await run.manager.facts.list('calls');
-      assert.equal(
-        calls.filter(
-          (call) => call.bindingId === 'agent' && call.status === 'succeeded',
-        ).length,
-        1,
-      );
-      assert.equal(
-        calls.filter(
-          (call) =>
-            call.bindingId === '_application' &&
-            object(call.input).action === 'commit' &&
-            call.status === 'succeeded',
-        ).length,
-        1,
-      );
-    } finally {
-      if (run) {
-        await run.manager.dispose();
-        await rm(run.root, { recursive: true, force: true });
-      }
-      await model.close();
-      if (previous === undefined) delete process.env.GEPA_LOCAL_FIXTURE_KEY;
-      else process.env.GEPA_LOCAL_FIXTURE_KEY = previous;
-    }
-  });
-}
 test('actual Pi reads managed candidate files and respects the Manager model-call budget', async () => {
   const previous = process.env.GEPA_LOCAL_FIXTURE_KEY;
   process.env.GEPA_LOCAL_FIXTURE_KEY = 'localhost-fixture-only';
@@ -188,11 +137,11 @@ test('actual Pi reads managed candidate files and respects the Manager model-cal
           const rounds = run.output.rounds as JsonObject[];
           assert.equal(run.output.completedRounds, 1);
           assert.equal(rounds[0]!.status, 'admitted');
-          assert.equal(model.requests, 5);
-          assert.equal(model.seenTools.size, 8);
+          assert.equal(model.requests, 6);
+          assert.equal(model.seenTools.size, 9);
           assert.ok(
             [...model.seenTools.values()].every(
-              (value) => value.includes('A0') && !value.includes('error'),
+              (value) => !value.includes('error'),
             ),
           );
         }

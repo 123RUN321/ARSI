@@ -1,14 +1,18 @@
+import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   RuntimeContext,
   type JsonObject,
   type MemoryInput,
 } from '../../src/contracts/index.js';
-import { FileArtifacts } from '../../src/runtime/storage/index.js';
+import {
+  FileArtifacts,
+  FileWorkspaces,
+} from '../../src/runtime/storage/index.js';
 import { projectEvidenceFiles } from '../../src/runtime/services/facts/evidence-files.js';
 import { buildComparisonContext } from '../../src/plugins/memory-agent/comparison.js';
 import { editResource } from '../../src/plugins/shared/agent-editing/index.js';
@@ -144,6 +148,12 @@ test('Memory receives inline diffs and bounded execution packets without duplica
       reason: 'Usable output',
     });
     let workspaceCreates = 0;
+    const spaces = new FileWorkspaces(join(root, 'workspaces'), artifacts);
+    const create = spaces.create.bind(spaces);
+    spaces.create = async (...args) => {
+      workspaceCreates++;
+      return create(...args);
+    };
     const services: RuntimeContext = new RuntimeContext().extend({
       rootDirectory: root,
       dataDirectory: root,
@@ -154,20 +164,7 @@ test('Memory receives inline diffs and bounded execution packets without duplica
         write: async () => {},
         list: async () => [],
       },
-      workspaces: {
-        create: async () => {
-          workspaceCreates++;
-          const directory = join(root, 'workspace');
-          await mkdir(directory, { recursive: true });
-          return { ref: 'ws', directory, parentCandidateRef: null };
-        },
-        read: async () => ({
-          ref: 'ws',
-          directory: root,
-          parentCandidateRef: null,
-        }),
-        release: async () => {},
-      },
+      workspaces: spaces,
       readCandidate: async (ref) => {
         assert.ok(['base', 'candidate'].includes(ref));
         return {
@@ -195,10 +192,9 @@ test('Memory receives inline diffs and bounded execution packets without duplica
       },
       application: async () => ({}),
       applicationMetadata: async () => ({}),
-      invokeAgent: async () => ({
-        edits: [{ path: 'context/index.json', content: 'tampered' }],
-        reason: 'bad',
-      }),
+      invokeAgent: async () => {
+        throw new Error('controlled Agent failure');
+      },
       invoke: async () => ({}),
       charge: async () => {},
       withInstance: async (_ref, _cap, use) => use({}),
@@ -263,11 +259,22 @@ test('Memory receives inline diffs and bounded execution packets without duplica
         context.extend(services),
         result,
       ),
-      /read.only/i,
+      /controlled Agent failure/i,
     );
-    assert.equal(workspaceCreates, 0);
-    services.invokeAgent = async (_binding, request) => {
-      const directory = join(string(request.cwd), 'context');
+    assert.equal(workspaceCreates, 1);
+    services.invokeAgent = async function (
+      this: RuntimeContext,
+      _binding,
+      request,
+    ) {
+      const directory = join(
+        string(
+          dirname(
+            (await services.workspaces.read(request.projectRef)).directory,
+          ),
+        ),
+        'context',
+      );
       await assert.rejects(readFile(join(directory, 'index.json')), {
         code: 'ENOENT',
       });
@@ -280,7 +287,7 @@ test('Memory receives inline diffs and bounded execution packets without duplica
         /excerpts/,
       );
       assert.ok((await readdir(join(directory, 'runs'))).length <= 4);
-      return {
+      return directAgentResult(this, request, {
         edits: [
           {
             path: 'experiences/pattern.md',
@@ -288,7 +295,7 @@ test('Memory receives inline diffs and bounded execution packets without duplica
           },
         ],
         reason: 'Evidence',
-      };
+      });
     };
     const operation = await createMemoryAgent(
       { prompt: 'src/policies/harness2/memory.md' },

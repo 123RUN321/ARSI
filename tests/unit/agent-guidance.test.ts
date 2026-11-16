@@ -9,7 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import * as editing from '../../src/plugins/shared/agent-editing/index.js';
 import { RuntimeContext } from '../../src/contracts/index.js';
 import {
@@ -112,8 +112,15 @@ test('editor delivers guidance revisions on subsequent requests without appendin
       charge: unused,
       readEvidence: async () => ({}),
       invokeAgent: async (_binding, request) => ({
-        edits: [],
-        reason: await readFile(join(string(request.cwd), 'AGENTS.md'), 'utf8'),
+        reason: await readFile(
+          join(
+            dirname(
+              (await services.workspaces.read(request.projectRef)).directory,
+            ),
+            'AGENTS.md',
+          ),
+          'utf8',
+        ),
       }),
     });
     const context: RuntimeContext = new RuntimeContext().extend({
@@ -155,7 +162,7 @@ test('editor delivers guidance revisions on subsequent requests without appendin
       null,
       context.extend(services),
     );
-    assert.match(string(original.reason), /^Base editor prompt\.\n/);
+    assert.match(string(original.result.reason), /^Base editor prompt\.\n/);
     await writeFile(join(guidance, 'rule.md'), 'Use evidence.');
     const first = await editing.requestEdit(
       config,
@@ -163,7 +170,7 @@ test('editor delivers guidance revisions on subsequent requests without appendin
       null,
       context.extend(services),
     );
-    assert.match(String(first.reason), /Use evidence\./);
+    assert.match(String(first.result.reason), /Use evidence\./);
     await writeFile(join(guidance, 'rule.md'), 'Check evidence applicability.');
     const next = await editing.requestEdit(
       config,
@@ -171,9 +178,12 @@ test('editor delivers guidance revisions on subsequent requests without appendin
       null,
       context.extend(services),
     );
-    assert.match(String(next.reason), /Check evidence applicability\./);
-    assert.equal(String(next.reason).includes('Use evidence.'), false);
-    assert.equal(String(next.reason).split('Base editor prompt.').length, 2);
+    assert.match(String(next.result.reason), /Check evidence applicability\./);
+    assert.equal(String(next.result.reason).includes('Use evidence.'), false);
+    assert.equal(
+      String(next.result.reason).split('Base editor prompt.').length,
+      2,
+    );
     assert.equal(await readFile(prompt, 'utf8'), 'Base editor prompt.');
   } finally {
     await rm(root, { recursive: true, force: true });
