@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type {
   AgentbenchInput,
@@ -23,6 +24,7 @@ import {
 import { evaluationStatus } from '../shared/evaluator-adapter/measurement.js';
 import { normalizeEvaluation } from './measurement.js';
 import { canRestartPreparation } from './preparation-recovery.js';
+import { evaluatorScheduling } from '../shared/evaluator-adapter/scheduling.js';
 import { interruptedRun } from './interrupted-run.js';
 import { configSchema, type AgentbenchConfig } from './schema.js';
 import {
@@ -39,6 +41,7 @@ export async function createAgentbench(
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<AgentbenchInput, AgentbenchOutput>> {
   validate(configSchema, config, 'evaluator config');
+  const scheduling = evaluatorScheduling();
   const reconciled = new Map<
     string,
     { inputDigest: string; measurementRef: string | null; attempt: string }
@@ -198,12 +201,26 @@ export async function createAgentbench(
           await context.charge('evaluationRuns', 1);
         }
         let result: unknown;
+        if (scheduling)
+          await writeFile(
+            join(context.directory, `scheduling-${randomUUID()}.json`),
+            JSON.stringify({
+              schemaVersion: 'rsi.evaluator-scheduling/v1',
+              recordedAt: new Date().toISOString(),
+              experimentId: context.experimentId,
+              callId: context.callId,
+              baselineConfigDigest: digest(evaluationConfig),
+              ...scheduling,
+            }),
+            { flag: 'wx', mode: 0o600 },
+          );
         try {
           result = await runner({
             configPath,
             signal: context.signal,
             env: process.env,
             ...(resume ? { resume } : {}),
+            ...(scheduling ? { scheduling } : {}),
           });
         } catch (error) {
           const partial =

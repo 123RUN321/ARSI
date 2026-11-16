@@ -34,6 +34,7 @@ type EvaluatorKind = 'agentbench' | 'inferencebench';
 
 for (const change of [
   'none',
+  'scheduling',
   'released',
   'config',
   'selection',
@@ -44,6 +45,17 @@ for (const change of [
 ]) {
   test(`interrupted AgentBench resumes its exact native run; ${change}`, async () => {
     const directory = await mkdtemp(join(tmpdir(), 'rsi-eval-resume-'));
+    const schedulingKeys = [
+      'RSI_EVALUATOR_CONCURRENCY',
+      'RSI_EVALUATOR_PREPARATION_CONCURRENCY',
+      'RSI_EVALUATOR_SCHEDULING_REASON',
+    ] as const;
+    const previousScheduling = schedulingKeys.map((key) => process.env[key]);
+    if (change === 'scheduling') {
+      process.env.RSI_EVALUATOR_CONCURRENCY = '16';
+      process.env.RSI_EVALUATOR_PREPARATION_CONCURRENCY = '16';
+      process.env.RSI_EVALUATOR_SCHEDULING_REASON = 'approved continuation';
+    }
     try {
       const { services, measurements } = harness(directory);
       const call = services.extend({
@@ -147,6 +159,12 @@ for (const change of [
         runs++;
         assert.equal(options.resume, 'native');
         assert.equal(options.configPath, configPath);
+        if (change === 'scheduling')
+          assert.deepEqual(options.scheduling, {
+            concurrency: 16,
+            preparationConcurrency: 16,
+            reason: 'approved continuation',
+          });
         return { kind: 'local', exitCode: 0, snapshot: snapshot() };
       });
       const recover = op.recover;
@@ -156,7 +174,11 @@ for (const change of [
         { status: 'running', input, callId: 'call', experimentId: 'exp' },
         call,
       );
-      if (change === 'none' || change === 'released') {
+      if (
+        change === 'none' ||
+        change === 'released' ||
+        change === 'scheduling'
+      ) {
         assert.deepEqual(await recovery, { measurementRef: 'measurement:one' });
         assert.equal(runs, 1);
         assert.equal(measurements.length, 1);
@@ -173,6 +195,11 @@ for (const change of [
       }
       assert.deepEqual(charges, []);
     } finally {
+      schedulingKeys.forEach((key, index) => {
+        const value = previousScheduling[index];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      });
       await rm(directory, { recursive: true, force: true });
     }
   });
