@@ -98,6 +98,8 @@ Runtime restores locked definitions, budget usage, effective revisions, call rec
 
 - Resume does not reset counters or the experiment's start time; a configured elapsed-wall budget includes downtime.
 
+After an abrupt worker exit, AgentBench can reattach to the same native SDK run when the original ready Application instance, candidate artifact, saved configuration and task selection still match. The SDK owns its writer lock and skips completed tasks. RSI retains the existing operation/evaluation reservations and archives the interrupted receipt. Other unknown calls remain refused unless their plugin explicitly implements `recover`; a successful launch does not establish completion. Ensure the previous worker has exited before resuming.
+
 ## Dashboard
 
 ```sh

@@ -94,6 +94,7 @@ Runtime 每次调用插件时，执行该对象的 `execute(input, context)`；�
 | `execute(input, context)`           | 完成一次业务调用。                           | 必需，异步返回符合公共契约的输出；`input` 是本次调用的数据。                        |
 | `dispose()`                         | 释放实例持有的进程、连接和监听器等长期资源。 | 必需，异步完成清理；没有资源时可为空实现。                                          |
 | `canRetry(input, receipt, context)` | 确认失败或取消的调用是否可以安全重放。       | 可选，通过只读检查确认重放不会重复副作用时才返回 `true`；不用于重放效果未知的调用。 |
+| `recover(input, receipt, context)` | 在显式续跑实验时接续或核对中断的操作。 | 可选，在实验锁内处理 `running` 或 `unknown` 收据，不再次调用 `execute`。无法确认安全接续时必须拒绝。原预留用量保持已扣，新工作仍正常计费。 |
 
 ## 示例：编写并使用一个最小 Proposer
 

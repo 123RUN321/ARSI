@@ -94,6 +94,7 @@ Runtime executes this object's `execute(input, context)` for each plugin call. I
 | `execute(input, context)`           | Perform one business call.                                                                | Required; asynchronously return output matching the public contract. `input` contains the data for this call.                             |
 | `dispose()`                         | Release instance-owned processes, connections, listeners, and other long-lived resources. | Required; complete cleanup asynchronously. May be empty when there are no resources.                                                      |
 | `canRetry(input, receipt, context)` | Confirm whether a failed or cancelled call can be replayed safely.                        | Optional; return `true` only after read-only checks confirm replay cannot duplicate effects. Does not replay calls with unknown outcomes. |
+| `recover(input, receipt, context)` | Continue or reconcile an interrupted operation during explicit experiment resume. | Optional; handles `running` or `unknown` receipts under the experiment lock without invoking `execute` again. Reject if safe continuation cannot be verified. Existing reservations stay charged; charge new work normally. |
 
 ## Example: Write and use a minimal Proposer
 

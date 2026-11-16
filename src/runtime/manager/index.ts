@@ -448,6 +448,7 @@ export class Manager {
       const checkpoints = new PolicyCheckpoints(this.facts, id);
       const calls = createCallExecutor({
         id,
+        resume: options.resume === true,
         registry: this.options.registry,
         facts: this.facts,
         revisionRefs: activation.revisionRefs,

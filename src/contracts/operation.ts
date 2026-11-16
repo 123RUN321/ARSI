@@ -17,6 +17,11 @@ export interface Operation<
     receipt: JsonObject,
     context: RuntimeContext,
   ): Promise<boolean>;
+  /** Explicit experiment resume only, under the Runtime's exclusive lock.
+   * Continue/reconcile a running or unknown receipt without replaying execute.
+   * Must reject if its external operation cannot resume without duplicating
+   * effects. Existing reservations remain charged; new work charges normally. */
+  recover?(input: I, receipt: JsonObject, context: RuntimeContext): Promise<O>;
   dispose(): Promise<void>;
 }
 /** C describes supplied configuration; fields with Schema defaults may be optional. */

@@ -24,6 +24,7 @@ import type { Registry } from '../registry/index.js';
 
 interface CallExecutorOptions {
   id: string;
+  resume?: boolean;
   registry: Registry;
   facts: FactStore;
   revisionRefs: Readonly<JsonObject>;
@@ -206,8 +207,15 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       const lease = await options.operation(bindingId, binding);
       ctx = ctx.extend({ event: lease.event });
       try {
+        const recover =
+          options.resume &&
+          prior?.pluginId === binding.plugin &&
+          (prior.status === 'running' || prior.status === 'unknown')
+            ? lease.operation.recover?.bind(lease.operation)
+            : undefined;
         if (
           prior &&
+          !recover &&
           ((prior.status !== 'failed' && prior.status !== 'cancelled') ||
             prior.pluginId !== binding.plugin ||
             !lease?.operation.canRetry ||
@@ -220,6 +228,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
         ctx.signal.throwIfAborted();
         if (
           prior &&
+          !recover &&
           project !== undefined &&
           projectArtifactRef !== undefined
         ) {
@@ -227,7 +236,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           await rm(project, { recursive: true, force: true });
           await ctx.artifacts.materialize(projectArtifactRef, project);
         }
-        await charge('operations', 1, ctx);
+        if (!recover) await charge('operations', 1, ctx);
         await mkdir(ctx.directory, { recursive: true });
         const recoveredFrom = prior
           ? `${callId}-${digest(prior).slice(0, 24)}`
@@ -242,7 +251,9 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           ...(projectArtifactRef === undefined
             ? {}
             : { agentProjectArtifactRef: projectArtifactRef }),
-          startedAt: new Date().toISOString(),
+          startedAt:
+            recover && prior ? prior.startedAt : new Date().toISOString(),
+          ...(recover ? { resumedAt: new Date().toISOString() } : {}),
           ...(recoveredFrom ? { recoveredFrom } : {}),
         };
         await options.facts.write('calls', callId, receipt);
@@ -303,7 +314,11 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             throw new Error('Invalid rsi/before-call decision');
           if (decision.kind === 'reject')
             throw new Error(`Call admission rejected: ${decision.reason}`);
-          output = checkedOutput(await lease.operation.execute(input, ctx));
+          output = checkedOutput(
+            recover && prior
+              ? await recover(input, prior, ctx)
+              : await lease.operation.execute(input, ctx),
+          );
           memoryFailed = isMemory && object(output).status === 'failed';
           if (
             !(await commit({

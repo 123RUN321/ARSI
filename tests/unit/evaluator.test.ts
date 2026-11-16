@@ -16,7 +16,10 @@ import { meanReward } from '../../src/plugins/evaluator-agentbench/metrics.js';
 import { object, string } from '../../src/shared/json.js';
 import { agentbenchDefinition } from '../../src/plugins/evaluator-agentbench/index.js';
 import { inferencebenchDefinition } from '../../src/plugins/evaluator-inferencebench/index.js';
-import { createAgentbench } from '../../src/plugins/evaluator-agentbench/service.js';
+import {
+  createAgentbench,
+  prepareEvaluationConfig,
+} from '../../src/plugins/evaluator-agentbench/service.js';
 import { createInferencebench } from '../../src/plugins/evaluator-inferencebench/service.js';
 import type { AgentbenchConfig } from '../../src/plugins/evaluator-agentbench/schema.js';
 import type { EvaluatorConfig } from '../../src/plugins/evaluator-inferencebench/schema.js';
@@ -28,6 +31,135 @@ import {
   type OperationDefinition,
 } from '../../src/contracts/index.js';
 type EvaluatorKind = 'agentbench' | 'inferencebench';
+
+for (const change of [
+  'none',
+  'config',
+  'selection',
+  'candidate',
+  'workspace',
+  'instance',
+  'ambiguous-run',
+]) {
+  test(`interrupted AgentBench resumes its exact native run; ${change}`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'rsi-eval-resume-'));
+    try {
+      const { services, measurements } = harness(directory);
+      const call = services.extend({
+        directory,
+        experimentId: 'exp',
+        callId: 'call',
+        signal: new AbortController().signal,
+        cleanup: new AbortController().signal,
+      });
+      const bundle = join(directory, 'bundle');
+      await mkdir(bundle);
+      const execution = {
+        directory: bundle,
+        workspaceRef: 'ws',
+        artifactDigest: 'artifact:a',
+        bundleDigest: 'sha256:bundle',
+      };
+      const input = { candidateRef: 'candidate:a', taskIds: ['task/a'] };
+      const config: AgentbenchConfig = {
+        services: { default: { model: 'fixture', base_url: 'http://model' } },
+        benchmark: { name: 'workbuddy' },
+      };
+      const expected = prepareEvaluationConfig(config, {
+        taskIds: input.taskIds,
+        execution,
+        directory,
+      });
+      const configPath = join(directory, 'evaluator.json');
+      await writeFile(
+        configPath,
+        JSON.stringify(
+          change === 'config'
+            ? { ...expected, run: { taskIds: ['other'] } }
+            : expected,
+        ),
+      );
+      await mkdir(join(directory, 'sdk/native'), { recursive: true });
+      await writeFile(
+        join(directory, 'sdk/native/manifest.json'),
+        JSON.stringify({
+          runId: 'native',
+          taskIds: change === 'selection' ? ['other'] : input.taskIds,
+        }),
+      );
+      if (change === 'ambiguous-run')
+        await mkdir(join(directory, 'sdk/another'));
+      call.workspaces = {
+        ...call.workspaces,
+        read: async () => ({
+          ref: 'ws',
+          directory: bundle,
+          parentCandidateRef: null,
+        }),
+      };
+      call.artifacts = {
+        ...call.artifacts,
+        capture: async () =>
+          change === 'workspace' ? 'artifact:changed' : 'artifact:a',
+      };
+      call.readCandidate = async () => ({
+        ref: input.candidateRef,
+        artifactRef: change === 'candidate' ? 'artifact:changed' : 'artifact:a',
+        parentRef: null,
+        experimentId: 'exp',
+      });
+      call.facts = {
+        ...call.facts,
+        read: async () => ({
+          status: change === 'instance' ? 'released' : 'ready',
+          experimentId: 'exp',
+          candidateRef: input.candidateRef,
+          execution,
+        }),
+      };
+      const charges: string[] = [];
+      const actions: string[] = [];
+      let runs = 0;
+      call.charge = async (metric) => {
+        charges.push(metric);
+      };
+      call.application = async (request) => {
+        actions.push(String(request.action));
+        return {};
+      };
+      const op = await createAgentbench(config, services, async (options) => {
+        runs++;
+        assert.equal(options.resume, 'native');
+        assert.equal(options.configPath, configPath);
+        return { kind: 'local', exitCode: 0, snapshot: snapshot() };
+      });
+      const recover = op.recover;
+      assert.ok(recover);
+      const recovery = recover(
+        input,
+        { status: 'running', input, callId: 'call', experimentId: 'exp' },
+        call,
+      );
+      if (change === 'none') {
+        assert.deepEqual(await recovery, { measurementRef: 'measurement:one' });
+        assert.equal(runs, 1);
+        assert.equal(measurements.length, 1);
+        assert.deepEqual(actions, ['release']);
+        assert.deepEqual(
+          JSON.parse(await readFile(configPath, 'utf8')),
+          expected,
+        );
+      } else {
+        await assert.rejects(recovery, /Interrupted evaluator/);
+        assert.equal(runs, 0);
+        assert.deepEqual(actions, []);
+      }
+      assert.deepEqual(charges, []);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
 function evaluatorWithRunner(
   kind: EvaluatorKind,
   runner: EvaluatorRunner,
