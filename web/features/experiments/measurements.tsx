@@ -178,6 +178,7 @@ export function Measurements({
                     </>
                   ) : null}
                   <TableHead>Status</TableHead>
+                  <TableHead>Coverage</TableHead>
                   <TableHead>Finished</TableHead>
                 </TableRow>
               </TableHeader>
@@ -237,6 +238,7 @@ export function Measurements({
                     <TableCell>
                       <Status value={measurement.status} />
                     </TableCell>
+                    <TableCell>{measurement.coverage}</TableCell>
                     <TableCell>
                       <Timestamp value={measurement.finishedAt} />
                     </TableCell>
