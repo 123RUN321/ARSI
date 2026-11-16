@@ -1,6 +1,6 @@
 # TerminalBench asset and solver runtime contract
 
-This describes the supplied Evaluator SDK's TerminalBench 4.0 + AgentBundle DSH + local Docker path, not remote Ray or every benchmark. The consumer must be able to import both `ember-rsi` and `ember-evaluator` public package roots. Never import their internal files. The SDK is an explicit prerequisite for the standalone preflight helper.
+This describes the supplied Evaluator SDK's TerminalBench 4.0 + AgentBundle DSH + local Docker path, not remote Ray or every benchmark. The consumer must be able to import both `arsi` and `arsi-evaluator` public package roots. Never import their internal files. The SDK is an explicit prerequisite for the standalone preflight helper.
 
 ## Prepare tasks through public APIs
 
@@ -32,4 +32,4 @@ After source metadata, Docker access, gateway connectivity and the external requ
 
 Verify actual Measurement `status`, `coverage`, metric definitions and native task results. Confirm the selected Candidate belongs to the returned Measurement and compare under identical task IDs and conditions. No-change or a tie is legitimate but does not prove a changed candidate was evaluated; report that boundary explicitly.
 
-Each native evaluator run has its own run ID, distinct from the RSI experiment ID. Native containers and gateway volumes are labelled `ember.run`, `ember.task`, `ember.attempt`, `ember.phase`. Use the native run IDs in owned results to inspect `docker ps -a --filter label=ember.run=<id>` and `docker volume ls --filter label=ember.run=<id>`. Also check RSI instances and native cleanup diagnostics. Preserve shared cached images and unrelated workloads; absence of running processes alone is not cleanup evidence.
+Each native evaluator run has its own run ID, distinct from the RSI experiment ID. Native containers and gateway volumes are labelled `arsi-evaluator.run`, `arsi-evaluator.task`, `arsi-evaluator.attempt`, `arsi-evaluator.phase`. Use the native run IDs in owned results to inspect `docker ps -a --filter label=arsi-evaluator.run=<id>` and `docker volume ls --filter label=arsi-evaluator.run=<id>`. Also check RSI instances and native cleanup diagnostics. Preserve shared cached images and unrelated workloads; absence of running processes alone is not cleanup evidence.

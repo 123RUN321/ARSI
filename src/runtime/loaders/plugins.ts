@@ -36,7 +36,7 @@ export async function loadPluginDirectories(
 
 /** Only immediate extension folders are loaded; a missing home is allowed. */
 export async function homePluginDirectories(
-  homeDirectory = join(homedir(), '.ember-rsi'),
+  homeDirectory = join(homedir(), '.arsi'),
 ): Promise<string[]> {
   const directory = join(homeDirectory, 'plugins');
   try {

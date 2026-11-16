@@ -14,7 +14,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   try {
     const parsed = parseCommand(argv);
     if (parsed.command !== 'doctor')
-      await mkdir(join(homedir(), '.ember-rsi', 'plugins'), {
+      await mkdir(join(homedir(), '.arsi', 'plugins'), {
         recursive: true,
       });
     if (parsed.command === 'help') {

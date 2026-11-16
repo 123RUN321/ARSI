@@ -30,7 +30,7 @@ Set `bindings.proposer.config.python.executable` in this recipe to the absolute
 path of that environment's Python interpreter. The Application's
 `remote.executable` is configured separately. For an installed package, the worker
 dependencies are listed in
-`node_modules/ember-rsi/dist/src/plugins/proposer-optuna/python/requirements.txt`.
+`node_modules/arsi/dist/src/plugins/proposer-optuna/python/requirements.txt`.
 See [limits and budgets](../../../../docs/users/guides/configuration.md#limits-and-budgets)
 and [iterative proposer](../../../../src/contracts/plugin-types/proposer-iterative.ts)
 for sampling limits and recovery.
@@ -41,10 +41,10 @@ Validation checks schemas without starting Python or the remote server.
 After building RSI and configuring deployment:
 
 ```sh
-ember-rsi doctor examples/artifacts/inference/parameter-tpe/recipe.yaml
-ember-rsi run examples/artifacts/inference/parameter-tpe/recipe.yaml --id parameter-tpe-first
-ember-rsi show parameter-tpe-first
-ember-rsi run examples/artifacts/inference/parameter-tpe/recipe.yaml --id parameter-tpe-first --resume
+arsi doctor examples/artifacts/inference/parameter-tpe/recipe.yaml
+arsi run examples/artifacts/inference/parameter-tpe/recipe.yaml --id parameter-tpe-first
+arsi show parameter-tpe-first
+arsi run examples/artifacts/inference/parameter-tpe/recipe.yaml --id parameter-tpe-first --resume
 ```
 
 Resume requires the same locked configuration and reconciliation of any unknown

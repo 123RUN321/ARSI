@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/users/assets/ember-rsi-logo.png" alt="ember-rsi" width="520">
+  <img src="docs/users/assets/arsi-logo.png" alt="arsi" width="520">
 </h1>
 
 <h3 align="center">多种自演进策略，一个框架统一承载 · Make Everything RSI-able.</h3>
@@ -24,28 +24,28 @@
   <a href="#architecture">工作原理</a> ·
   <a href="#extensions">一切皆插件</a> ·
   <a href="#installation">安装与部署</a> ·
-  <a href="#usage">使用 ember-rsi</a> ·
+  <a href="#usage">使用 arsi</a> ·
   <a href="#built-in-rsi-strategies">内置 RSI 策略</a> ·
   <a href="#user-guide">使用指南</a>
 </p>
 
 <a id="when-to-use"></a>
 
-## 🎯 何时使用 ember-rsi
+## 🎯 何时使用 arsi
 
-当你想借助 AI 持续改进 Agent、模型或 AI 基础设施时，`ember-rsi` 的内置策略、可扩展的插件体系和配套 Skill 能帮你快速开展 Agent Skill 优化、推理引擎调优等实验。
+当你想借助 AI 持续改进 Agent、模型或 AI 基础设施时，`arsi` 的内置策略、可扩展的插件体系和配套 Skill 能帮你快速开展 Agent Skill 优化、推理引擎调优等实验。
 
 | 典型场景                                     | 环境与接入准备                                                                                                                                                    | 可以这样告诉 AI                                                                                                                                                                          |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **让 Harness 的 Skill 根据任务反馈自我进化** | 准备可运行的 Harness、任务和评测标准，复用或编写[运行与评测插件](docs/users/guides/writing-plugins_zh.md)。                                                       | “用 ember-rsi 改进这个 Harness 的 Skill，只允许修改 Skill 文件，在我给定的任务和预算内迭代，并用新任务复测效果。”                                                                        |
-| **自动搜索更适合当前需求的配置参数**         | 提供参数范围、优化指标与约束，接入配置应用和效果评测插件。                                                                                                        | “用 ember-rsi 在给定范围和预算内自动调整这份配置，满足约束后优化目标指标，交付本次实验表现最好的配置和对比结果。”                                                                        |
-| **持续演进算子，寻找正确且延迟更低的实现**   | 准备算子源码与测试环境，接入评测插件，并扩展生成插件和 Policy 以调用 [Memory](docs/users/guides/memory_zh.md)、[Reflection](docs/users/guides/reflection_zh.md)。 | “用 ember-rsi 迭代这份算子：用 Memory 总结有效优化和失败经验，用 Reflection 改进算子生成 Agent 的提示词与指导，供后续轮次使用；在预算内检查正确性、比较延迟，最后独立复测并与基线比较。” |
+| **让 Harness 的 Skill 根据任务反馈自我进化** | 准备可运行的 Harness、任务和评测标准，复用或编写[运行与评测插件](docs/users/guides/writing-plugins_zh.md)。                                                       | “用 arsi 改进这个 Harness 的 Skill，只允许修改 Skill 文件，在我给定的任务和预算内迭代，并用新任务复测效果。”                                                                        |
+| **自动搜索更适合当前需求的配置参数**         | 提供参数范围、优化指标与约束，接入配置应用和效果评测插件。                                                                                                        | “用 arsi 在给定范围和预算内自动调整这份配置，满足约束后优化目标指标，交付本次实验表现最好的配置和对比结果。”                                                                        |
+| **持续演进算子，寻找正确且延迟更低的实现**   | 准备算子源码与测试环境，接入评测插件，并扩展生成插件和 Policy 以调用 [Memory](docs/users/guides/memory_zh.md)、[Reflection](docs/users/guides/reflection_zh.md)。 | “用 arsi 迭代这份算子：用 Memory 总结有效优化和失败经验，用 Reflection 改进算子生成 Agent 的提示词与指导，供后续轮次使用；在预算内检查正确性、比较延迟，最后独立复测并与基线比较。” |
 
 <a id="overview"></a>
 
 ## ℹ️ 简介
 
-`ember-rsi` 是面向 Agent 和 AI 基础设施的插件化递归自改进（RSI）实验框架。
+`arsi` 是面向 Agent 和 AI 基础设施的插件化递归自改进（RSI）实验框架。
 
 - **由 Recipe 驱动自演进**。声明式 Recipe（`recipe.yaml`）连接优化目标（Application）、策略（Policy）和评测器（Evaluator）。每次实验都有明确的修改范围和固定预算。
 - **内置策略与扩展能力**。框架内置 Harness²、WikiSkill、GEPA 等 Agent Harness 优化策略，以及推理参数搜索和算子优化策略。为其他目标定义允许的修改、生成候选方案并衡量效果，即可将其接入同一框架。
@@ -89,10 +89,10 @@ _Harness² 示例 · Proposer 通过 `agent` 引用绑定。在 Recipe 中修改
 将下面这段指令复制给你的编程 Agent：
 
 ```text
-请从 https://github.com/evolving-foundry/ember-rsi 安装 ember-rsi CLI 和配套 skill。
+请从 https://github.com/ARSI-LAB/ARSI 安装 arsi CLI 和配套 skill。
 按照 README 中的 CLI 手动安装说明，检查前置依赖、克隆仓库、安装依赖、构建并安装 CLI。
-将完整的 skills/ember-rsi 目录（包括引用资料和模板）复制到当前 Agent 支持的 skill 目录，替换同名 skill 前先询问。
-运行 ember-rsi --help，并确认当前 Agent 能发现和读取该 skill。本次只完成安装，不启动实验或调用模型。
+将完整的 skills/arsi 目录（包括引用资料和模板）复制到当前 Agent 支持的 skill 目录，替换同名 skill 前先询问。
+运行 arsi --help，并确认当前 Agent 能发现和读取该 skill。本次只完成安装，不启动实验或调用模型。
 ```
 
 ### 手动安装
@@ -106,15 +106,15 @@ _Harness² 示例 · Proposer 通过 `agent` 引用绑定。在 Recipe 中修改
 3. **Git**，用于拉取 AgentBundle 和 Evaluator SDK 依赖。
 
 ```sh
-# 克隆并构建 ember-rsi。
-git clone git@github.com:evolving-foundry/ember-rsi.git
-cd ember-rsi
+# 克隆并构建 arsi。
+git clone git@github.com:ARSI-LAB/ARSI.git
+cd ARSI
 pnpm install --frozen-lockfile
 pnpm build
 pnpm add -g .
 
 # 检查安装后的 CLI 是否可用。
-ember-rsi --help
+arsi --help
 ```
 
 #### 2. 安装 skill
@@ -122,29 +122,29 @@ ember-rsi --help
 在目标项目目录执行以下命令，并选择要安装到的编程 Agent：
 
 ```sh
-npx skills add evolving-foundry/ember-rsi --skill ember-rsi
+npx skills add ARSI-LAB/ARSI --skill arsi
 ```
 
-如需用户级安装，添加 `-g`。按 Agent 的要求重新加载或重启，然后确认能发现和读取 `ember-rsi` skill。
+如需用户级安装，添加 `-g`。按 Agent 的要求重新加载或重启，然后确认能发现和读取 `arsi` skill。
 
 将 RSI Skill 加载到支持 Skill 的编程助手后，可以直接交代优化目标、允许修改的范围和预算，让助手选择或编写 Recipe、校验配置，并在授权后运行实验、检查结果和诊断失败。
 
-- **RSI Skill** 的入口是 [SKILL.md](skills/ember-rsi/SKILL.md)。加载时请保留整个 `skills/ember-rsi/` 目录，以便助手访问参考文档和模板。可先用[最小示例](skills/ember-rsi/references/quickstart.md)验证配方和插件能否正常协作。
+- **RSI Skill** 的入口是 [SKILL.md](skills/arsi/SKILL.md)。加载时请保留整个 `skills/arsi/` 目录，以便助手访问参考文档和模板。可先用[最小示例](skills/arsi/references/quickstart.md)验证配方和插件能否正常协作。
 
-后续命令均在 `ember-rsi` 仓库根目录执行，使用已安装的 `ember-rsi` CLI。
+后续命令均在 `arsi` 仓库根目录执行，使用已安装的 `arsi` CLI。
 
 <a id="usage"></a>
 
-## 🛠️ 使用 ember-rsi
+## 🛠️ 使用 arsi
 
 ### 快速开始
 
 #### 1. 配置模型与评测环境
 
-下面以 [Harness² 示例](examples/harness/dsh-harness2/README.md)（WorkBuddy Office 场景）为例。请先按 Evaluator 的 [WorkBuddy 配置说明](https://github.com/evolving-foundry/ember-evaluator/blob/master/docs/users/benchmarks/workbuddy.zh-CN.md) 准备 **Docker**、题库与容器镜像，并确保宿主机与评测容器均可访问模型服务地址。
+下面以 [Harness² 示例](examples/harness/dsh-harness2/README.md)（WorkBuddy Office 场景）为例。请先按 Evaluator 的 [WorkBuddy 配置说明](https://github.com/ARSI-LAB/ARSI-Evaluator/blob/master/docs/users/benchmarks/workbuddy.zh-CN.md) 准备 **Docker**、题库与容器镜像，并确保宿主机与评测容器均可访问模型服务地址。
 
 ```bash
-# 在运行 ember-rsi 的同一个终端中显式设置变量，ember-rsi 不会自动读取 .env 文件。
+# 在运行 arsi 的同一个终端中显式设置变量，arsi 不会自动读取 .env 文件。
 
 # 优化器模型，用于生成候选修改。
 export MODEL_NAME="your-optimizer-model"
@@ -164,10 +164,10 @@ Harness² 默认在 10 个任务上优化 AgentBundle 基线（最多 40 次评�
 
 ```sh
 # 校验实验配方，不启动实验。
-ember-rsi doctor examples/harness/dsh-harness2/recipe.yaml
+arsi doctor examples/harness/dsh-harness2/recipe.yaml
 
 # 以 my-harness2-task 为实验 ID 启动实验，会发起真实模型调用。
-ember-rsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task
+arsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task
 ```
 
 - 候选版本、评测指标、调用收据与证据默认保存在当前目录的 `.rsi/` 下，请结合评测状态、得分和交付物判断实验结果。
@@ -177,23 +177,23 @@ ember-rsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task
 
 ```sh
 # 从已保存的检查点续跑。
-ember-rsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task --resume
+arsi run examples/harness/dsh-harness2/recipe.yaml --id my-harness2-task --resume
 ```
 
 ### 查看实验进度
 
-下面两个命令都要在执行 `ember-rsi run` 的同一个目录下运行。它们从该目录下的 `.rsi/` 读取实验数据。
+下面两个命令都要在执行 `arsi run` 的同一个目录下运行。它们从该目录下的 `.rsi/` 读取实验数据。
 
 在终端查看实验状态时，把实验 ID 传给 `show`。
 
 ```sh
-ember-rsi show my-harness2-task
+arsi show my-harness2-task
 ```
 
 也可以启动本地只读 Dashboard，然后在浏览器打开终端显示的地址，查看实验进度。
 
 ```sh
-ember-rsi dashboard
+arsi dashboard
 ```
 
 <a id="built-in-rsi-strategies"></a>
@@ -301,4 +301,4 @@ ember-rsi dashboard
 
 ## 🙏 致谢
 
-感谢 [Cordis 项目](https://github.com/cordiverse/cordis) 的维护者和贡献者，ember-rsi 使用 Cordis 注册插件、隔离实验上下文和分发运行时事件。
+感谢 [Cordis 项目](https://github.com/cordiverse/cordis) 的维护者和贡献者，arsi 使用 Cordis 注册插件、隔离实验上下文和分发运行时事件。

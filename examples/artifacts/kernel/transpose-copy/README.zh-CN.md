@@ -72,9 +72,9 @@ Embedding 身份文件使用 `rsi.operator-embedding-identity/v1`，包含带 `i
 ```bash
 pnpm install --frozen-lockfile
 pnpm build
-pnpm ember-rsi doctor examples/artifacts/kernel/transpose-copy/recipe.search.yaml
+pnpm arsi doctor examples/artifacts/kernel/transpose-copy/recipe.search.yaml
 node --import ./examples/artifacts/kernel/transpose-copy/http-timeout.mjs dist/src/entries/cli/main.js run examples/artifacts/kernel/transpose-copy/recipe.search.yaml --id transpose-copy-search-001
-pnpm ember-rsi show transpose-copy-search-001
+pnpm arsi show transpose-copy-search-001
 ```
 
 运行命令预加载 [HTTP 超时配置](./http-timeout.mjs)，使客户端等待响应头及响应体数据的超时与 Recipe 的单次模型请求时限一致。如果模型端点经过缓冲代理，还需按部署情况调整代理超时，以允许该等待时间。设备编号由 `benchmark.config.device` 指定。
@@ -157,7 +157,7 @@ Policy 的显式 `profile` 操作仍会启用采集，并强制关闭磁盘缓�
 将时间线证据标为不可用，不能据此得出 PipeTimeline、流水重叠、气泡或 Double Buffer 结论。
 需要可用 trace 证据时，显式选择 `PipeTimeline,Default`。
 采集、清理、指标单位和证据校验由 SDK 负责；见锁定版本的
-[NPU kernel 指南](https://github.com/evolving-foundry/ember-evaluator/blob/99392461cfdac9edb4ad2b49fa7c52a954125f1b/docs/users/benchmarks/kernel-npu.zh-CN.md)。
+[NPU kernel 指南](https://github.com/ARSI-LAB/ARSI-Evaluator/blob/99392461cfdac9edb4ad2b49fa7c52a954125f1b/docs/users/benchmarks/kernel-npu.zh-CN.md)。
 
 ## 结果与验证
 

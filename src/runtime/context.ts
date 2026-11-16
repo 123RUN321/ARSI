@@ -18,7 +18,7 @@ export interface Runtime {
   dispose(): Promise<void>;
 }
 export interface RuntimeOptions {
-  /** Extension home, default ~/.ember-rsi. Set false for an isolated embedded host. */
+  /** Extension home, default ~/.arsi. Set false for an isolated embedded host. */
   homeDirectory?: string | false;
   /** Explicit extension directories with index.mjs exporting register(registry). Paths are relative to process.cwd(). */
   pluginDirectories?: readonly string[];

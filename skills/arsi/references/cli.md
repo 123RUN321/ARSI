@@ -1,22 +1,22 @@
 # CLI and recovery
 
-Read [quickstart](quickstart.md) for setup and runnable resources. Use the installed `ember-rsi` CLI. Run `--help` for version compatibility.
+Read [quickstart](quickstart.md) for setup and runnable resources. Use the installed `arsi` CLI. Run `--help` for version compatibility.
 
 ```sh
-ember-rsi --help
-ember-rsi list plugins
-ember-rsi list policies
-ember-rsi catalog --plugin-dir .rsi/skill-demo/extension
-ember-rsi doctor .rsi/skill-demo/recipe.yaml --plugin-dir .rsi/skill-demo/extension
-ember-rsi run .rsi/skill-demo/recipe.yaml --id demo-01 --plugin-dir .rsi/skill-demo/extension
-ember-rsi show demo-01
-ember-rsi list
-ember-rsi cancel demo-01
-ember-rsi run .rsi/skill-demo/recipe.yaml --id demo-01 --resume --plugin-dir .rsi/skill-demo/extension
-ember-rsi dashboard --port 4317 --plugin-dir .rsi/skill-demo/extension
+arsi --help
+arsi list plugins
+arsi list policies
+arsi catalog --plugin-dir .rsi/skill-demo/extension
+arsi doctor .rsi/skill-demo/recipe.yaml --plugin-dir .rsi/skill-demo/extension
+arsi run .rsi/skill-demo/recipe.yaml --id demo-01 --plugin-dir .rsi/skill-demo/extension
+arsi show demo-01
+arsi list
+arsi cancel demo-01
+arsi run .rsi/skill-demo/recipe.yaml --id demo-01 --resume --plugin-dir .rsi/skill-demo/extension
+arsi dashboard --port 4317 --plugin-dir .rsi/skill-demo/extension
 ```
 
-`ember-rsi list plugins` (alias `list plugin`) returns descriptions, contract IDs, input/output/config Schemas and compatible Policy binding slots. `ember-rsi list policies` (alias `list policy`) returns descriptions, Schemas, required contracts, compatible plugins and defaults. Compatibility is structural, not proof of suitability. Bare `ember-rsi list` lists experiments; `ember-rsi catalog` retains compact ID lists.
+`arsi list plugins` (alias `list plugin`) returns descriptions, contract IDs, input/output/config Schemas and compatible Policy binding slots. `arsi list policies` (alias `list policy`) returns descriptions, Schemas, required contracts, compatible plugins and defaults. Compatibility is structural, not proof of suitability. Bare `arsi list` lists experiments; `arsi catalog` retains compact ID lists.
 
 These are command shapes, not a sequence to cancel and resume an already successful demo. All commands accept repeatable `--plugin-dir`. `run` takes a Recipe **path**, not catalog ID. `--resume` requires `--id`. Data is `.rsi/` under the current working directory; inspect and resume from that same directory. There are no `--data-dir`, `--json`, `--recipe`, `--request-id`, pause, continue or detach options.
 

@@ -157,13 +157,13 @@ RSI 保留原生模型和认证配置，但限制任务为只读提案，不接�
 完成所选后端的配置后，将下面的路径换成你的完整 Recipe 文件路径，在同一个终端运行：
 
 ```sh
-ember-rsi doctor path/to/recipe.yaml
-ember-rsi run path/to/recipe.yaml
+arsi doctor path/to/recipe.yaml
+arsi run path/to/recipe.yaml
 ```
 
 先处理 Doctor 的失败项，再运行实验。`model-access: unchecked` 不代表模型连接成功，实际调用仍可能因权限、模型名称或接口兼容性失败。检查范围见 [Doctor](doctor_zh.md)。
 
-使用源码仓库时，将 `ember-rsi` 换为 `pnpm ember-rsi`。如果找不到原生 CLI，重新打开终端，或在绑定的 `config` 中用 `executable` 指定 CLI 完整路径。
+使用源码仓库时，将 `arsi` 换为 `pnpm arsi`。如果找不到原生 CLI，重新打开终端，或在绑定的 `config` 中用 `executable` 指定 CLI 完整路径。
 
 原生 CLI 后端可加 `timeoutMs: 180000`，将每次 Agent 任务限制为 3 分钟；省略则不设此期限。它们不支持用 `budget.modelCalls` 限制模型请求次数。Agent 返回修改建议，由 RSI 检查并应用；提示词和 Skills 在 Proposer 等调用组件中配置。
 
@@ -215,7 +215,7 @@ Evaluator 绑定仍要求 `contract.inferencebench`，selector 要求
 
 ## 限制与预算
 
-实验预算耗尽时，Runtime 会记录 `stopReason: budget-exhausted`，并用 `budgetMetric` 标明触及的上限。使用 `ember-rsi show <experiment-id>` 查看记录。如果能用最近一次已保存的检查点计算并验证 Policy 输出，记录还会包含 `partialOutput`。对于 `parameter.agent`，部分结果会保留已有的当前最优候选和测量，即使 `candidateFeasible` 为 false。实际停止原因以实验记录顶层的 `stopReason` 为准。
+实验预算耗尽时，Runtime 会记录 `stopReason: budget-exhausted`，并用 `budgetMetric` 标明触及的上限。使用 `arsi show <experiment-id>` 查看记录。如果能用最近一次已保存的检查点计算并验证 Policy 输出，记录还会包含 `partialOutput`。对于 `parameter.agent`，部分结果会保留已有的当前最优候选和测量，即使 `candidateFeasible` 为 false。实际停止原因以实验记录顶层的 `stopReason` 为准。
 
 Recipe 中省略的绑定配置会先继承 Policy 默认值。下表的“缺省时”指对应配置最终仍未设置该项的情况；其他层的限制仍可能生效。
 

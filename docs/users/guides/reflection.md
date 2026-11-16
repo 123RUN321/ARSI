@@ -169,7 +169,7 @@ Take a custom proposal plugin named `proposer.custom`: it reads a prompt and gui
 In the plugin's configuration Schema, declare `prompt` as a file path and `guidance` as a directory path. The `x-rsi-path` marker lets the Runtime recognize these paths and read their contents:
 
 ```ts
-import type { JsonSchema } from 'ember-rsi/contracts';
+import type { JsonSchema } from 'arsi/contracts';
 
 export const configSchema: JsonSchema = {
   type: 'object',
@@ -241,9 +241,9 @@ With the default local store:
 Run these commands with the same Runtime data directory as the experiment:
 
 ```text
-ember-rsi reflection list [experimentId]
-ember-rsi reflection show <revisionID>
-ember-rsi reflection apply <revisionID>
+arsi reflection list [experimentId]
+arsi reflection show <revisionID>
+arsi reflection apply <revisionID>
 ```
 
 - `list` includes initial, generated, and older revisions, optionally filtered by experiment.

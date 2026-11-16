@@ -141,7 +141,7 @@ Recipe 通过已注册的 Policy ID 找到对应文件。内置 Policy 已由框
 
 > 维护框架内置 Policy 时，也可将文件放在 `src/policies/`，加入[内置注册文件](../../../src/runtime/builtins.ts)的 Policy 文件列表，并执行 `pnpm build` 随框架构建。
 
-1. 将上面的示例保存为 `~/.ember-rsi/plugins/my-extension/policy.yaml`。
+1. 将上面的示例保存为 `~/.arsi/plugins/my-extension/policy.yaml`。
 
 2. 在同一目录创建 `index.mjs`，导出 `register(registry)`，登记 Policy ID 和文件的路径：
 
@@ -156,7 +156,7 @@ Recipe 通过已注册的 Policy ID 找到对应文件。内置 Policy 已由框
    }
    ```
 
-3. CLI 启动时会按目录名称顺序扫描 `~/.ember-rsi/plugins/` 的直接子目录，加载各目录的 `index.mjs` 并调用 `register(registry)`，无需额外参数。
+3. CLI 启动时会按目录名称顺序扫描 `~/.arsi/plugins/` 的直接子目录，加载各目录的 `index.mjs` 并调用 `register(registry)`，无需额外参数。
    - 注册 ID 必须与 `policy.yaml` 中的 `id` 一致；Runtime 在加载 Recipe 时读取并校验该 Policy。
 
    - 如果 Policy 使用自定义契约，需在加载它之前注册相应插件或契约。一个入口可以注册多个插件和 Policy；已有入口时，将注册代码加入现有的 `register` 即可。
@@ -183,18 +183,18 @@ policy:
 
 #### 第二步：校验并运行
 
-扩展已放在 `~/.ember-rsi/plugins/my-extension/` 时，在包含 `my-experiment/` 的工作目录直接使用已安装的 CLI：
+扩展已放在 `~/.arsi/plugins/my-extension/` 时，在包含 `my-experiment/` 的工作目录直接使用已安装的 CLI：
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml
-ember-rsi run my-experiment/recipe.yaml --id baseline-01
+arsi doctor my-experiment/recipe.yaml
+arsi run my-experiment/recipe.yaml --id baseline-01
 ```
 
 如果扩展保存在工作目录下的 `my-extension/` 等其他位置，校验、运行和恢复时都传入同一扩展目录：
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
-ember-rsi run my-experiment/recipe.yaml --id baseline-01 --plugin-dir ./my-extension
+arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
+arsi run my-experiment/recipe.yaml --id baseline-01 --plugin-dir ./my-extension
 ```
 
 更多扩展加载说明见[注册插件](writing-plugins_zh.md#第二步注册插件)。修改未完成实验使用的 Policy 前，先核对[恢复要求](running-experiments_zh.md#取消与恢复)。

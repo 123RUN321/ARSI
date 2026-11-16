@@ -8,30 +8,30 @@
 
 ## CLI 命令
 
-使用 `ember-rsi --help` 查看命令列表，使用 `ember-rsi <command> --help` 查看某个命令的语法。在源码仓库中未全局安装时，可以使用 `pnpm ember-rsi`。
+使用 `arsi --help` 查看命令列表，使用 `arsi <command> --help` 查看某个命令的语法。在源码仓库中未全局安装时，可以使用 `pnpm arsi`。
 
 | 命令                                        | 用途                                                                                          |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `ember-rsi catalog`                         | 列出已注册插件和 Policy ID。                                                                  |
-| `ember-rsi list plugins`                    | 查看插件描述、契约、Schema 和兼容的 Policy 绑定。                                             |
-| `ember-rsi list policies`                   | 查看 Policy 描述、Schema、依赖和兼容插件。                                                    |
-| `ember-rsi doctor <recipe.yaml>`            | 检查生效配置、本地资源和运行前提，不运行实验。                                                |
-| `ember-rsi run <recipe.yaml>`               | 启动或续跑实验并保存记录。                                                                    |
-| `ember-rsi list`                            | 列出已保存的实验。                                                                            |
-| `ember-rsi show <experiment-id>`            | 输出已保存的实验状态、结果和错误信息。                                                        |
-| `ember-rsi cancel <experiment-id>`          | 向指定实验发送取消请求。                                                                      |
-| `ember-rsi dashboard`                       | 在本机提供网页版的实验观察界面。                                                              |
-| `ember-rsi reflection list [experiment-id]` | 列出持久化版本，可按实验筛选。                                                                |
-| `ember-rsi reflection show <revisionID>`    | 检查版本内容与计划中的资源变更。                                                              |
-| `ember-rsi reflection apply <revisionID>`   | 将快照写到记录的用户资源路径；参见 [Reflection 规则](reflection_zh.md#将版本应用到后续实验)。 |
-| `ember-rsi help [command]`                  | 显示命令列表或指定命令的帮助。                                                                |
+| `arsi catalog`                         | 列出已注册插件和 Policy ID。                                                                  |
+| `arsi list plugins`                    | 查看插件描述、契约、Schema 和兼容的 Policy 绑定。                                             |
+| `arsi list policies`                   | 查看 Policy 描述、Schema、依赖和兼容插件。                                                    |
+| `arsi doctor <recipe.yaml>`            | 检查生效配置、本地资源和运行前提，不运行实验。                                                |
+| `arsi run <recipe.yaml>`               | 启动或续跑实验并保存记录。                                                                    |
+| `arsi list`                            | 列出已保存的实验。                                                                            |
+| `arsi show <experiment-id>`            | 输出已保存的实验状态、结果和错误信息。                                                        |
+| `arsi cancel <experiment-id>`          | 向指定实验发送取消请求。                                                                      |
+| `arsi dashboard`                       | 在本机提供网页版的实验观察界面。                                                              |
+| `arsi reflection list [experiment-id]` | 列出持久化版本，可按实验筛选。                                                                |
+| `arsi reflection show <revisionID>`    | 检查版本内容与计划中的资源变更。                                                              |
+| `arsi reflection apply <revisionID>`   | 将快照写到记录的用户资源路径；参见 [Reflection 规则](reflection_zh.md#将版本应用到后续实验)。 |
+| `arsi help [command]`                  | 显示命令列表或指定命令的帮助。                                                                |
 
 ## CLI 参数
 
 基本语法如下，命令所需的位置参数见上表：
 
 ```text
-ember-rsi [通用选项] <命令> [位置参数] [命令选项]
+arsi [通用选项] <命令> [位置参数] [命令选项]
 ```
 
 ### 通用选项
@@ -40,7 +40,7 @@ ember-rsi [通用选项] <命令> [位置参数] [命令选项]
 
 | 选项                       | 说明                                                                                                                                                                                      |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-h, --help`               | 显示帮助并退出。`ember-rsi --help` 显示命令列表，`ember-rsi <command> --help` 显示该命令的参数。                                                                                          |
+| `-h, --help`               | 显示帮助并退出。`arsi --help` 显示命令列表，`arsi <command> --help` 显示该命令的参数。                                                                                          |
 | `--plugin-dir <directory>` | 从指定目录加载自定义插件和 Policy，可重复指定以加载多个扩展目录；详见[插件注册](writing-plugins_zh.md#第二步注册插件)和 [Policy 注册与 Recipe 配置](writing-policies_zh.md#注册-policy)。 |
 
 ### 命令专属选项
@@ -56,8 +56,8 @@ ember-rsi [通用选项] <命令> [位置参数] [命令选项]
 例如，可以通过下面的命令来校验 + 启动：
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml
-ember-rsi run my-experiment/recipe.yaml --id terminal-skills-01
+arsi doctor my-experiment/recipe.yaml
+arsi run my-experiment/recipe.yaml --id terminal-skills-01
 ```
 
 - `doctor` 检查 Recipe、插件配置、契约兼容性、Policy 编译和已声明的 Reflection 资源，再调用每个生效组件定义上的可选 `doctor` 能力。单份 JSON 报告包含 `recipeId`、`summary`、`checks` 和 `missingResources`。
@@ -67,8 +67,8 @@ ember-rsi run my-experiment/recipe.yaml --id terminal-skills-01
 在同一工作区的另一终端中查看进度：
 
 ```sh
-ember-rsi list
-ember-rsi show terminal-skills-01
+arsi list
+arsi show terminal-skills-01
 ```
 
 ## 读取结果与证据
@@ -80,8 +80,8 @@ ember-rsi show terminal-skills-01
 ## 取消与恢复
 
 ```sh
-ember-rsi cancel terminal-skills-01
-ember-rsi show terminal-skills-01
+arsi cancel terminal-skills-01
+arsi show terminal-skills-01
 ```
 
 取消只是请求，并不可以让所有工作立即停止。当发送请求时，Runtime 会传递取消信号并清理自身资源，需要检查最终状态和清理记录。
@@ -91,7 +91,7 @@ ember-rsi show terminal-skills-01
 恢复时沿用工作区、原始 Recipe 路径、实验 ID 和所需扩展：
 
 ```sh
-ember-rsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume
+arsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume
 ```
 
 Runtime 恢复锁定的定义、预算用量、生效版本、调用收据和检查点，并拒绝不兼容修改。
@@ -101,7 +101,7 @@ Runtime 恢复锁定的定义、预算用量、生效版本、调用收据和检
 ## 工作台
 
 ```sh
-ember-rsi dashboard --port <端口号>
+arsi dashboard --port <端口号>
 ```
 
 从已有 `.rsi/` 的实验工作区运行。工作台以web的形式展示实验、概览、候选、差异、测量、调用、Agent 轨迹、结果和图表，具体如下所示。

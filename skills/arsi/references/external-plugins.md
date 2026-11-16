@@ -1,14 +1,14 @@
 # Load external extensions at startup
 
-The default extension home is `~/.ember-rsi/`. Immediate directories `plugins/<name>/index.mjs` load automatically in name order. A missing home/plugins directory is allowed; invalid discovered extensions fail startup. Other files are ignored. Experiment facts remain in the working directory's `.rsi/`.
+The default extension home is `~/.arsi/`. Immediate directories `plugins/<name>/index.mjs` load automatically in name order. A missing home/plugins directory is allowed; invalid discovered extensions fail startup. Other files are ignored. Experiment facts remain in the working directory's `.rsi/`.
 
 Use repeatable `--plugin-dir` options after the command:
 
 ```sh
-ember-rsi catalog --plugin-dir ./my-extension
-ember-rsi doctor ./recipe.yaml --plugin-dir ./my-extension
-ember-rsi run ./recipe.yaml --plugin-dir ./my-extension --id experiment-01
-ember-rsi dashboard --plugin-dir ./my-extension --port 4317
+arsi catalog --plugin-dir ./my-extension
+arsi doctor ./recipe.yaml --plugin-dir ./my-extension
+arsi run ./recipe.yaml --plugin-dir ./my-extension --id experiment-01
+arsi dashboard --plugin-dir ./my-extension --port 4317
 ```
 
 Each explicitly selected directory contains `index.mjs` exporting `register(registry)`. Synchronous and asynchronous registration are supported. A directory can register several implementations and Policies. RSI does not recursively scan subdirectories or auto-import arbitrary files. Compiled plugin modules and their dependencies must be available to Node.

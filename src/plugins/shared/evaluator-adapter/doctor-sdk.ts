@@ -2,7 +2,7 @@ import childProcess from 'node:child_process';
 import { access, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { redactDiagnostic } from 'ember-evaluator';
+import { redactDiagnostic } from 'arsi-evaluator';
 
 export interface SdkDoctorOptions {
   configPath: string;
@@ -25,7 +25,7 @@ const cancel = () => {
   }
 };
 process.on('message', message => {
-  if (message === 'ember-rsi-doctor:cancel') { pending = true; cancel(); }
+  if (message === 'arsi-doctor:cancel') { pending = true; cancel(); }
 });
 process.on('newListener', event => {
   if (event === 'SIGINT' && pending) queueMicrotask(cancel);
@@ -37,14 +37,14 @@ process.channel?.unref();
 export const sdkDoctor: SdkDoctorRunner = async (options) => {
   options.signal.throwIfAborted();
   const cli = join(
-    dirname(fileURLToPath(import.meta.resolve('ember-evaluator'))),
+    dirname(fileURLToPath(import.meta.resolve('arsi-evaluator'))),
     'cli.js',
   );
   try {
     await access(cli);
   } catch {
     throw new Error(
-      'The installed Evaluator SDK doctor CLI is unavailable; check the ember-evaluator installation.',
+      'The installed Evaluator SDK doctor CLI is unavailable; check the arsi-evaluator installation.',
     );
   }
   const secrets = new Set(
@@ -183,7 +183,7 @@ export const sdkDoctor: SdkDoctorRunner = async (options) => {
       }, 60000);
       killTimer.unref();
       try {
-        child.send('ember-rsi-doctor:cancel', (error) => {
+        child.send('arsi-doctor:cancel', (error) => {
           if (error && !closed) void killTree();
         });
       } catch {

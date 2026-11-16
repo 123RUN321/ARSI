@@ -18,9 +18,9 @@ Copy the base `assets/minimal/` as in quickstart, then copy the contents of `ass
 Provide `MODEL_NAME`, `MODEL_ENDPOINT` (the provider's compatible API base) and `MODEL_API_KEY` in the launching environment without printing credentials. With user authorization for real requests:
 
 ```sh
-ember-rsi doctor .rsi/skill-demo/learning-recipe.yaml --plugin-dir .rsi/skill-demo/extension --plugin-dir .rsi/skill-demo/learning-extension
-ember-rsi run .rsi/skill-demo/learning-recipe.yaml --plugin-dir .rsi/skill-demo/extension --plugin-dir .rsi/skill-demo/learning-extension --id learning-01
-ember-rsi show learning-01
+arsi doctor .rsi/skill-demo/learning-recipe.yaml --plugin-dir .rsi/skill-demo/extension --plugin-dir .rsi/skill-demo/learning-extension
+arsi run .rsi/skill-demo/learning-recipe.yaml --plugin-dir .rsi/skill-demo/extension --plugin-dir .rsi/skill-demo/learning-extension --id learning-01
+arsi show learning-01
 ```
 
 This variant permits at most 36 total model calls, 3 evaluations, 150 operations and 600000 ms, with 5000 ms cleanup reserve. Proposer and Memory allow 6 calls each; Reflection has its own 6-call/90-second scope. These are bounds, not expected usage. A model can return no-change or time out; do not increase budgets or retry indefinitely to force a demo to pass.

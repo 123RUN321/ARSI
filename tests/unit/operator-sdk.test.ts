@@ -20,7 +20,7 @@ import {
   parseKernelContract,
   type EvaluatorRunOptions,
   type EvaluationResult,
-} from 'ember-evaluator';
+} from 'arsi-evaluator';
 import { adaptSdkResult } from '../../src/plugins/evaluator-operatorbench/result.js';
 import { createOperatorbench } from '../../src/plugins/evaluator-operatorbench/service.js';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
