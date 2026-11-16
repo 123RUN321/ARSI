@@ -8,7 +8,7 @@ import {
 } from '../../src/contracts/index.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
 
-for (const status of ['running', 'unknown']) {
+for (const status of ['running', 'unknown', 'failed', 'cancelled']) {
   test(`explicit resume reconciles ${status} calls without replay or duplicate reservations`, async () => {
     let executions = 0;
     let recoveries = 0;

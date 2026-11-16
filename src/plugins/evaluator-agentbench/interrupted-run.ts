@@ -13,7 +13,9 @@ export async function interruptedRun(
   context: RuntimeContext,
 ): Promise<string> {
   if (
-    !['running', 'unknown'].includes(string(receipt.status)) ||
+    !['running', 'unknown', 'failed', 'cancelled'].includes(
+      string(receipt.status),
+    ) ||
     receipt.callId !== context.callId ||
     receipt.experimentId !== context.experimentId ||
     digest(receipt.input) !== digest(input)

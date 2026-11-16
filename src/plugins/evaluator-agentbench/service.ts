@@ -107,7 +107,7 @@ export async function createAgentbench(
           );
         const instance = await context.facts.read('instances', instanceId);
         if (
-          instance.status !== 'ready' ||
+          !['ready', 'released'].includes(String(instance.status)) ||
           instance.experimentId !== context.experimentId ||
           instance.candidateRef !== candidateRef
         )
@@ -115,26 +115,44 @@ export async function createAgentbench(
             'Interrupted evaluator application instance is not ready',
           );
         const execution = object(instance.execution);
-        const expected = prepareEvaluationConfig(config, {
-          taskIds,
-          execution,
-          directory: context.directory,
-        });
-        // Validate before taking ownership of release. A refused recovery must
-        // preserve the old workspace for diagnosis and a later correct resume.
-        resume = await interruptedRun(
-          input,
-          receipt,
-          object(expected),
-          execution,
-          context,
-        );
+        let restored = false;
+        if (instance.status === 'released') {
+          if (execution.kind !== 'agentbundle' || !context.workspaces.restore)
+            throw new Error(
+              'Interrupted evaluator released workspace cannot be restored',
+            );
+          const candidate = await context.readCandidate(candidateRef);
+          if (candidate.artifactRef !== execution.artifactDigest)
+            throw new Error('Interrupted evaluator candidate artifact differs');
+          await context.workspaces.restore(
+            string(execution.workspaceRef),
+            string(candidate.artifactRef),
+          );
+          restored = true;
+        }
         try {
+          const expected = prepareEvaluationConfig(config, {
+            taskIds,
+            execution,
+            directory: context.directory,
+          });
+          // Validate before taking ownership of release. A refused recovery must
+          // preserve the old workspace for diagnosis and a later correct resume.
+          resume = await interruptedRun(
+            input,
+            receipt,
+            object(expected),
+            execution,
+            context,
+          );
           return await use(execution);
         } finally {
-          await context
-            .extend({ signal: context.cleanup })
-            .application({ action: 'release', instanceId });
+          if (restored)
+            await context.workspaces.release(string(execution.workspaceRef));
+          else if (resume)
+            await context
+              .extend({ signal: context.cleanup })
+              .application({ action: 'release', instanceId });
         }
       }
       if (!recovered)

@@ -34,6 +34,7 @@ type EvaluatorKind = 'agentbench' | 'inferencebench';
 
 for (const change of [
   'none',
+  'released',
   'config',
   'selection',
   'candidate',
@@ -55,6 +56,7 @@ for (const change of [
       const bundle = join(directory, 'bundle');
       await mkdir(bundle);
       const execution = {
+        kind: 'agentbundle',
         directory: bundle,
         workspaceRef: 'ws',
         artifactDigest: 'artifact:a',
@@ -97,6 +99,17 @@ for (const change of [
           parentCandidateRef: null,
         }),
       };
+      let releasedWorkspaces = 0;
+      if (change === 'released') {
+        call.workspaces.restore = async (ref, artifact) => {
+          assert.equal(ref, 'ws');
+          assert.equal(artifact, 'artifact:a');
+          return { ref, directory: bundle, parentCandidateRef: null };
+        };
+        call.workspaces.release = async () => {
+          releasedWorkspaces++;
+        };
+      }
       call.artifacts = {
         ...call.artifacts,
         capture: async () =>
@@ -111,7 +124,10 @@ for (const change of [
       call.facts = {
         ...call.facts,
         read: async () => ({
-          status: change === 'instance' ? 'released' : 'ready',
+          status:
+            change === 'instance' || change === 'released'
+              ? 'released'
+              : 'ready',
           experimentId: 'exp',
           candidateRef: input.candidateRef,
           execution,
@@ -140,11 +156,12 @@ for (const change of [
         { status: 'running', input, callId: 'call', experimentId: 'exp' },
         call,
       );
-      if (change === 'none') {
+      if (change === 'none' || change === 'released') {
         assert.deepEqual(await recovery, { measurementRef: 'measurement:one' });
         assert.equal(runs, 1);
         assert.equal(measurements.length, 1);
-        assert.deepEqual(actions, ['release']);
+        assert.deepEqual(actions, change === 'released' ? [] : ['release']);
+        assert.equal(releasedWorkspaces, change === 'released' ? 1 : 0);
         assert.deepEqual(
           JSON.parse(await readFile(configPath, 'utf8')),
           expected,
