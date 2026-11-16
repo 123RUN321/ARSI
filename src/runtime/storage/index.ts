@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises';
 import { join, resolve, relative, dirname, isAbsolute, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import type {
   ArtifactStore,
   FactStore,
@@ -215,7 +216,25 @@ export class FileWorkspaces implements WorkspaceService {
       )
         throw new Error('Workspace recovery paths escape their owner');
       await atomic(join(from, 'workspace.json'), workspace);
-      await rename(from, root);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await rename(from, root);
+          break;
+        } catch (error) {
+          // Windows scanners/readers can briefly deny moving a directory
+          // containing a newly published file. Keep staged bytes intact.
+          if (
+            process.platform !== 'win32' ||
+            attempt >= 5 ||
+            !error ||
+            typeof error !== 'object' ||
+            !('code' in error) ||
+            !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))
+          )
+            throw error;
+          await delay(50 * (attempt + 1));
+        }
+      }
       return workspace;
     } finally {
       await this.release(staging.ref);

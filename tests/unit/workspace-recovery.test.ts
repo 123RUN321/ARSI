@@ -10,6 +10,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import {
   FileArtifacts,
   FileWorkspaces,
@@ -58,3 +60,66 @@ test('workspace restoration uses immutable bytes at the original identity and re
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test(
+  'Windows workspace restore waits for a temporary file sharing lock without changing identity',
+  { skip: process.platform !== 'win32' },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'rsi-workspace-lock-'));
+    let holder: ReturnType<typeof spawn> | undefined;
+    let exited: Promise<unknown> | undefined;
+    try {
+      const artifacts = new FileArtifacts(join(root, 'artifacts'));
+      await mkdir(join(root, 'input'));
+      await writeFile(join(root, 'input/skill.txt'), 'immutable');
+      const artifact = await artifacts.capture(join(root, 'input'));
+      const script = join(root, 'hold.ps1');
+      await writeFile(
+        script,
+        `param([string]$Path)
+$handle = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+try {
+  [Console]::WriteLine('locked')
+  [Console]::Out.Flush()
+  Start-Sleep -Milliseconds 200
+} finally { $handle.Dispose() }
+`,
+      );
+      class SharingLockedWorkspaces extends FileWorkspaces {
+        override async create(ref?: string, parent?: string) {
+          const workspace = await super.create(ref, parent);
+          holder = spawn(
+            join(
+              process.env.SystemRoot ?? 'C:\\Windows',
+              'System32/WindowsPowerShell/v1.0/powershell.exe',
+            ),
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-File',
+              script,
+              '-Path',
+              join(workspace.directory, 'skill.txt'),
+            ],
+            { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+          );
+          exited = once(holder, 'close');
+          const [ready] = await once(holder.stdout!, 'data');
+          assert.match(String(ready), /locked/);
+          return workspace;
+        }
+      }
+      const workspaces = new SharingLockedWorkspaces(
+        join(root, 'workspaces'),
+        artifacts,
+      );
+      const workspace = await workspaces.restore('original-identity', artifact);
+      assert.equal(workspace.ref, 'original-identity');
+      assert.equal(await artifacts.capture(workspace.directory), artifact);
+      await exited;
+    } finally {
+      await exited;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
