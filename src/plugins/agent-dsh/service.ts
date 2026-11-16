@@ -1,3 +1,4 @@
+import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import { writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -29,7 +30,7 @@ export const createAgentDsh: OperationDefinition<
         spec,
         onLine,
       ) => context.runAgentProcess(spec, onLine);
-      const patch = join(context.directory, 'scratch', 'dsh-launch.json');
+      const patch = join(context.directory, 'dsh-launch.json');
       await writeFile(
         patch,
         JSON.stringify([
@@ -44,14 +45,21 @@ export const createAgentDsh: OperationDefinition<
           {
             id: 'skill-filesystem',
             config: {
-              customSkillDirs: [join(context.directory, '.agents', 'skills')],
+              customSkillDirs: [join(request.cwd, '.agents', 'skills')],
             },
           },
         ]),
         { mode: 0o600 },
       );
-      const observe = dshObservations((observation) =>
-        context.event.emit('rsi/agent-observation', observation),
+      const record = (
+        observation: import('../../contracts/index.js').AgentObservation,
+      ): void => {
+        context.event.emit('rsi/agent-observation', observation);
+      };
+      const observe = observeNative(
+        dshObservations(record),
+        record,
+        context.signal,
       );
       let sessionId: string | undefined;
       let finalText: string | undefined;
@@ -62,7 +70,7 @@ export const createAgentDsh: OperationDefinition<
           JSON.stringify({
             goal: request.goal,
             instruction:
-              'Read AGENTS.md. Edit candidate/ directly only when authorized. Return only the JSON object matching outputSchema.',
+              'Read AGENTS.md. Return proposed changes through the requested result Schema; leave task input files unchanged. Return only the JSON object matching outputSchema.',
             outputSchema: request.outputSchema,
           }),
           (line) => {

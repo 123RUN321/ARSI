@@ -91,6 +91,48 @@ function Instructions({
   );
 }
 
+function AgentTaskResult({
+  id,
+  callId,
+  finished,
+}: {
+  id: string;
+  callId: string;
+  finished: boolean;
+}): React.JSX.Element {
+  const [open, setOpen] = React.useState(false);
+  const result = useObservation(
+    open
+      ? `/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}`
+      : null,
+    parseCallDetail,
+    finished ? null : 4000,
+    finished,
+  );
+  return (
+    <details
+      className="call-instructions"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>Agent task / result</summary>
+      {open ? (
+        <>
+          <Feedback {...result} />
+          {result.data ? (
+            <>
+              {result.data.error ? (
+                <p className="error-notice">{result.data.error}</p>
+              ) : null}
+              <Preview label="Task" value={result.data.input} />
+              <Preview label="Structured result" value={result.data.output} />
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </details>
+  );
+}
+
 function CallPayload({
   id,
   callId,
@@ -238,6 +280,13 @@ function CallPayload({
                 callId={agent.callId}
                 finished={!!agent.finishedAt}
               />
+              {current.callId !== agent.callId ? (
+                <AgentTaskResult
+                  id={id}
+                  callId={agent.callId}
+                  finished={!!agent.finishedAt}
+                />
+              ) : null}
             </div>
           ) : null}
           <details

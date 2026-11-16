@@ -10,21 +10,21 @@ This guide explains how to choose a plugin contract, define configuration, imple
 
 Choose a contract based on the work your plugin will do. The contract defines the call's input and output; the plugin supplies the implementation and its configuration. When an existing contract meets your needs, reuse its object and types:
 
-| Contract and field definitions                                                           | Purpose                                                                                      | Contract object to import   |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------- |
-| [contract.application](../../../src/contracts/plugin-types/application.ts)               | Manage optimization targets, commit candidates, and acquire and release execution instances. | `applicationContract`       |
-| [contract.agent](../../../src/contracts/plugin-types/agent.ts)                           | Run model requests and tool calls.                                                           | `agentContract`             |
-| [contract.proposer](../../../src/contracts/plugin-types/proposer.ts)                     | Generate candidates from goals and evidence.                                                 | `proposerContract`          |
-| [contract.proposer-operator](../../../src/contracts/plugin-types/proposer-operator.ts)   | Generate and repair operator candidates.                                                     | `operatorProposerContract`  |
-| [contract.agentbench](../../../src/contracts/plugin-types/agentbench.ts)                 | Evaluate candidates against a task list.                                                     | `agentbenchContract`        |
-| [contract.inferencebench](../../../src/contracts/plugin-types/inferencebench.ts)         | Evaluate inference application candidates.                                                   | `inferencebenchContract`    |
-| [contract.operatorbench](../../../src/contracts/plugin-types/operatorbench.ts)           | Check operator correctness, measure performance, or collect profiling data.                  | `operatorbenchContract`     |
-| [contract.selector-metrics](../../../src/contracts/plugin-types/selector-metrics.ts)     | Compare measurement metrics and select a candidate.                                          | `metricSelectorContract`    |
-| [contract.selector-artifacts](../../../src/contracts/plugin-types/selector-artifacts.ts) | Compare candidate content against supplied criteria and select a candidate.                  | `artifactSelectorContract`  |
-| [contract.memory](../../../src/contracts/plugin-types/memory.ts)                         | Consolidate evidence and observations into reusable experience.                              | `memoryContract`            |
-| [contract.reflection](../../../src/contracts/plugin-types/reflection.ts)                 | Propose plugin revisions based on execution evidence.                                        | `reflectionContract`        |
-| [contract.proposer-grid](../../../src/contracts/plugin-types/proposer-grid.ts)           | Generate parameter candidates in grid-search order.                                          | `gridProposerContract`      |
-| [contract.proposer-iterative](../../../src/contracts/plugin-types/proposer-iterative.ts) | Manage stateful search, request work, and receive feedback.                                  | `iterativeProposerContract` |
+| Contract and field definitions                                                           | Purpose                                                                                      | Contract object to import  |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------- |
+| [contract.application](../../../src/contracts/plugin-types/application.ts)               | Manage optimization targets, commit candidates, and acquire and release execution instances. | `applicationContract`      |
+| [contract.agent](../../../src/contracts/plugin-types/agent.ts)                           | Run model requests and tool calls.                                                           | `agentContract`            |
+| [contract.proposer](../../../src/contracts/plugin-types/proposer.ts)                     | Generate candidates from goals and evidence.                                                 | `proposerContract`         |
+| [contract.proposer-operator](../../../src/contracts/plugin-types/proposer-operator.ts)   | Generate and repair operator candidates.                                                     | `operatorProposerContract` |
+| [contract.agentbench](../../../src/contracts/plugin-types/agentbench.ts)                 | Evaluate candidates against a task list.                                                     | `agentbenchContract`       |
+| [contract.inferencebench](../../../src/contracts/plugin-types/inferencebench.ts)         | Evaluate inference application candidates.                                                   | `inferencebenchContract`   |
+| [contract.operatorbench](../../../src/contracts/plugin-types/operatorbench.ts)           | Check operator correctness, measure performance, or collect profiling data.                  | `operatorbenchContract`    |
+| [contract.selector-metrics](../../../src/contracts/plugin-types/selector-metrics.ts)     | Compare measurement metrics and select a candidate.                                          | `metricSelectorContract`   |
+| [contract.selector-artifacts](../../../src/contracts/plugin-types/selector-artifacts.ts) | Compare candidate content against supplied criteria and select a candidate.                  | `artifactSelectorContract` |
+| [contract.memory](../../../src/contracts/plugin-types/memory.ts)                         | Consolidate evidence and observations into reusable experience.                              | `memoryContract`           |
+| [contract.reflection](../../../src/contracts/plugin-types/reflection.ts)                 | Propose plugin revisions based on execution evidence.                                        | `reflectionContract`       |
+| [contract.proposer-grid](../../../src/contracts/plugin-types/proposer-grid.ts)           | Generate parameter candidates in grid-search order.                                          | `gridProposerContract`     |
+| [contract.proposer-iterative](../../../src/contracts/plugin-types/proposer-iterative.ts)                         | Manage stateful search, request work, and receive feedback.                                  | `iterativeProposerContract`           |
 
 Each regular plugin implements one public contract. Contracts such as Application include multiple actions, handled by the same `execute` according to `input.action`.
 
@@ -36,15 +36,15 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 
 `OperationDefinition<I, O, C>` describes a plugin definition. Its three type parameters are input, output, and configuration; see the [interface definition](../../../src/contracts/operation.ts).
 
-| Field                  | Meaning                                                             | How to fill it in                                                                                     |
-| ---------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `id`                   | Unique plugin implementation ID used by bindings.                   | Required, for example `proposer.keep-parent`; must not duplicate a registered plugin or Policy ID.    |
-| `description`          | Describe the plugin's purpose.                                      | Optional short description.                                                                           |
-| `contract`             | Declare the public contract the plugin follows.                     | Required imported contract object, such as `proposerContract`.                                        |
-| `configSchema`         | Validate this implementation's configuration.                       | Required JSON Schema; declare an object Schema even when there are no settings.                       |
-| `create`               | Create a plugin instance from configuration.                        | Required async function `create(config, context)` returning an object with `execute` and `dispose`.   |
-| `doctor`               | Diagnose this component's prerequisites before an experiment.       | Optional `OperationDoctor<C>` function that receives `DoctorContext<C>` and returns a `DoctorResult`. |
-| `implementationDigest` | Identify the implementation version so recovery can detect changes. | Optional digest covering the actual implementation code; update it when the code changes.             |
+| Field                  | Meaning                                                             | How to fill it in                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                   | Unique plugin implementation ID used by bindings.                   | Required, for example `proposer.keep-parent`; must not duplicate a registered plugin or Policy ID.                             |
+| `description`          | Describe the plugin's purpose.                                      | Optional short description.                                                                                                    |
+| `contract`             | Declare the public contract the plugin follows.                     | Required imported contract object, such as `proposerContract`.                                                                 |
+| `configSchema`         | Validate this implementation's configuration.                       | Required JSON Schema; declare an object Schema even when there are no settings.                                                |
+| `create`               | Create a plugin instance from configuration.                        | Required async function `create(config, context)` returning an object with `execute` and `dispose`.                            |
+| `doctor`               | Diagnose this component's prerequisites before an experiment.       | Optional `OperationDoctor<C>` function that receives `DoctorContext<C>` and returns a `DoctorResult`.                          |
+| `implementationDigest` | Identify the implementation version so recovery can detect changes. | Optional digest covering the actual implementation code; update it when the code changes.                                      |
 
 - Without `implementationDigest`, Registry generates a digest from the `create` function text, contract, and configuration Schema.
 
@@ -94,6 +94,14 @@ Runtime executes this object's `execute(input, context)` for each plugin call. I
 | `execute(input, context)`           | Perform one business call.                                                                | Required; asynchronously return output matching the public contract. `input` contains the data for this call.                             |
 | `dispose()`                         | Release instance-owned processes, connections, listeners, and other long-lived resources. | Required; complete cleanup asynchronously. May be empty when there are no resources.                                                      |
 | `canRetry(input, receipt, context)` | Confirm whether a failed or cancelled call can be replayed safely.                        | Optional; return `true` only after read-only checks confirm replay cannot duplicate effects. Does not replay calls with unknown outcomes. |
+
+## Agent execution and conversation observation
+
+Keep the Agent contract `{ goal, cwd, role?, outputSchema } → JsonObject`. The Runtime automatically validates the requested result Schema and owns conversation storage for every registered `contract.agent` operation. Existing plugins need no observation hooks. Call receipts remain the sole source of input, output and execution status.
+
+Native adapters may emit `context.event.emit('rsi/agent-observation', observation)` using the exported `AgentObservation` type. Missing or invalid observations produce an explicit coverage gap; they do not fail normal execution. A record storage failure aborts the call and prevents accepting its result. Messages, tools, usage and native child sessions use the same Dashboard view, with complete content and lazy loading for large payloads. Native children stay within the parent Runtime call. Historical diagnostic files are not read by this interface.
+
+Observation does not change business results: editors return JSON `edits`; the Proposer can request `proposals[]` in one Agent invocation, then validate and apply each proposal independently from the same parent candidate. The Application still accepts or rejects each candidate. There is no direct-file-editing result protocol.
 
 ## Example: Write and use a minimal Proposer
 
@@ -306,38 +314,24 @@ Runtime passes `context` to `create` and every `execute` call. Plugins use it to
 | Record usage                         | `charge(metric, amount)`                                 | Record usage and check budgets; call with `await`.                                                                                       |
 | Subscribe to events                  | `event`                                                  | Listen for runtime events and unsubscribe when finished; see [Runtime events](runtime-events.md).                                        |
 
-Inside `execute`, build the managed workspace with `prepareAgentProject` from `ember-rsi`. Put instructions in the second argument and authorized text files in the third. The last two arguments accept skill directories and role definitions. Prepare a workspace for each independent call. Each preparation returns a distinct projectRef. Only the creating call may invoke an Agent on it. Release settled projects after use; an unknown process outcome retains its lease for reconciliation. The mode describes task intent and is not a security boundary.
+Inside `execute`, build the managed workspace with `prepareAgentProject` from `ember-rsi`. Put instructions in the second argument and authorized text files in the third. The last two arguments accept skill directories and role definitions. Prepare a workspace for each independent call. Use distinct project content for independent calls from the same plugin execution when they must not share local edits.
 
 ```ts
-import { prepareAgentProject, releaseSettledProject } from 'ember-rsi';
+import { prepareAgentProject } from 'ember-rsi';
 
-const projectRef = await prepareAgentProject(
+const cwd = await prepareAgentProject(
   context,
   'Read context/input.json and return your findings.',
   { 'context/input.json': JSON.stringify({ target: 'example' }) },
   [],
   [],
 );
-let result;
-try {
-  result = await context.invokeAgent('agent', {
-    projectRef,
-    mode: 'analyze',
-    goal: 'Inspect the target',
-    outputSchema: { type: 'object' },
-  });
-} finally {
-  await releaseSettledProject(context, projectRef);
-}
+const result = await context.invokeAgent('agent', {
+  cwd,
+  goal: 'Inspect the target',
+  outputSchema: { type: 'object' },
+});
 ```
-
-### Agent execution and observations
-
-An Agent is an ordinary `OperationDefinition` implementing `agentContract`; implement `create`, `execute` and `dispose` normally. Both explicit registration and plugin-directory loading use the same Registry path. The Runtime automatically records the task input, structured result, errors and terminal outcome, validates the requested output Schema and manages `executionTimeoutMs` and cancellation. No Agent-specific definition hook or opt-in execution helper is required.
-
-During Agent execution, `context.directory` is the prepared project root and `context.signal` includes the task deadline. CLI adapters use `context.runAgentProcess` for owned process-tree cleanup. SDK adapters use the same signal and await `context.charge('modelCalls', 1)` before model requests; native CLI execution rejects a configured hard model-call budget it cannot enforce.
-
-Native message/tool/subagent details may be published as `context.event.emit('rsi/agent-observation', observation)`. This is optional enrichment: an Agent emitting nothing still has basic records and appears in the Dashboard by its contract. Invalid optional details produce an observation gap; recording storage failures stop execution. The Runtime owns the writer and its close lifecycle.
 
 ### Calls and resource cleanup
 

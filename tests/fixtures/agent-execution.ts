@@ -2,7 +2,7 @@ import { agentContract } from '../../src/contracts/index.js';
 import { ManagedEvents } from '../../src/runtime/services/events.js';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type {
   AgentInput,
   AgentLineHandler,
@@ -40,15 +40,13 @@ export async function agentFixture(
     directory: join(root, 'owner'),
     signal: new AbortController().signal,
   });
-  const projectRef = await prepareAgentProject(
+  const directory = await prepareAgentProject(
     owner,
     'Read context and edit candidate only when authorized.',
     { 'candidate/input.txt': 'original' },
     [],
     [],
   );
-  const workspace = await manager.workspaces.read(projectRef);
-  const directory = dirname(workspace.directory);
   const charges: { metric: string; amount: number }[] = [];
   const context = owner.extend({
     callId: 'agent',
@@ -70,8 +68,7 @@ export async function agentFixture(
   });
   await mkdir(context.directory, { recursive: true });
   const request: AgentInput = {
-    projectRef,
-    mode: 'edit',
+    cwd: directory,
     goal: 'Return an answer',
     outputSchema: answerSchema,
   };

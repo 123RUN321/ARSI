@@ -1,3 +1,4 @@
+import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import {
   createAgentSession,
@@ -34,9 +35,6 @@ import {
   type AgentPiConfig,
   type ResolvedAgentPiConfig,
 } from './schema.js';
-function cwdForTemporary(request: PiTask): string {
-  return join(request.cwd, 'scratch');
-}
 
 /** Resolve only for execution; persisted config keeps environment references. */
 export function resolveModelConfig(
@@ -120,15 +118,21 @@ export async function createPiSession(
             parentRunId: request.parentRunId,
           },
         });
-      const observe = piObservations(
-        (event) => context.event.emit('rsi/agent-observation', event),
-        request.runId,
+      const publish = (
+        event: import('../../contracts/index.js').AgentObservation,
+      ): void => {
+        context.event.emit('rsi/agent-observation', event);
+      };
+      const observe = observeNative(
+        piObservations(publish, request.runId),
+        publish,
+        signal,
       );
       const record = (type: string, data: unknown): void => {
         if (type === 'error') observe({ type, data });
       };
       try {
-        directory = await mkdtemp(join(cwdForTemporary(request), 'pi-'));
+        directory = await mkdtemp(join(context.directory, 'pi-'));
         signal.throwIfAborted();
         const runtime = await ModelRuntime.create({
           authPath: join(directory, 'auth.json'),

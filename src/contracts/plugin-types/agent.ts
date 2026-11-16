@@ -3,9 +3,8 @@ import { defineContract } from '../contract.js';
 
 export type AgentInput = {
   goal: string;
-  projectRef: string;
-  mode: 'analyze' | 'edit';
-  requirements?: { delegation?: boolean };
+  cwd: string;
+  role?: string;
   outputSchema: JsonObject;
 };
 
@@ -16,17 +15,12 @@ export const agentContract = defineContract({
   input_schema: {
     additionalProperties: false,
     properties: {
-      projectRef: { type: 'string', minLength: 1 },
-      mode: { enum: ['analyze', 'edit'] },
-      requirements: {
-        type: 'object',
-        additionalProperties: false,
-        properties: { delegation: { type: 'boolean' } },
-      },
+      cwd: { type: 'string', minLength: 1 },
+      role: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' },
       goal: { type: 'string' },
       outputSchema: { type: 'object' },
     },
-    required: ['goal', 'projectRef', 'mode', 'outputSchema'],
+    required: ['goal', 'cwd', 'outputSchema'],
     type: 'object',
   },
   output_schema: { type: 'object' },

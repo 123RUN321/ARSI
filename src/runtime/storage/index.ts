@@ -16,10 +16,12 @@ import type {
   FactStore,
   JsonObject,
   JsonValue,
+  Workspace,
+  WorkspaceService,
   FileTreeFile,
 } from '../../contracts/index.js';
 import { parseFileTree } from '../../contracts/index.js';
-import { canonical, digest, object, json } from '../../shared/json.js';
+import { canonical, digest, object, string, json } from '../../shared/json.js';
 
 export const excludedArtifactEntries: readonly string[] = [
   'node_modules',
@@ -174,10 +176,60 @@ export class FileFacts implements FactStore {
     );
   }
 }
-export {
-  FileWorkspaces,
-  createAgentProject,
-  leaseAgentProject,
-  releaseSettledProject,
-  agentProjectDirectory,
-} from './workspaces.js';
+export class FileWorkspaces implements WorkspaceService {
+  constructor(
+    readonly directory: string,
+    private readonly artifacts: ArtifactStore,
+  ) {}
+  async create(
+    artifactRef?: string,
+    parentCandidateRef?: string,
+  ): Promise<Workspace> {
+    const ref = randomUUID();
+    const directory = join(this.directory, ref, 'files');
+    await mkdir(directory, { recursive: true });
+    const workspace = {
+      ref,
+      directory,
+      parentCandidateRef: parentCandidateRef ?? null,
+    };
+    await atomic(join(this.directory, ref, 'workspace.json'), workspace);
+    try {
+      if (artifactRef) await this.artifacts.materialize(artifactRef, directory);
+      return workspace;
+    } catch (error) {
+      await this.release(ref);
+      throw error;
+    }
+  }
+  async read(ref: string): Promise<Workspace> {
+    const value = object(
+      JSON.parse(
+        await readFile(
+          join(this.directory, safeId(ref), 'workspace.json'),
+          'utf8',
+        ),
+      ),
+    );
+    const directory = string(value.directory);
+    if (directory !== join(this.directory, ref, 'files'))
+      throw new Error('Workspace identity mismatch');
+    const stat = await lstat(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      throw new Error('Workspace is not a real directory');
+    return {
+      ref,
+      directory,
+      parentCandidateRef:
+        typeof value.parentCandidateRef === 'string'
+          ? value.parentCandidateRef
+          : null,
+    };
+  }
+  async release(ref: string): Promise<void> {
+    await rm(join(this.directory, safeId(ref)), {
+      recursive: true,
+      force: true,
+    });
+  }
+}

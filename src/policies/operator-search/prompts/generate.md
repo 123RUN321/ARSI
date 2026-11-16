@@ -61,14 +61,20 @@ Return exactly the JSON edit object required by outputSchema:
 
 ```json
 {
+  "edits": [
+    {
+      "path": "<one exact path from editablePaths in context/input.json>",
+      "content": "The complete valid Python source, JSON-escaped"
+    }
+  ],
   "reason": "One supported hypothesis, concrete changes and the invariants to verify"
 }
 ```
 
-For a supported change, edit the actual files under candidate/ selected by editablePaths. Keep the
+For a supported change, return one complete replacement per changed file from editablePaths. Keep the
 preserved kernel_function entry point. Do not edit task or comparison files, add
 tests or timing code, perform external writes, or emit placeholders. When no
-supported change remains, leave candidate/ unchanged and return an explicit reason.
+supported change remains, return an empty edits array and an explicit reason.
 Return JSON only, without fences or surrounding prose; do not claim an improvement
 before a real evaluation exists.
 
@@ -93,11 +99,11 @@ experiment distinct; explain that difference.
 A candidate needs a concrete, plausible mechanism and a contract-preserving edit;
 it does not need a demonstrated speedup. State the hypothesis and what formal
 evaluation would falsify. Uncertainty about performance alone is not a reason
-to leave candidate/ unchanged. Do not run timing sweeps or use ad hoc local timings to decide
+for empty edits. Do not run timing sweeps or use ad hoc local timings to decide
 which candidate the Policy should see. Evaluator measures candidates and Selector
 decides promotion. Cheap static checks of bounds and coverage are appropriate.
 
 If the recommended implementation violates an invariant, correct the implementation
-while preserving the hypothesis when possible. Leave candidate/ unchanged only when no
+while preserving the hypothesis when possible. Return empty edits only when no
 reasonable, distinct, testable edit can be formed within the authorized scope;
 explain the concrete obstacle. Do not claim that this proves global optimality.

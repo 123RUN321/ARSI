@@ -20,12 +20,7 @@ export async function operatorSnapshot(
 ): Promise<
   Pick<
     OperatorStageInput,
-    | 'sourcePath'
-    | 'sourceFiles'
-    | 'editablePaths'
-    | 'files'
-    | 'baseArtifactRef'
-    | 'parentCandidateRef'
+    'sourcePath' | 'sourceFiles' | 'editablePaths' | 'files'
   >
 > {
   const source = await readOperatorSource(parent, assessment, context);
@@ -38,8 +33,6 @@ export async function operatorSnapshot(
       'utf8',
     );
   return {
-    baseArtifactRef: parent.artifactRef,
-    parentCandidateRef: parent.ref,
     sourcePath: source.sourcePath,
     sourceFiles: Object.keys(source.files),
     editablePaths: source.editablePaths,

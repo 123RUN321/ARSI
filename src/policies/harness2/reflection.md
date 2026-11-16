@@ -106,20 +106,27 @@ Return no edits when there is no new supported guidance, no meaningful behaviora
 
 ## Submit the edit proposal
 
-Use the exact `outputSchema` supplied by the Agent runtime. Edit authorized resource files directly under candidate/. The final result contains only `reason`:
+Use the exact `outputSchema` supplied by the Agent runtime. The editing result is an object with `edits` and `reason`:
 
 ```json
 {
+  "edits": [
+    {
+      "path": "bindings/invariantProposer/mounts/guidance/proposal-checks.md",
+      "content": "Complete new content for this file, including a conditional rule and its actual evidence references."
+    }
+  ],
   "reason": "The supported behavioral contrast, why this limited change is useful, and what is still unverified."
 }
 ```
 
-The example path is illustrative. Use it only if the actual manifest and `allowedPaths` authorize that mount; otherwise choose an authorized path or make no change. Modify the actual candidate files; do not return patch plans. Delete files only when explicitly allowed.
+The example path is illustrative. Use it only if the actual manifest and `allowedPaths` authorize that mount; otherwise choose an authorized path or make no change. Supply complete replacement content rather than a diff. Use `null` only for an explicitly allowed deletion. Never repeat a path or submit an unchanged file.
 
 Submit no change with:
 
 ```json
 {
+  "edits": [],
   "reason": "The supplied evidence does not justify changing the current guidance."
 }
 ```

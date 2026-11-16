@@ -1,34 +1,226 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { agentFixture } from '../fixtures/agent-execution.js';
-import { prepareAgentProject } from '../../src/plugins/shared/agent-editing/project.js';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, sep } from 'node:path';
+import { RuntimeContext, parseFileTree } from '../../src/contracts/index.js';
+import { FileArtifacts } from '../../src/runtime/storage/index.js';
+import {
+  prepareAgentProject,
+  projectMarker,
+} from '../../src/plugins/shared/agent-editing/project.js';
 
-test('projects are independent references with one editable workspace and an immutable input snapshot', async (t) => {
-  const f = await agentFixture();
-  t.after(() => f.close());
-  const secondRef = await prepareAgentProject(
-    f.owner,
-    'Independent task',
-    { 'candidate/input.txt': 'original' },
-    [],
-    [],
-  );
-  assert.notEqual(secondRef, f.request.projectRef);
-  const first = await f.manager.workspaces.read(f.request.projectRef);
-  const second = await f.manager.workspaces.read(secondRef);
-  await writeFile(join(first.directory, 'input.txt'), 'edited');
-  assert.equal(
-    await readFile(join(second.directory, 'input.txt'), 'utf8'),
-    'original',
-  );
-  assert.equal(dirname(first.directory), f.directory);
-  assert.equal(first.project?.ownerCallId, 'owner');
-  const snapshot = await f.manager.artifacts.readJson(first.project!.inputRef);
-  assert(
-    JSON.stringify(snapshot).includes(
-      Buffer.from('original').toString('base64'),
-    ),
-  );
+async function fixture() {
+  const root = await mkdtemp(join(tmpdir(), 'rsi-agent-project-'));
+  const directory = join(root, 'call');
+  const artifacts = new FileArtifacts(join(root, 'artifacts'));
+  const context = new RuntimeContext().extend({ directory, artifacts });
+  const prepare = () =>
+    prepareAgentProject(
+      context,
+      'Read the candidate and propose JSON edits.',
+      { 'candidate/prompt.md': 'original' },
+      [],
+      [],
+    );
+  const move = async (from: string, to: string): Promise<void> => {
+    assert(from.startsWith(root + sep) && to.startsWith(root + sep));
+    await rename(from, to);
+  };
+  return {
+    root,
+    directory,
+    artifacts,
+    prepare,
+    move,
+    close: async () => {
+      assert.equal(dirname(root), tmpdir());
+      assert(basename(root).startsWith('rsi-agent-project-'));
+      await rm(root, { recursive: true, force: true });
+    },
+  };
+}
+
+test('concurrent project publication and repeat preparation preserve live edits and the original snapshot', async () => {
+  const f = await fixture();
+  try {
+    const [first, concurrent] = await Promise.all([f.prepare(), f.prepare()]);
+    assert.equal(concurrent, first);
+    await writeFile(join(first, 'candidate/prompt.md'), 'live edit');
+    assert.equal(await f.prepare(), first);
+    assert.equal(
+      await readFile(join(first, 'candidate/prompt.md'), 'utf8'),
+      'live edit',
+    );
+    const snapshot = parseFileTree(
+      await f.artifacts.readJson(`artifact:${basename(dirname(first))}`),
+    );
+    const original = snapshot.files.find(
+      (file) => file.path === 'candidate/prompt.md',
+    );
+    assert(original);
+    assert.equal(
+      Buffer.from(original.base64, 'base64').toString('utf8'),
+      'original',
+    );
+    assert.equal(
+      (await readdir(f.directory)).filter((name) =>
+        name.startsWith('agent-input-'),
+      ).length,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+for (const invalid of ['file', 'missing-marker', 'nonempty-marker'] as const) {
+  test(`project reuse rejects an existing ${invalid} without replacing its contents`, async () => {
+    const f = await fixture();
+    try {
+      const project = await f.prepare();
+      if (invalid === 'file') {
+        await f.move(project, project + '.saved');
+        await writeFile(project, 'occupied');
+      } else if (invalid === 'missing-marker') {
+        await rm(join(project, projectMarker));
+      } else {
+        await writeFile(join(project, projectMarker), 'invalid');
+      }
+      await assert.rejects(f.prepare, /Agent project|ENOENT/);
+      assert.equal(
+        await readFile(
+          invalid === 'file' ? project : join(project, 'candidate/prompt.md'),
+          'utf8',
+        ),
+        invalid === 'file' ? 'occupied' : 'original',
+      );
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+test('project reuse rejects an ownership path redirected through a directory link', async () => {
+  const f = await fixture();
+  try {
+    const project = await f.prepare();
+    const parent = dirname(project);
+    const relocated = join(f.root, 'relocated');
+    await f.move(parent, relocated);
+    await symlink(
+      relocated,
+      parent,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    await assert.rejects(f.prepare, /Agent project/);
+    assert.equal(
+      await readFile(join(relocated, 'project/candidate/prompt.md'), 'utf8'),
+      'original',
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('project preparation rejects a redirected parent before creating any child directory', async () => {
+  const f = await fixture();
+  try {
+    const project = await f.prepare();
+    const projects = dirname(dirname(project));
+    const relocated = join(f.root, 'relocated');
+    await f.move(projects, relocated);
+    await symlink(
+      relocated,
+      projects,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    const before = await readdir(relocated);
+    const context = new RuntimeContext().extend({
+      directory: f.directory,
+      artifacts: f.artifacts,
+    });
+    await assert.rejects(
+      prepareAgentProject(context, 'Different input', {}, [], []),
+      /Agent project/,
+    );
+    assert.deepEqual(await readdir(relocated), before);
+  } finally {
+    await f.close();
+  }
+});
+
+test('managed projects preserve Claude instructions, skill resources and native roles in the snapshot', async () => {
+  const f = await fixture();
+  try {
+    const skill = join(f.root, 'skill');
+    await mkdir(join(skill, 'references'), { recursive: true });
+    await writeFile(
+      join(skill, 'SKILL.md'),
+      '---\nname: inspect\ndescription: Inspect evidence\n---\nRead references/input.txt',
+    );
+    await writeFile(join(skill, 'references/input.txt'), 'evidence');
+    const role = join(f.root, 'scout.md');
+    await writeFile(role, 'Report findings only.');
+    const context = new RuntimeContext().extend({
+      directory: f.directory,
+      artifacts: f.artifacts,
+    });
+    const prompt = 'Long instructions '.repeat(3000);
+    const project = await prepareAgentProject(
+      context,
+      prompt,
+      {},
+      [skill],
+      [{ name: 'scout', description: 'Inspect: safely', prompt: role }],
+    );
+    assert.equal(
+      await readFile(join(project, 'CLAUDE.md'), 'utf8'),
+      await readFile(join(project, 'AGENTS.md'), 'utf8'),
+    );
+    assert.equal(
+      await readFile(join(project, 'context/instructions.md'), 'utf8'),
+      prompt,
+    );
+    assert.equal(
+      await readFile(
+        join(project, '.claude/skills/inspect/references/input.txt'),
+        'utf8',
+      ),
+      'evidence',
+    );
+    const nativeRole = await readFile(
+      join(project, '.claude/agents/scout.md'),
+      'utf8',
+    );
+    assert.match(nativeRole, /Report findings only/);
+    assert.doesNotMatch(nativeRole, /^tools:/m);
+    const snapshot = parseFileTree(
+      await f.artifacts.readJson(`artifact:${basename(dirname(project))}`),
+    );
+    assert(
+      snapshot.files.some((file) => file.path === '.claude/agents/scout.md'),
+    );
+    await assert.rejects(
+      prepareAgentProject(
+        context,
+        'prompt',
+        { 'CLAUDE.md': 'collision' },
+        [],
+        [],
+      ),
+      /EEXIST/,
+    );
+  } finally {
+    await f.close();
+  }
 });

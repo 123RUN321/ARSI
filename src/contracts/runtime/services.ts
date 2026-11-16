@@ -21,15 +21,9 @@ export interface Workspace {
   ref: string;
   directory: string;
   parentCandidateRef: string | null;
-  project?: { ownerCallId: string; inputRef: string };
-  leaseOwner?: string;
 }
 export interface WorkspaceService {
-  create(
-    artifactRef?: string,
-    parentCandidateRef?: string,
-    project?: { ownerCallId: string; inputRef: string },
-  ): Promise<Workspace>;
+  create(artifactRef?: string, parentCandidateRef?: string): Promise<Workspace>;
   read(ref: string): Promise<Workspace>;
   release(ref: string): Promise<void>;
 }
@@ -39,6 +33,8 @@ declare module './context.js' {
     rootDirectory: string;
     /** Stable local runtime data root; plugins own their subdirectories and cleanup. */
     dataDirectory: string;
+    /** Prepared input project shared with native delegates. */
+    agentProject?: string;
     runAgentProcess(
       this: RuntimeContext,
       spec: import('./agent-execution.js').AgentProcessSpec,

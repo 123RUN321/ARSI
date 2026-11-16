@@ -26,7 +26,7 @@ export const createAgentClaudeCode: OperationDefinition<
     async execute(request, context) {
       return runSession({
         config,
-        directory: context.directory,
+        directory: request.cwd,
         request,
         signal: context.signal,
         launch: (spec, onLine) => context.runAgentProcess(spec, onLine),

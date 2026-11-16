@@ -1,5 +1,7 @@
 import type { AgentEditingConfig } from './schema.js';
 import type {
+  JsonObject,
+  JsonSchema,
   OperationDefinition,
   ProposerInput,
   ProposerOutput,
@@ -8,13 +10,17 @@ import { applicationContract } from '../../contracts/plugin-types/index.js';
 import { json, object, string } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import {
+  applyEdits,
   editEvidenceRefs,
   requestEdit,
+  resourceFiles,
+  validateEdits,
   type ReadOnlyEditContext,
 } from '../shared/agent-editing/index.js';
 import { proposerExecutionContext } from './execution-context.js';
+import { mergeEdits } from './merge-edits.js';
 import { metricEvidence } from './metric-evidence.js';
-import { editOutputSchema } from '../shared/agent-editing/index.js';
+import { expandEdits, proposerEditOutputSchema } from './edits.js';
 
 export const createProposerAgent: OperationDefinition<
   ProposerInput,
@@ -22,6 +28,15 @@ export const createProposerAgent: OperationDefinition<
   AgentEditingConfig
 >['create'] = async (config, services) => {
   return {
+    async canRetry(_input, receipt, context) {
+      // Agent replay is checked by its own operation. A candidate commit must
+      // be reconciled separately because its workspace is specific to the attempt.
+      return !(await context.facts.list('calls')).some(
+        (call) =>
+          call.parentCallId === receipt.callId &&
+          call.bindingId === '_application',
+      );
+    },
     async execute(input, context) {
       json(input);
       const parent = await context.readCandidate(string(input.parent));
@@ -55,14 +70,39 @@ export const createProposerAgent: OperationDefinition<
           },
         };
       }
-      if (input.maxCandidates === undefined) return commitProposal(0);
+      const batchSchema: JsonSchema | undefined =
+        input.maxCandidates === undefined
+          ? undefined
+          : {
+              type: 'object',
+              additionalProperties: false,
+              required: ['proposals'],
+              properties: {
+                proposals: {
+                  type: 'array',
+                  maxItems: input.maxCandidates,
+                  items: proposerEditOutputSchema,
+                },
+              },
+            };
+      const response = await requestEdit(
+        config,
+        { ...input, target: metadata.target },
+        parent.artifactRef,
+        context,
+        execution,
+        batchSchema ?? proposerEditOutputSchema,
+        config.subagents ?? [],
+      );
+      if (!batchSchema) return commitProposal(response);
+
       const candidates: Extract<
         ProposerOutput,
         { status: 'batch' }
       >['candidates'] = [];
       const noChangeReasons: string[] = [];
-      for (let index = 0; index < input.maxCandidates; index++) {
-        const result = await commitProposal(index);
+      for (const proposal of response.proposals as JsonObject[]) {
+        const result = await commitProposal(proposal);
         if (result.status === 'created') {
           const { candidateRef, diffRef, rationale } = result;
           candidates.push({ candidateRef, diffRef, rationale });
@@ -80,24 +120,44 @@ export const createProposerAgent: OperationDefinition<
       };
 
       async function commitProposal(
-        index: number,
+        response: JsonObject,
       ): Promise<Exclude<ProposerOutput, { status: 'batch' }>> {
-        const response = await requestEdit(
-          config,
-          { ...input, target: metadata.target, proposalIndex: index },
+        const expanded = expandEdits(
+          response,
+          await context.artifacts.readJson(parent.artifactRef),
+        );
+        const edit = await services.workspaces.create(
           parent.artifactRef,
-          context.extend({
-            directory: `${context.directory}/proposal-${index}`,
-          }),
-          execution,
-          editOutputSchema,
-          config.subagents ?? [],
+          parent.ref,
         );
         try {
+          const constraints = input.editConstraints ?? {};
+          let result = expanded.result;
+          if (expanded.hasDuplicates) {
+            // Check scope and raw bounds before a conflict can become a no-change.
+            await validateEdits(
+              edit.directory,
+              result,
+              context,
+              constraints,
+              true,
+            );
+            result = mergeEdits(
+              result,
+              await resourceFiles(parent.artifactRef, context),
+            );
+          }
+          await applyEdits(
+            edit.directory,
+            result,
+            context,
+            constraints,
+            expanded.createOnly,
+          );
           const committed = await context.application({
             action: 'commit',
             parentCandidateRef: parent.ref,
-            editRef: response.editRef,
+            editRef: edit.ref,
             ...(input.editConstraints
               ? { editConstraints: input.editConstraints }
               : {}),
@@ -110,7 +170,7 @@ export const createProposerAgent: OperationDefinition<
           if (committed.action !== 'commit')
             throw new Error('Application did not return a commit result');
           const candidateRef = string(committed.candidateRef);
-          const rationale = string(response.result.reason);
+          const rationale = string(result.reason);
           if (committed.status === 'created')
             return {
               status: 'created',
@@ -127,7 +187,7 @@ export const createProposerAgent: OperationDefinition<
             rationale,
           };
         } finally {
-          await services.workspaces.release(response.editRef);
+          await services.workspaces.release(edit.ref);
         }
       }
     },

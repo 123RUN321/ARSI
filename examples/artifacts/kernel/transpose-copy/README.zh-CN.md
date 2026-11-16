@@ -17,7 +17,7 @@ Recipe 将评测绑定到 RSI 插件 `evaluator.operatorbench`。该插件处理
 
 ## 配置与运行
 
-本例通过 Recipe 的 `application.config.entryFile` 指定 `input.py`。改名时，移动基线文件，同步更新入口路径和对应的 Target 编辑规则。Agent 从 `context/sources/<sourcePath>` 读取只读副本，按阶段输入的 `editablePaths` 直接编辑对应的候选文件，最终只返回 `reason`。
+本例通过 Recipe 的 `application.config.entryFile` 指定 `input.py`。改名时，移动基线文件，同步更新入口路径和对应的 Target 编辑规则。Agent 从 `context/sources/<sourcePath>` 读取只读副本，返回的编辑路径必须在阶段输入的 `editablePaths` 中。
 
 使用装有 CANN、torch、torch_npu、triton-ascend，以及锁定版本 Evaluator SDK
 所需 profiling 依赖的 Linux NPU 主机。在私有环境配置中设置 `MODEL_NAME`、

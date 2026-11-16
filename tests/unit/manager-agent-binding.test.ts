@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import type { OperationDefinition } from '../../src/contracts/index.js';
 import { agentContract } from '../../src/contracts/plugin-types/index.js';
 import { prepareAgentProject } from '../../src/plugins/shared/agent-editing/project.js';
-import { string } from '../../src/shared/json.js';
+import { object, string } from '../../src/shared/json.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
 
 test('Manager invokes exact Agent bindings and never falls back to an implementation ID', async () => {
@@ -33,8 +33,7 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
     async (context) => {
       const request = {
         goal: 'test routing',
-        mode: 'analyze' as const,
-        projectRef: await prepareAgentProject(context, 'test', {}, [], []),
+        cwd: await prepareAgentProject(context, 'test', {}, [], []),
         outputSchema: { type: 'object' },
       };
       assert.deepEqual(await context.invokeAgent('second', request), {
@@ -69,6 +68,11 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
       assert.equal(receipts.length, 3);
       for (const receipt of receipts) {
         assert.equal(receipt.contractId, 'contract.agent');
+        assert.equal(receipt.status, 'succeeded');
+        assert.equal(
+          string(object(receipt.output).label),
+          receipt.bindingId === 'agent.default' ? 'default' : receipt.bindingId,
+        );
         const records = await readAgentRecords(
           join(
             context.dataDirectory,
@@ -81,13 +85,10 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
           100,
           true,
         );
-        assert.equal(records.terminalStatus, 'completed');
-        assert(
-          records.items.some(
-            (item) =>
-              item.event?.type === 'message.completed' &&
-              item.event.messageId === 'result',
-          ),
+        assert.equal(records.recording, 'closed');
+        assert.deepEqual(
+          records.items.map((item) => item.type),
+          ['observation.gap'],
         );
       }
       assert.equal(executions, 3);
@@ -104,68 +105,6 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
   );
   try {
     assert.equal((await fixture.run()).status, 'succeeded');
-  } finally {
-    await fixture.dispose();
-  }
-});
-
-test('Runtime exclusively leases an owned project and retains an unknown execution for reconciliation', async () => {
-  let release: (() => void) | undefined;
-  let started: (() => void) | undefined;
-  const ready = new Promise<void>((resolve) => {
-    started = resolve;
-  });
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const agent: OperationDefinition = {
-    id: 'test.leased-agent',
-    contract: agentContract,
-    configSchema: { type: 'object' },
-    async create() {
-      return {
-        async execute() {
-          started!();
-          await gate;
-          throw Object.assign(new Error('Stop is unconfirmed'), {
-            status: 'unknown',
-          });
-        },
-        async dispose() {},
-      };
-    },
-  };
-  const fixture = await managerFixture(
-    async (context) => {
-      const projectRef = await prepareAgentProject(context, 'test', {}, [], []);
-      const request = {
-        projectRef,
-        mode: 'analyze' as const,
-        goal: 'test',
-        outputSchema: { type: 'object' },
-      };
-      const running = context.invokeAgent('agent', request);
-      await ready;
-      try {
-        await assert.rejects(
-          context.invokeAgent('agent', { ...request, goal: 'another task' }),
-          /executing/i,
-        );
-      } finally {
-        release!();
-      }
-      await assert.rejects(running, /unconfirmed/);
-      assert.ok((await context.workspaces.read(projectRef)).leaseOwner);
-      await assert.rejects(
-        context.workspaces.release(projectRef),
-        /leased|active|in use|executing/i,
-      );
-      return {};
-    },
-    { plugins: [agent], bindings: { agent: { plugin: agent.id, config: {} } } },
-  );
-  try {
-    await assert.rejects(fixture.run(), /unconfirmed|executing/);
   } finally {
     await fixture.dispose();
   }

@@ -16,7 +16,6 @@ import {
   validateSchemaDefinition,
 } from '../../../shared/schema.js';
 import { object } from '../../../shared/json.js';
-import { agentProjectDirectory } from '../../storage/workspaces.js';
 import { FileAgentRecorder } from '../../storage/agent-records.js';
 
 /** Installed by the registry for every Agent. Plugins need only execute/dispose. */
@@ -35,9 +34,7 @@ export function managedAgentOperation(
       );
       validateSchemaDefinition(request.outputSchema, 'Agent outputSchema');
       context.signal.throwIfAborted();
-      const directory = agentProjectDirectory(
-        await context.workspaces.read(request.projectRef),
-      );
+      const directory = request.cwd;
       const controller = new AbortController();
       const signal = AbortSignal.any([context.signal, controller.signal]);
       const timer =
@@ -54,19 +51,17 @@ export function managedAgentOperation(
           backend,
           input: object(request),
         });
-        let recordingFailed = false;
         let unconfirmed: unknown;
         const record = (observation: AgentObservation): void => {
           try {
             recorder.record(observation);
           } catch (error) {
-            recordingFailed = true;
             controller.abort(error);
             throw error;
           }
         };
         // Native detail is optional call-local telemetry. The framework still records
-        // input/result/failure when a plugin emits no observations at all.
+        // details when available; the Manager receipt owns input, result and status.
         const emit = ((...args: unknown[]): unknown => {
           const index = typeof args[0] === 'string' ? 0 : 1;
           if (args[index] === 'rsi/agent-observation') {
@@ -94,30 +89,17 @@ export function managedAgentOperation(
           return Reflect.apply(context.event.emit, context.event, args);
         }) as EventPipeline['emit'];
         const scope = context.extend({
-          directory,
+          agentProject: directory,
           signal,
           event: { ...context.event, emit },
         });
         try {
           record({
             runId: 'main',
-            event: { type: 'run.started', backend, parentRunId: null },
-          });
-          record({
-            runId: 'main',
             event: {
               type: 'observation.gap',
               reason:
                 'Native message, tool and child-session coverage depends on available backend observations.',
-            },
-          });
-          record({
-            runId: 'main',
-            event: {
-              type: 'message.completed',
-              messageId: 'task',
-              role: 'user',
-              text: request.goal,
             },
           });
           const output = await operation.execute(input, scope);
@@ -132,20 +114,6 @@ export function managedAgentOperation(
               { cause: error },
             );
           }
-          record({
-            runId: 'main',
-            event: {
-              type: 'message.completed',
-              messageId: 'result',
-              role: 'assistant',
-              text: JSON.stringify(result),
-              phase: 'structured_result',
-            },
-          });
-          record({
-            runId: 'main',
-            event: { type: 'run.finished', status: 'completed' },
-          });
           return result;
         } catch (error) {
           const unknown =
@@ -159,24 +127,6 @@ export function managedAgentOperation(
               ? signal.reason
               : error;
           if (unknown) unconfirmed = cause;
-          if (!recordingFailed) {
-            try {
-              record({
-                runId: 'main',
-                event: {
-                  type: 'run.finished',
-                  status: unknown
-                    ? 'unknown'
-                    : context.signal.aborted
-                      ? 'cancelled'
-                      : 'failed',
-                  error: cause instanceof Error ? cause.message : String(cause),
-                },
-              });
-            } catch (recordError) {
-              if (!unknown) throw recordError;
-            }
-          }
           throw cause;
         } finally {
           try {

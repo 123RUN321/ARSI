@@ -1,3 +1,4 @@
+import { observeNative } from '../shared/native-agent/observe.js';
 import { claudeObservations } from './observations.js';
 import type {
   AgentObservation,
@@ -18,7 +19,11 @@ export async function runSession(options: {
   launch: AgentProcessLauncher;
 }): Promise<JsonObject> {
   const { config, request, record } = options;
-  const observe = claudeObservations(record);
+  const observe = observeNative(
+    claudeObservations(record),
+    record,
+    options.signal,
+  );
   let result: JsonObject | undefined;
   let completed = false;
   // Keep native model/auth settings; constrain task tools independently.
@@ -40,7 +45,7 @@ export async function runSession(options: {
     JSON.stringify({
       goal: request.goal,
       instruction:
-        'Read CLAUDE.md and the project instructions. Use native Skills and Agent delegation when appropriate. Edit candidate/ directly only when authorized. Return only the requested structured result.',
+        'Read CLAUDE.md and the project instructions. Use native Skills and Agent delegation when appropriate. Return proposed changes through the requested result Schema; leave task input files unchanged. Return only the requested structured result.',
     }),
     (line) => {
       const event = object(JSON.parse(line));

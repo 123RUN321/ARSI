@@ -28,7 +28,7 @@ export const createAgentCodex: OperationDefinition<
         executable: config.executable,
         model: config.model,
         reasoningEffort: config.thinkingLevel,
-        directory: context.directory,
+        directory: request.cwd,
         request,
         signal: context.signal,
         launch: (spec, onLine) => context.runAgentProcess(spec, onLine),

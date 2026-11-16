@@ -45,19 +45,28 @@ existing public caller or replacing the selected operator's implementation.
 
 ## Output
 
-Edit the actual files under candidate/ using exact editablePaths. Return only the rationale required by outputSchema:
+Return the complete JSON object required by outputSchema:
 
 ```json
 {
+  "edits": [
+    {
+      "path": "<one exact path from editablePaths in context/input.json>",
+      "content": "The complete repaired Python source, JSON-escaped"
+    }
+  ],
   "reason": "Identify the reported failure, explain the repair and the invariant preserved"
 }
 ```
 
-For a supported repair, write the complete repaired Python file to candidate/ using the exact sourcePath from the stage input.
+For a supported repair, edits must contain exactly one entry with the exact path given by `sourcePath`
+and content containing the complete repaired Python file. Do not split one
+file replacement into multiple edits.
 
 Use only exact paths from `editablePaths` in `context/input.json` for edits. Return JSON only, without a Markdown fence or prose, and do
 not return a Python code block. A remaining uncertainty is not a successful
-repair. When no supported modification exists, leave candidate/ unchanged and return an explicit reason; the Policy decides whether to end the repair attempt.
+repair. When no supported modification exists, return an empty edits array and
+an explicit reason; the Policy decides whether to end the repair attempt.
 
 ## Use history without turning uncertainty into a ban
 

@@ -9,6 +9,7 @@ test('Claude translates text, thinking and correlated tool results while returni
     assert(spec.args.includes('stream-json'));
     assert(spec.args.includes('--forward-subagent-text'));
     for (const message of [
+      { type: 'assistant', message: null },
       {
         type: 'assistant',
         message: {
@@ -50,6 +51,13 @@ test('Claude translates text, thinking and correlated tool results while returni
   );
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  assert(
+    records.items.some(
+      (item) =>
+        item.event?.type === 'observation.gap' &&
+        item.event.reason.includes('object'),
+    ),
+  );
   assert(
     records.items.some(
       (r) => r.event?.type === 'tool.completed' && r.event.toolCallId === 't1',

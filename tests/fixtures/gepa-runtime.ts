@@ -1,8 +1,7 @@
-import { directAgentResult } from './direct-agent-result.js';
 import { piDefinition } from '../../src/plugins/agent-pi/index.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { resolve, dirname, join, matchesGlob } from 'node:path';
+import { resolve, join, matchesGlob } from 'node:path';
 import { stringify } from 'yaml';
 import type {
   AgentInput,
@@ -466,11 +465,7 @@ function fakeAgentPlugin(
           const projectFiles = decodeTree(
             object(
               await context.artifacts.readJson(
-                await context.artifacts.capture(
-                  dirname(
-                    (await context.workspaces.read(input.projectRef)).directory,
-                  ),
-                ),
+                await context.artifacts.capture(input.cwd),
               ),
             ),
           );
@@ -517,16 +512,14 @@ function fakeAgentPlugin(
             projectFiles,
             candidateFiles: files,
           });
-          return directAgentResult(
-            context,
-            input,
+          return (
             output ?? {
               edits:
                 typeof proposals[moduleId] === 'string'
-                  ? [{ path, content: proposals[moduleId] }]
+                  ? [{ op: 'replace', path, content: proposals[moduleId] }]
                   : [],
               reason: 'controlled proposal',
-            },
+            }
           );
         },
         async dispose() {},
@@ -583,13 +576,13 @@ export async function runGepa(options: {
   const createManager = (): Manager => {
     const current = new Manager({ registry, rootDirectory: root });
     const create = current.workspaces.create.bind(current.workspaces);
-    current.workspaces.create = async (ref, parent, project) => {
+    current.workspaces.create = async (ref, parent) => {
       // The Proposer creates its edit workspace after the Agent has returned.
       if (parent !== undefined && failuresRemaining > 0) {
         failuresRemaining--;
         throw editFailure;
       }
-      return create(ref, parent, project);
+      return create(ref, parent);
     };
     return current;
   };

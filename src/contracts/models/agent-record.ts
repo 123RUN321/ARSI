@@ -52,7 +52,6 @@ export interface AgentPayload {
 export interface AgentRecord {
   sequence: number;
   type: AgentEvent['type'];
-  terminal?: 'completed' | 'failed' | 'cancelled' | 'unknown';
   recordedAt: string;
   runId: string;
   native?: AgentObservation['native'];

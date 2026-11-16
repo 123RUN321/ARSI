@@ -80,9 +80,6 @@ export class FileAgentRecorder {
     const record: AgentRecord = {
       sequence: this.sequence + 1,
       type: observation.event.type,
-      ...(observation.event.type === 'run.finished'
-        ? { terminal: observation.event.status }
-        : {}),
       recordedAt: new Date().toISOString(),
       runId: observation.runId,
       ...(observation.native ? { native: observation.native } : {}),
@@ -115,7 +112,6 @@ export async function readAgentRecords(
   nextAfter: number;
   recording: 'open' | 'closed' | 'interrupted';
   total: number;
-  terminalStatus?: string;
 }> {
   if (
     !Number.isSafeInteger(after) ||
@@ -130,11 +126,9 @@ export async function readAgentRecords(
     constants.O_RDONLY | constants.O_NOFOLLOW,
   );
   const items: AgentRecord[] = [];
-  let terminalStatus: string | undefined;
   let total = 0,
     tail = '',
-    interrupted = false,
-    terminal = false;
+    interrupted = false;
   const stream = file.createReadStream({ autoClose: false, encoding: 'utf8' });
   try {
     for await (const chunk of stream) {
@@ -155,13 +149,11 @@ export async function readAgentRecords(
           break;
         }
         total = record.sequence;
-        terminal = record.type === 'run.finished' && record.runId === 'main';
-        if (terminal) terminalStatus = record.terminal;
         if (record.sequence > after && items.length < limit) items.push(record);
       }
       if (interrupted) break;
     }
-    interrupted ||= tail.length > 0 || (finished && !terminal);
+    interrupted ||= tail.length > 0;
   } finally {
     stream.destroy();
     await file.close();
@@ -169,9 +161,8 @@ export async function readAgentRecords(
   return {
     items,
     total,
-    terminalStatus,
     nextAfter: items.at(-1)?.sequence ?? after,
-    recording: interrupted ? 'interrupted' : terminal ? 'closed' : 'open',
+    recording: interrupted ? 'interrupted' : finished ? 'closed' : 'open',
   };
 }
 

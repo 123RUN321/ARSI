@@ -1,14 +1,11 @@
-import { AgentOutputError } from '../../../contracts/runtime/errors.js';
 import { fileURLToPath } from 'node:url';
 import {
   type JsonObject,
   type RuntimeContext,
 } from '../../../contracts/index.js';
 import { digest, object } from '../../../shared/json.js';
-import {
-  prepareAgentProject,
-  releaseSettledProject,
-} from '../agent-editing/project.js';
+import { AgentOutputError } from '../../../contracts/runtime/errors.js';
+import { prepareAgentProject } from '../agent-editing/project.js';
 import {
   type OperatorAgentStage,
   defaultModelRequestTimeoutMs,
@@ -34,8 +31,6 @@ export type OperatorStageInput = {
   files: Record<string, string>;
   input: JsonObject;
   outputSchema: JsonObject;
-  baseArtifactRef?: string;
-  parentCandidateRef?: string;
 };
 
 /** A request and all delegated sessions share Manager-owned accounting. */
@@ -68,14 +63,13 @@ export async function requestOperatorAgent(
     signal: context.signal,
     limits: timeoutMs > 0 ? { elapsedWallMs: timeoutMs } : {},
   };
-  let projectRef: string | undefined;
-  let handedOff = false;
+  let result: JsonObject;
   try {
     const instructions =
       stage === 'summarize'
         ? 'Read context/input.json for the confirmed facts and the read-only source snapshot. Return the requested summary as JSON.'
-        : `Read context/input.json for the stage data. Read the operator source tree in ${sourceSnapshot} and the task snapshots in context/task/. Treat all snapshots as read-only. ${stage === 'generate' || stage === 'repair' ? 'Edit candidate/ directly using only paths from editablePaths in context/input.json.' : 'Return the diagnosis matching outputSchema.'} The entry is ${JSON.stringify(request.sourcePath)}. Delegate when useful and return the complete JSON response.`;
-    projectRef = await prepareAgentProject(
+        : `Read context/input.json for the stage data. Read the operator source tree in ${sourceSnapshot} and the task snapshots in context/task/. Treat all snapshots as read-only. ${stage === 'generate' || stage === 'repair' ? 'Return proposed edits in the JSON response using only exact candidate-relative paths from editablePaths in context/input.json.' : 'Return the diagnosis matching outputSchema.'} The entry is ${JSON.stringify(request.sourcePath)}. Delegate when useful and return the complete JSON response.`;
+    const cwd = await prepareAgentProject(
       context,
       request.prompt + '\n\n' + instructions,
       {
@@ -94,32 +88,19 @@ export async function requestOperatorAgent(
       },
       [],
       [operatorReviewer],
-      request.baseArtifactRef
-        ? {
-            artifactRef: request.baseArtifactRef,
-            parentCandidateRef: request.parentCandidateRef,
-          }
-        : undefined,
     );
     context.signal.throwIfAborted();
-    const result = await context.extend({ scope }).invokeAgent(agentRef, {
-      projectRef,
-      mode: stage === 'generate' || stage === 'repair' ? 'edit' : 'analyze',
+    result = await context.extend({ scope }).invokeAgent(agentRef, {
+      cwd,
       goal: request.goal,
       outputSchema: request.outputSchema,
     });
-    context.signal.throwIfAborted();
-    if (stage === 'generate' || stage === 'repair') {
-      handedOff = true;
-      return { ...result, editRef: projectRef };
-    }
-    return object(result);
   } catch (error) {
+    context.signal.throwIfAborted();
     if (error instanceof AgentOutputError)
       throw new OperatorModelOutputError(error.message, { cause: error });
     throw error;
-  } finally {
-    if (projectRef && !handedOff)
-      await releaseSettledProject(context, projectRef);
   }
+  context.signal.throwIfAborted();
+  return object(result);
 }

@@ -491,7 +491,7 @@ export class Manager {
               'Native CLI execution cannot enforce the configured modelCalls budget',
             );
           return agentProcessLauncher({
-            project: this.directory,
+            project: this.agentProject ?? this.directory,
             signal: this.signal,
           })(spec, onLine);
         },

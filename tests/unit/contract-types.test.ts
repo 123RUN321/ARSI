@@ -438,8 +438,7 @@ test('typed inputs and outputs satisfy public contract Schemas', () => {
       contract: contracts.agentContract,
       input: {
         goal: 'Improve',
-        projectRef: 'project-reference',
-        mode: 'analyze',
+        cwd: '/tmp/project',
         outputSchema: {},
       } satisfies AgentInput,
       output: { answer: 1 } satisfies AgentOutput,
@@ -657,12 +656,7 @@ test('typed inputs and outputs satisfy public contract Schemas', () => {
 });
 
 test('Agent request rejects routing and request-level model-call limits', () => {
-  const input = {
-    goal: 'Inspect',
-    projectRef: 'project',
-    mode: 'analyze',
-    outputSchema: {},
-  };
+  const input = { goal: 'Inspect', cwd: '/tmp/project', outputSchema: {} };
   assert.doesNotThrow(() =>
     validate(contracts.agentContract.input_schema, input, 'Agent'),
   );

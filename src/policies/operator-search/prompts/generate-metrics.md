@@ -26,10 +26,10 @@ separate until evaluation.
 
 ## Output
 
-Edit candidate/ directly and return only JSON with `reason`, matching outputSchema. A supported
+Return only JSON with `edits` and `reason`, matching outputSchema. A supported
 change contains one edit per changed file from `editablePaths`, with its complete replacement
 Python source as content.
-Leave candidate/ unchanged with an explicit reason when no supported change
+Return an empty edits array with an explicit reason when no supported change
 remains. Do not add business result fields, tests, timing code or external writes.
 
 ## Use history without turning uncertainty into a ban
@@ -53,11 +53,11 @@ experiment distinct; explain that difference.
 A candidate needs a concrete, plausible mechanism and a contract-preserving edit;
 it does not need a demonstrated speedup. State the hypothesis and what formal
 evaluation would falsify. Uncertainty about performance alone is not a reason
-to leave candidate/ unchanged. Do not run timing sweeps or use ad hoc local timings to decide
+for empty edits. Do not run timing sweeps or use ad hoc local timings to decide
 which candidate the Policy should see. Evaluator measures candidates and Selector
 decides promotion. Cheap static checks of bounds and coverage are appropriate.
 
 If the recommended implementation violates an invariant, correct the implementation
-while preserving the hypothesis when possible. Leave candidate/ unchanged only when no
+while preserving the hypothesis when possible. Return empty edits only when no
 reasonable, distinct, testable edit can be formed within the authorized scope;
 explain the concrete obstacle. Do not claim that this proves global optimality.

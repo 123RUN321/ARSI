@@ -1,3 +1,4 @@
+import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import { openCodeObservations } from './observations.js';
 import type {
@@ -23,7 +24,11 @@ export async function runSession(options: {
   launch: AgentProcessLauncher;
 }): Promise<JsonObject> {
   const { config, request, record } = options;
-  const observe = openCodeObservations(record);
+  const observe = observeNative(
+    openCodeObservations(record),
+    record,
+    options.signal,
+  );
   const args = ['run', '--standalone', '--format', 'json', '--archived'];
   if (config.model !== undefined) args.push('--model', config.model);
   const messages = new Map<string, string>();
@@ -36,7 +41,7 @@ export async function runSession(options: {
     JSON.stringify({
       goal: request.goal,
       instruction:
-        'Read AGENTS.md and the project instructions. Edit candidate/ directly only when authorized; context is read-only. Your final answer must be only a JSON object matching outputSchema, without Markdown or prose.',
+        'Read AGENTS.md and the project instructions. Return proposed changes through the requested result Schema; leave task input files unchanged. Your final answer must be only a JSON object matching outputSchema, without Markdown or prose.',
       outputSchema: request.outputSchema,
     }),
     (line) => {

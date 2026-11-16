@@ -679,10 +679,7 @@ export class ObservationQueries {
         nextOffset:
           records.nextAfter < records.total ? records.nextAfter : null,
         unavailable: null,
-        incomplete:
-          records.recording === 'interrupted' ||
-          (['failed', 'cancelled', 'unknown'].includes(String(call.status)) &&
-            records.terminalStatus === 'completed'),
+        incomplete: records.recording === 'interrupted',
       };
     } catch (error) {
       if (missing(error))

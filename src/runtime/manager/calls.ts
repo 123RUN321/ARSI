@@ -1,6 +1,6 @@
-import { leaseAgentProject } from '../storage/workspaces.js';
 import { OperationRejectedError } from '../../contracts/runtime/errors.js';
-import { mkdir } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   agentContract,
   memoryContract,
@@ -114,282 +114,292 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
     };
     const agentInput =
       definition.contract.id === agentContract.id ? object(input) : undefined;
-    const projectRef =
-      typeof agentInput?.projectRef === 'string'
-        ? agentInput.projectRef
-        : undefined;
+    const project =
+      typeof agentInput?.cwd === 'string' ? agentInput.cwd : undefined;
     const job = (async (): Promise<JsonValue> => {
       let ctx = context(bindingId, callId, caller);
       let projectArtifactRef: string | undefined;
-      let projectLease:
-        | Awaited<ReturnType<typeof leaseAgentProject>>
-        | undefined;
-      let projectUncertain = false;
-      try {
-        if (projectRef !== undefined) {
-          projectLease = await leaseAgentProject(
-            ctx,
-            projectRef,
-            caller.callId,
-          );
-          projectArtifactRef = projectLease.inputRef;
-        }
-
-        let prior: JsonObject | undefined;
-        // Prior direct calls hashed input before defaults. Inspect that receipt too,
-        // so upgrading a running experiment cannot repeat its external effects.
-        for (const ref of new Set([callId, legacyId])) {
-          try {
-            prior = await options.facts.read('calls', ref);
-            break;
-          } catch (error) {
-            if (
-              !(
-                error instanceof Error &&
-                'code' in error &&
-                error.code === 'ENOENT'
-              )
-            )
-              throw error;
-          }
-        }
-        if (prior?.status === 'succeeded') return checkedOutput(prior.output);
-        ctx.signal.throwIfAborted();
-        // Receipt recovery does not reserve a version; pin it together with its lease.
-        const binding = options.binding(bindingId);
-        if (!binding) throw new Error(`Unknown binding ${bindingId}`);
-        const revisionRef = options.revisionRefs[bindingId];
-        const info: CallEventInfo = {
-          experimentId: id,
-          callId,
-          bindingId,
-          path: path ?? caller.callId,
-          parentCallId: caller.callId,
-          bindingRef: binding.plugin,
-          revisionRef: typeof revisionRef === 'string' ? revisionRef : null,
-        };
-        const isMemory = definition.contract.id === memoryContract.id;
-        if (
-          isMemory ||
-          definition.contract.id === reflectionContract.id ||
-          optionalCalls.has(caller.callId)
-        )
-          optionalCalls.add(callId);
-        // A handled Memory failure is a completed update boundary, even when its
-        // Policy checkpoint was interrupted. Reuse its old reference on resume.
-        if (
-          isMemory &&
-          prior?.status === 'failed' &&
-          prior.output !== undefined
-        ) {
-          const output = checkedOutput(prior.output);
-          if (object(output).status === 'failed') return output;
-        }
-        const lease = await options.operation(bindingId, binding);
-        ctx = ctx.extend({ event: lease.event });
-        try {
+      if (project !== undefined) {
+        if (caller.agentProject === undefined) {
+          const hash = basename(dirname(project));
+          const projects = join(resolve(caller.directory), 'agent-projects');
           if (
-            prior &&
-            ((prior.status !== 'failed' && prior.status !== 'cancelled') ||
-              prior.pluginId !== binding.plugin ||
-              !lease?.operation.canRetry ||
-              (await lease.operation.canRetry(input, prior, ctx)) !== true)
-          ) {
+            !isAbsolute(project) ||
+            project !== join(projects, hash, 'project') ||
+            !/^[a-f0-9]{64}$/.test(hash) ||
+            agentInput?.role !== undefined
+          )
             throw new Error(
-              `Call ${callId} has unconfirmed/failed effects; inspect its receipt before recovery`,
+              'Agent cwd must be a prepared project owned by this call',
             );
-          }
-          ctx.signal.throwIfAborted();
-          await charge('operations', 1, ctx);
-          await mkdir(ctx.directory, { recursive: true });
-          const recoveredFrom = prior
-            ? `${callId}-${digest(prior).slice(0, 24)}`
-            : null;
-          if (prior && recoveredFrom)
-            await options.facts.write('call-attempts', recoveredFrom, prior);
-          const receipt: JsonObject = {
-            ...info,
-            pluginId: binding.plugin,
-            contractId: definition.contract.id,
-            status: 'running',
-            input,
-            ...(projectArtifactRef === undefined
-              ? {}
-              : { agentProjectArtifactRef: projectArtifactRef }),
-            startedAt: new Date().toISOString(),
-            ...(recoveredFrom ? { recoveredFrom } : {}),
-          };
-          await options.facts.write('calls', callId, receipt);
-          let committed = false;
-          // Serialize final receipts with any late settlement after a cleanup timeout.
-          let writes = Promise.resolve();
-          const commit = (value: JsonObject): Promise<boolean> => {
-            const write = writes.then(async () => {
-              if (committed) return false;
-              await options.facts.write('calls', callId, {
-                ...receipt,
-                ...value,
-                finishedAt: new Date().toISOString(),
-              });
-              committed = true;
-              return true;
-            });
-            writes = write.then(
-              () => {},
-              () => {},
+          const root = await realpath(caller.directory);
+          if (
+            (await realpath(project)) !==
+              join(root, 'agent-projects', hash, 'project') ||
+            !(await lstat(join(project, '.rsi-project'))).isFile()
+          )
+            throw new Error(
+              'Agent cwd does not resolve to its authorized project',
             );
-            return write;
-          };
-          uncertain.set(callId, async () => {
-            if (
-              await commit({
-                status: 'unknown',
-                error: 'Business work did not settle before cleanup deadline',
-              })
-            ) {
-              projectUncertain = true;
-              try {
-                void ctx.event
-                  .parallel('rsi/call-unknown', { ...info, status: 'unknown' })
-                  .catch((error: unknown) =>
-                    options.diagnose('rsi/call-unknown', error),
-                  );
-              } catch (error) {
-                options.diagnose('rsi/call-unknown', error);
-              }
-            }
-          });
-          let output: JsonValue;
-          let memoryFailed = false;
-          try {
-            const decision = await ctx.event.waterfall(
-              'rsi/before-call',
-              { ...info, status: 'running' },
-              async () => ({ kind: 'proceed' }),
-            );
-            ctx.signal.throwIfAborted();
-            if (
-              !decision ||
-              typeof decision !== 'object' ||
-              (decision.kind !== 'proceed' && decision.kind !== 'reject') ||
-              (decision.kind === 'reject' &&
-                (typeof decision.reason !== 'string' ||
-                  !decision.reason.trim()))
-            )
-              throw new Error('Invalid rsi/before-call decision');
-            if (decision.kind === 'reject')
-              throw new Error(`Call admission rejected: ${decision.reason}`);
-            output = checkedOutput(await lease.operation.execute(input, ctx));
-            memoryFailed = isMemory && object(output).status === 'failed';
-            if (
-              !(await commit({
-                status: memoryFailed ? 'failed' : 'succeeded',
-                output,
-                ...(memoryFailed ? { error: object(output).reason! } : {}),
-              }))
-            )
-              throw Object.assign(
-                new Error(`Call ${callId} outcome remains unconfirmed`),
-                { status: 'unknown' },
-              );
-          } catch (error) {
-            const explicit =
-              error && typeof error === 'object' && 'status' in error
-                ? error.status
-                : undefined;
-            const status =
-              explicit === 'unknown'
-                ? 'unknown'
-                : explicit === 'cancelled' ||
-                    (ctx.signal.aborted &&
-                      !(
-                        childFailures.has(callId) &&
-                        childFailures.get(callId) === error
-                      ))
-                  ? 'cancelled'
-                  : 'failed';
-            if (
-              await commit({
-                status,
-                error: errorText(error),
-                measurementRef:
-                  error &&
-                  typeof error === 'object' &&
-                  'measurementRef' in error
-                    ? String(error.measurementRef)
-                    : null,
-              })
-            ) {
-              // Preserve a failure as it propagates through its owning calls,
-              // even after supervision has cancelled the other branches.
-              if (status === 'failed' && uncertain.has(caller.callId))
-                childFailures.set(caller.callId, error);
-              try {
-                if (status === 'cancelled')
-                  await ctx.event.parallel('rsi/call-cancelled', {
-                    ...info,
-                    status,
-                  });
-                else if (status === 'unknown')
-                  await ctx.event.parallel('rsi/call-unknown', {
-                    ...info,
-                    status,
-                  });
-                else
-                  await ctx.event.parallel('rsi/call-failed', {
-                    ...info,
-                    status,
-                  });
-              } catch (notificationError) {
-                options.diagnose(`rsi/call-${status}`, notificationError);
-              }
-            }
-            throw error;
-          } finally {
-            childFailures.delete(callId);
-            uncertain.delete(callId);
-          }
-          // Notification errors do not undo a settled optional update.
-          const eventName = memoryFailed
-            ? 'rsi/call-failed'
-            : 'rsi/call-succeeded';
-          try {
-            if (memoryFailed)
-              await ctx.event.parallel('rsi/call-failed', {
-                ...info,
-                status: 'failed',
-              });
-            else
-              await ctx.event.parallel('rsi/call-succeeded', {
-                ...info,
-                status: 'succeeded',
-                ...(output &&
-                typeof output === 'object' &&
-                !Array.isArray(output) &&
-                typeof output.measurementRef === 'string'
-                  ? { measurementRef: output.measurementRef }
-                  : {}),
-              });
-          } catch (error) {
-            if (optionalCalls.has(callId)) options.diagnose(eventName, error);
-            else
-              throw new Error(`Event handling failed: ${eventName}`, {
-                cause: error,
-              });
-          }
-          return output;
-        } finally {
-          lease.release();
+          projectArtifactRef = `artifact:${hash}`;
+        } else if (
+          project !== caller.agentProject ||
+          agentInput?.role === undefined
+        ) {
+          throw new Error(
+            'Agent delegates must use a named role in their parent project',
+          );
         }
-      } catch (error) {
-        projectUncertain ||=
-          error !== null &&
-          typeof error === 'object' &&
-          'status' in error &&
-          error.status === 'unknown';
-        throw error;
+        ctx = ctx.extend({ agentProject: project });
+      }
+
+      let prior: JsonObject | undefined;
+      // Prior direct calls hashed input before defaults. Inspect that receipt too,
+      // so upgrading a running experiment cannot repeat its external effects.
+      for (const ref of new Set([callId, legacyId])) {
+        try {
+          prior = await options.facts.read('calls', ref);
+          break;
+        } catch (error) {
+          if (
+            !(
+              error instanceof Error &&
+              'code' in error &&
+              error.code === 'ENOENT'
+            )
+          )
+            throw error;
+        }
+      }
+      if (prior?.status === 'succeeded') return checkedOutput(prior.output);
+      ctx.signal.throwIfAborted();
+      // Receipt recovery does not reserve a version; pin it together with its lease.
+      const binding = options.binding(bindingId);
+      if (!binding) throw new Error(`Unknown binding ${bindingId}`);
+      const revisionRef = options.revisionRefs[bindingId];
+      const info: CallEventInfo = {
+        experimentId: id,
+        callId,
+        bindingId,
+        path: path ?? caller.callId,
+        parentCallId: caller.callId,
+        bindingRef: binding.plugin,
+        revisionRef: typeof revisionRef === 'string' ? revisionRef : null,
+      };
+      const isMemory = definition.contract.id === memoryContract.id;
+      if (
+        isMemory ||
+        definition.contract.id === reflectionContract.id ||
+        optionalCalls.has(caller.callId)
+      )
+        optionalCalls.add(callId);
+      // A handled Memory failure is a completed update boundary, even when its
+      // Policy checkpoint was interrupted. Reuse its old reference on resume.
+      if (
+        isMemory &&
+        prior?.status === 'failed' &&
+        prior.output !== undefined
+      ) {
+        const output = checkedOutput(prior.output);
+        if (object(output).status === 'failed') return output;
+      }
+      const lease = await options.operation(bindingId, binding);
+      ctx = ctx.extend({ event: lease.event });
+      try {
+        if (
+          prior &&
+          ((prior.status !== 'failed' && prior.status !== 'cancelled') ||
+            prior.pluginId !== binding.plugin ||
+            !lease?.operation.canRetry ||
+            (await lease.operation.canRetry(input, prior, ctx)) !== true)
+        ) {
+          throw new Error(
+            `Call ${callId} has unconfirmed/failed effects; inspect its receipt before recovery`,
+          );
+        }
+        ctx.signal.throwIfAborted();
+        if (
+          prior &&
+          project !== undefined &&
+          projectArtifactRef !== undefined
+        ) {
+          await ctx.artifacts.readJson(projectArtifactRef);
+          await rm(project, { recursive: true, force: true });
+          await ctx.artifacts.materialize(projectArtifactRef, project);
+        }
+        await charge('operations', 1, ctx);
+        await mkdir(ctx.directory, { recursive: true });
+        const recoveredFrom = prior
+          ? `${callId}-${digest(prior).slice(0, 24)}`
+          : null;
+        if (prior && recoveredFrom)
+          await options.facts.write('call-attempts', recoveredFrom, prior);
+        const receipt: JsonObject = {
+          ...info,
+          pluginId: binding.plugin,
+          contractId: definition.contract.id,
+          status: 'running',
+          input,
+          ...(projectArtifactRef === undefined
+            ? {}
+            : { agentProjectArtifactRef: projectArtifactRef }),
+          startedAt: new Date().toISOString(),
+          ...(recoveredFrom ? { recoveredFrom } : {}),
+        };
+        await options.facts.write('calls', callId, receipt);
+        let committed = false;
+        // Serialize final receipts with any late settlement after a cleanup timeout.
+        let writes = Promise.resolve();
+        const commit = (value: JsonObject): Promise<boolean> => {
+          const write = writes.then(async () => {
+            if (committed) return false;
+            await options.facts.write('calls', callId, {
+              ...receipt,
+              ...value,
+              finishedAt: new Date().toISOString(),
+            });
+            committed = true;
+            return true;
+          });
+          writes = write.then(
+            () => {},
+            () => {},
+          );
+          return write;
+        };
+        uncertain.set(callId, async () => {
+          if (
+            await commit({
+              status: 'unknown',
+              error: 'Business work did not settle before cleanup deadline',
+            })
+          ) {
+            try {
+              void ctx.event
+                .parallel('rsi/call-unknown', { ...info, status: 'unknown' })
+                .catch((error: unknown) =>
+                  options.diagnose('rsi/call-unknown', error),
+                );
+            } catch (error) {
+              options.diagnose('rsi/call-unknown', error);
+            }
+          }
+        });
+        let output: JsonValue;
+        let memoryFailed = false;
+        try {
+          const decision = await ctx.event.waterfall(
+            'rsi/before-call',
+            { ...info, status: 'running' },
+            async () => ({ kind: 'proceed' }),
+          );
+          ctx.signal.throwIfAborted();
+          if (
+            !decision ||
+            typeof decision !== 'object' ||
+            (decision.kind !== 'proceed' && decision.kind !== 'reject') ||
+            (decision.kind === 'reject' &&
+              (typeof decision.reason !== 'string' || !decision.reason.trim()))
+          )
+            throw new Error('Invalid rsi/before-call decision');
+          if (decision.kind === 'reject')
+            throw new Error(`Call admission rejected: ${decision.reason}`);
+          output = checkedOutput(await lease.operation.execute(input, ctx));
+          memoryFailed = isMemory && object(output).status === 'failed';
+          if (
+            !(await commit({
+              status: memoryFailed ? 'failed' : 'succeeded',
+              output,
+              ...(memoryFailed ? { error: object(output).reason! } : {}),
+            }))
+          )
+            throw new Error(`Call ${callId} outcome remains unconfirmed`);
+        } catch (error) {
+          const explicit =
+            error && typeof error === 'object' && 'status' in error
+              ? error.status
+              : undefined;
+          const status =
+            explicit === 'unknown'
+              ? 'unknown'
+              : explicit === 'cancelled' ||
+                  (ctx.signal.aborted &&
+                    !(
+                      childFailures.has(callId) &&
+                      childFailures.get(callId) === error
+                    ))
+                ? 'cancelled'
+                : 'failed';
+          if (
+            await commit({
+              status,
+              error: errorText(error),
+              measurementRef:
+                error && typeof error === 'object' && 'measurementRef' in error
+                  ? String(error.measurementRef)
+                  : null,
+            })
+          ) {
+            // Preserve a failure as it propagates through its owning calls,
+            // even after supervision has cancelled the other branches.
+            if (status === 'failed' && uncertain.has(caller.callId))
+              childFailures.set(caller.callId, error);
+            try {
+              if (status === 'cancelled')
+                await ctx.event.parallel('rsi/call-cancelled', {
+                  ...info,
+                  status,
+                });
+              else if (status === 'unknown')
+                await ctx.event.parallel('rsi/call-unknown', {
+                  ...info,
+                  status,
+                });
+              else
+                await ctx.event.parallel('rsi/call-failed', {
+                  ...info,
+                  status,
+                });
+            } catch (notificationError) {
+              options.diagnose(`rsi/call-${status}`, notificationError);
+            }
+          }
+          throw error;
+        } finally {
+          childFailures.delete(callId);
+          uncertain.delete(callId);
+        }
+        // Notification errors do not undo a settled optional update.
+        const eventName = memoryFailed
+          ? 'rsi/call-failed'
+          : 'rsi/call-succeeded';
+        try {
+          if (memoryFailed)
+            await ctx.event.parallel('rsi/call-failed', {
+              ...info,
+              status: 'failed',
+            });
+          else
+            await ctx.event.parallel('rsi/call-succeeded', {
+              ...info,
+              status: 'succeeded',
+              ...(output &&
+              typeof output === 'object' &&
+              !Array.isArray(output) &&
+              typeof output.measurementRef === 'string'
+                ? { measurementRef: output.measurementRef }
+                : {}),
+            });
+        } catch (error) {
+          if (optionalCalls.has(callId)) options.diagnose(eventName, error);
+          else
+            throw new Error(`Event handling failed: ${eventName}`, {
+              cause: error,
+            });
+        }
+        return output;
       } finally {
-        await projectLease?.release(projectUncertain);
+        lease.release();
       }
     })();
     const supervised = job.catch((error) => {

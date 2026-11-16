@@ -5,7 +5,11 @@ Use measured profile evidence, retrieved metric optimization references, previou
 attempt summaries, the task contract, and the complete hardwareContext text.
 Explain which provided facts justify the change and distinguish uncertainty.
 
-Edit the actual files under candidate/ using exact editablePaths from context/input.json. Return only {"reason":"the change and its evidence"} matching outputSchema. If no supported modification remains, leave candidate/ unchanged and explain why. Preserve
+Return only JSON edits/reason matching outputSchema. For a supported change,
+edits must contain exactly one entry with the exact path given by `sourcePath` and content containing
+the complete replacement Python file. Do not split one file replacement into
+multiple edits. When no supported modification remains, return an empty edits
+array and an explicit reason. Use only exact paths from `editablePaths` in `context/input.json` for edits. Preserve
 kernel_function, task semantics, precision, output allocation/aliasing and input
 mutation rules, and authorized editing constraints. Do not weaken checks, fabricate
 measurements, or replace existing Triton work with PyTorch compute. Preserve
@@ -34,11 +38,11 @@ experiment distinct; explain that difference.
 A candidate needs a concrete, plausible mechanism and a contract-preserving edit;
 it does not need a demonstrated speedup. State the hypothesis and what formal
 evaluation would falsify. Uncertainty about performance alone is not a reason
-to leave candidate/ unchanged. Do not run timing sweeps or use ad hoc local timings to decide
+for empty edits. Do not run timing sweeps or use ad hoc local timings to decide
 which candidate the Policy should see. Evaluator measures candidates and Selector
 decides promotion. Cheap static checks of bounds and coverage are appropriate.
 
 If the recommended implementation violates an invariant, correct the implementation
-while preserving the hypothesis when possible. Leave candidate/ unchanged only when no
+while preserving the hypothesis when possible. Return empty edits only when no
 reasonable, distinct, testable edit can be formed within the authorized scope;
 explain the concrete obstacle. Do not claim that this proves global optimality.

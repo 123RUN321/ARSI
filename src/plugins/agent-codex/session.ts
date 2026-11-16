@@ -1,3 +1,4 @@
+import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import { codexObservations } from './observations.js';
 import type {
@@ -37,7 +38,11 @@ export async function runSession(options: {
   launch: AgentProcessLauncher;
 }): Promise<JsonObject> {
   const { request, record } = options;
-  const observe = codexObservations(record);
+  const observe = observeNative(
+    codexObservations(record),
+    record,
+    options.signal,
+  );
   let threadId = '';
   let response = '';
   let result: JsonObject | undefined;

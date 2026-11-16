@@ -47,7 +47,7 @@ These skills are provided with the Baseline Agent Bundle and read by its Agent p
 
 ### Configure specialist agents
 
-Set `subagents` in the same `proposer.agent` binding. RSI locks role prompts and skills with the Recipe. Parent and child sessions share the project directory. Pi delegates through the RSI `subagent` tool. Codex uses the generated role TOML files and native delegation. Pi runs parent and child SDK sessions in process and shares Manager accounting. Native CLI backends keep their own delegation and retry behavior. A child session is recorded inside its parent call rather than becoming a separate Runtime call.
+Set `subagents` in the same `proposer.agent` binding. RSI locks role prompts and skills with the Recipe. Parent and child sessions share the project directory. Pi delegates through the RSI `subagent` tool. Codex uses the generated role TOML files and native delegation. Pi stays in process and uses native SDK tools. Native tool access is not sandboxed; proposed changes are returned as JSON edits for RSI to validate and apply.
 
 ```yaml
 subagents:

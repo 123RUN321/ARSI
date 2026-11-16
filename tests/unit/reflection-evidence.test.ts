@@ -1,5 +1,4 @@
 import { FileAgentRecorder } from '../../src/runtime/storage/agent-records.js';
-import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -11,7 +10,7 @@ import {
   rm,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import {
   FileArtifacts,
@@ -31,7 +30,6 @@ async function fixture(t: TestContext) {
   const artifacts = new FileArtifacts(join(root, 'artifacts'));
   const context = new RuntimeContext().extend({
     experimentId: 'experiment',
-    callId: 'reflection',
     directory: root,
     facts,
     artifacts,
@@ -263,22 +261,21 @@ test('actual request, workspace, diagnostic trace and patch files are readable a
   await f.call('agent', 'agent', 1, {
     parentCallId: 'proposal',
     input: {
-      projectRef: 'project',
-      mode: 'analyze',
+      cwd: join(f.root, 'project'),
       goal: 'actual agent task',
       outputSchema: {},
     },
     agentProjectArtifactRef,
-    output: { reason: 'Inspected source' },
+    output: { edits: [] },
   });
   const callDirectory = join(f.root, 'experiments/experiment/calls/agent');
   await mkdir(callDirectory, { recursive: true });
-  const writer = new FileAgentRecorder(callDirectory, {
+  const recorder = new FileAgentRecorder(callDirectory, {
     version: 1,
-    backend: 'test.agent',
+    backend: 'fixture',
     input: {},
   });
-  writer.record({
+  recorder.record({
     runId: 'main',
     event: {
       type: 'tool.completed',
@@ -291,7 +288,7 @@ test('actual request, workspace, diagnostic trace and patch files are readable a
       },
     },
   });
-  writer.close();
+  recorder.close();
   const { snapshot } = await f.collect('r1', 3);
   const files = object(snapshot.files);
   assert.match(
@@ -747,15 +744,12 @@ test('authorized empty execution files remain readable by the Reflection Agent a
   const context = f.context.extend({
     signal: new AbortController().signal,
     workspaces: new FileWorkspaces(join(f.root, 'workspaces'), f.artifacts),
-    invokeAgent: async function (
-      this: import('../../src/contracts/index.js').RuntimeContext,
+    invokeAgent: async (
       _binding: string,
       request: JsonObject,
-    ) {
+    ): Promise<JsonObject> => {
       modelRequests++;
-      const cwd = dirname(
-        (await context.workspaces.read(string(request.projectRef))).directory,
-      );
+      const cwd = string(request.cwd);
       assert.equal(await readFile(join(cwd, emptyPath), 'utf8'), '');
       assert.equal(
         await readFile(join(cwd, 'candidate', resourcePath), 'utf8'),
@@ -774,10 +768,10 @@ test('authorized empty execution files remain readable by the Reflection Agent a
         contents.filter((content) => content === 'available output').length,
         1,
       );
-      return await directAgentResult(this, request, {
+      return {
         edits: [],
         reason: 'Empty captured stderr is readable evidence',
-      });
+      };
     },
   });
   const operation = await createReflectionAgent(
@@ -851,15 +845,12 @@ test('ASCII PDF delivery reaches the Reflection Agent as page previews through e
   const context = f.context.extend({
     signal: new AbortController().signal,
     workspaces: new FileWorkspaces(join(f.root, 'workspaces'), f.artifacts),
-    invokeAgent: async function (
-      this: import('../../src/contracts/index.js').RuntimeContext,
+    invokeAgent: async (
       _binding: string,
       request: JsonObject,
-    ) {
+    ): Promise<JsonObject> => {
       requests++;
-      const directory = dirname(
-        (await context.workspaces.read(string(request.projectRef))).directory,
-      );
+      const directory = string(request.cwd);
       const index = object(
         JSON.parse(
           await readFile(
@@ -893,10 +884,7 @@ test('ASCII PDF delivery reaches the Reflection Agent as page previews through e
           await readFile(join(file.parentPath, file.name), 'utf8'),
           /%PDF-/,
         );
-      return await directAgentResult(this, request, {
-        edits: [],
-        reason: 'Read all three pages',
-      });
+      return { edits: [], reason: 'Read all three pages' };
     },
   });
   const operation = await createReflectionAgent(

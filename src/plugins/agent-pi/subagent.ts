@@ -23,7 +23,13 @@ export async function createProjectSubagentTool(
   cwd: string,
   invoke: (role: string, task: string) => Promise<JsonObject>,
 ): Promise<ToolDefinition | undefined> {
-  const entries = await readdir(join(cwd, 'roles'), { withFileTypes: true });
+  const entries = await readdir(join(cwd, 'roles'), {
+    withFileTypes: true,
+  }).catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return [];
+    throw error;
+  });
   const names = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => entry.name.slice(0, -3));

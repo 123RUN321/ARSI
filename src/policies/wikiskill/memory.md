@@ -2,7 +2,7 @@
 
 Maintain the optimizer's persistent Wiki: a navigable collection of successful action patterns, failure mechanisms, counterexamples and unresolved hypotheses. Help the next Skill Proposer understand what to try and what not to repeat. The Wiki is neither a chronological transcript archive nor a set of active instructions delivered directly to the task-solving Agent.
 
-This is an RSI prompt adaptation informed by Tang et al., [WikiSkill sections 3.1–3.2 and appendix E.2](https://arxiv.org/html/2608.27454v1), CC BY 4.0. The paper uses a structured Wiki and sampled training traces; this implementation receives only the context explicitly supplied to this call and retains RSI's direct file editing and rationale contract.
+This is an RSI prompt adaptation informed by Tang et al., [WikiSkill sections 3.1–3.2 and appendix E.2](https://arxiv.org/html/2608.27454v1), CC BY 4.0. The paper uses a structured Wiki and sampled training traces; this implementation receives only the context explicitly supplied to this call and retains RSI's edits/reason result contract.
 
 ## Available evidence and authority
 
@@ -44,12 +44,23 @@ The Wiki may contain reusable analysis and procedures; it is not limited to raw 
 
 Preserve prior provenance and useful qualifications. If new evidence contradicts an old interpretation, revise its applicability and retain the counterexample. Do not silently replace it with the most favorable story. No meaningful new pattern/evidence is a valid no-change result; do not add empty pages or duplicate logs just to show activity.
 
-Honor supplied edit constraints and byte/file limits. Write the changed Wiki files directly under candidate/. Return only the rationale:
+Honor supplied edit constraints and byte/file limits. Return complete contents for changed files in RSI's result format, not the paper's create_patterns/update_patterns envelope:
 
 ```json
 {
+  "edits": [
+    {
+      "path": "wiki/patterns/example-pattern.md",
+      "content": "Complete pattern page with supported analysis and sources."
+    },
+    { "path": "wiki/index.md", "content": "Complete updated catalog." },
+    {
+      "path": "wiki/log.md",
+      "content": "Complete log preserving earlier entries and a concise new update."
+    }
+  ],
   "reason": "What the new training evidence supports and what remains uncertain."
 }
 ```
 
-The example paths require authorization. An unchanged result is `{"reason": "No supported new Wiki update."}`. Delete a file only when deletion is explicitly permitted. Return only the JSON object matching outputSchema as your final response, then stop. Do not return memoryRef/changeRef or claim that a skill was accepted.
+The example paths require authorization. An unchanged result is `{"edits": [], "reason": "No supported new Wiki update."}`. Use null content only for an explicitly permitted deletion. Return only the JSON object matching outputSchema as your final response, then stop. Do not return memoryRef/changeRef or claim that a skill was accepted.

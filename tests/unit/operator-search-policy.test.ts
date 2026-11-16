@@ -1,8 +1,7 @@
-import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import { useOperatorSdkTestEnvironment } from '../fixtures/operator-sdk/environment.js';
 import assert from 'node:assert/strict';
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { parse, stringify } from 'yaml';
@@ -84,35 +83,20 @@ async function setup(
         async execute(request, context): Promise<JsonObject> {
           const input = object(
             JSON.parse(
-              await readFile(
-                join(
-                  dirname(
-                    (await context.workspaces.read(request.projectRef))
-                      .directory,
-                  ),
-                  'context/input.json',
-                ),
-                'utf8',
-              ),
+              await readFile(join(request.cwd, 'context/input.json'), 'utf8'),
             ),
           );
           requests.push({
             input,
             source: await readFile(
-              join(
-                dirname(
-                  (await context.workspaces.read(request.projectRef)).directory,
-                ),
-                'context/sources',
-                string(input.sourcePath),
-              ),
+              join(request.cwd, 'context/sources', string(input.sourcePath)),
               'utf8',
             ),
           });
           await context.charge('modelCalls', 1);
           const stage = input.stage;
           if (stage === 'diagnose')
-            return await directAgentResult(context, request, {
+            return {
               issues: options.noIssues
                 ? []
                 : [
@@ -123,10 +107,10 @@ async function setup(
                       evidence: ['x does not change in the visible loop'],
                     },
                   ],
-            });
+            };
           if (stage === 'summarize') {
             if (options.failSummary) throw new Error('Fixture summary failure');
-            return await directAgentResult(context, request, {
+            return {
               explanation: 'Measured facts guide the next attempt',
               lessons: [
                 { text: 'Measured fixture feedback', basis: 'hypothesis' },
@@ -140,10 +124,10 @@ async function setup(
                   basis: 'hypothesis',
                 },
               ],
-            });
+            };
           }
           const marker = options.markers?.[generated++];
-          return await directAgentResult(context, request, {
+          return {
             edits: marker
               ? [
                   {
@@ -153,7 +137,7 @@ async function setup(
                 ]
               : [],
             reason: 'Fixture source change',
-          });
+          };
         },
         async dispose() {},
       };

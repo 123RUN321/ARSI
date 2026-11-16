@@ -10,10 +10,7 @@ import {
   loadAgentPrompt,
   operationSchema,
 } from '../shared/agent-editing/index.js';
-import {
-  prepareAgentProject,
-  releaseSettledProject,
-} from '../shared/agent-editing/project.js';
+import { prepareAgentProject } from '../shared/agent-editing/project.js';
 
 export const createArtifactSelector: OperationDefinition<
   ArtifactSelectorInput,
@@ -47,7 +44,7 @@ export const createArtifactSelector: OperationDefinition<
         })),
       );
       const prompt = await loadAgentPrompt(config);
-      const projectRef = await prepareAgentProject(
+      const cwd = await prepareAgentProject(
         context,
         `${prompt}\n\nRead context/candidates.json for the anonymized candidate views. Each entry has a numeric label and its delivery evidence.`,
         { 'context/candidates.json': JSON.stringify(views, null, 2) },
@@ -56,8 +53,7 @@ export const createArtifactSelector: OperationDefinition<
       );
       const request: AgentInput = {
         goal: string(input.rubric),
-        projectRef,
-        mode: 'analyze',
+        cwd,
         outputSchema: operationSchema(
           {
             selectedIndex: {
@@ -70,15 +66,10 @@ export const createArtifactSelector: OperationDefinition<
           ['selectedIndex', 'reason'],
         ),
       };
-      let result;
-      try {
-        result = await context.invokeAgent(
-          config.agentRef ?? 'agent.default',
-          request,
-        );
-      } finally {
-        await releaseSettledProject(context, projectRef);
-      }
+      const result = await context.invokeAgent(
+        config.agentRef ?? 'agent.default',
+        request,
+      );
       const selected = candidates[Number(result.selectedIndex)];
       if (!selected) throw new Error('Invalid selected index');
       const decisionRef = await services.artifacts.putJson({

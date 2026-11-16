@@ -163,10 +163,6 @@ export async function createFileApplication(
           const parentCandidateRef = string(input.parentCandidateRef);
           const parent = await context.readCandidate(parentCandidateRef);
           const edit = await services.workspaces.read(string(input.editRef));
-          if (edit.leaseOwner)
-            throw new Error(
-              'Cannot commit a workspace while Agent execution is active or unknown',
-            );
           if (edit.parentCandidateRef !== parentCandidateRef)
             throw new Error('editRef parent candidate identity mismatch');
           const artifactRef = await services.artifacts.capture(edit.directory);

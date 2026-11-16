@@ -24,11 +24,9 @@ export const createAgentOpenCode: OperationDefinition<
   );
   return {
     async execute(request, context) {
-      if (request.requirements?.delegation)
-        throw new Error('agent.opencode does not support native delegation');
       return runSession({
         config,
-        directory: context.directory,
+        directory: request.cwd,
         request,
         signal: context.signal,
         launch: (spec, onLine) => context.runAgentProcess(spec, onLine),

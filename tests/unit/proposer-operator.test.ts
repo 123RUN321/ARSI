@@ -1,4 +1,3 @@
-import { directAgentResult } from '../fixtures/direct-agent-result.js';
 import { useOperatorSdkTestEnvironment } from '../fixtures/operator-sdk/environment.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +11,7 @@ import {
   cp,
   mkdtemp,
 } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
@@ -120,71 +119,46 @@ async function setup(
         async execute(request, context): Promise<JsonObject> {
           const input = object(
             JSON.parse(
-              await readFile(
-                join(
-                  dirname(
-                    (await context.workspaces.read(request.projectRef))
-                      .directory,
-                  ),
-                  'context/input.json',
-                ),
-                'utf8',
-              ),
+              await readFile(join(request.cwd, 'context/input.json'), 'utf8'),
             ),
           );
           requests.push({
             input,
             source: await readFile(
-              join(
-                dirname(
-                  (await context.workspaces.read(request.projectRef)).directory,
-                ),
-                'context/sources',
-                string(input.sourcePath),
-              ),
+              join(request.cwd, 'context/sources', string(input.sourcePath)),
               'utf8',
             ),
             instructions: await readFile(
-              join(
-                dirname(
-                  (await context.workspaces.read(request.projectRef)).directory,
-                ),
-                'AGENTS.md',
-              ),
+              join(request.cwd, 'AGENTS.md'),
               'utf8',
             ),
           });
           await context.charge('modelCalls', 1);
           const stage = input.stage;
           if (stage === 'diagnose-metrics')
-            return await directAgentResult(
-              context,
-              request,
-              options.noMetricsHypothesis
-                ? {
-                    status: 'no-new-hypothesis',
-                    reason: 'No distinct testable transformation remains',
-                  }
-                : options.invalidMetrics
-                  ? { invalid: true }
-                  : {
-                      status: 'hypothesis',
-                      category: 'vector',
-                      summary: 'Measured vector activity',
-                      reasoning:
-                        'Use the visible scalar work as one hypothesis',
-                      rootCause: 'Scalar overhead is a hypothesis',
-                      recommendedFix: 'Hoist invariant scalar work',
-                      evidence: [
-                        {
-                          path: '/kernels/0/metrics/0/aiv_vec_ratio',
-                          value: 0.7,
-                        },
-                      ],
-                    },
-            );
+            return options.noMetricsHypothesis
+              ? {
+                  status: 'no-new-hypothesis',
+                  reason: 'No distinct testable transformation remains',
+                }
+              : options.invalidMetrics
+                ? { invalid: true }
+                : {
+                    status: 'hypothesis',
+                    category: 'vector',
+                    summary: 'Measured vector activity',
+                    reasoning: 'Use the visible scalar work as one hypothesis',
+                    rootCause: 'Scalar overhead is a hypothesis',
+                    recommendedFix: 'Hoist invariant scalar work',
+                    evidence: [
+                      {
+                        path: '/kernels/0/metrics/0/aiv_vec_ratio',
+                        value: 0.7,
+                      },
+                    ],
+                  };
           if (stage === 'diagnose')
-            return await directAgentResult(context, request, {
+            return {
               issues: noIssues
                 ? []
                 : [
@@ -195,13 +169,13 @@ async function setup(
                       evidence: ['x does not change in the visible loop'],
                     },
                   ],
-            });
+            };
           if (stage === 'summarize' && options.invalidSummary)
-            return await directAgentResult(context, request, { invalid: true });
+            return { invalid: true };
           if (stage === 'summarize' && options.failSummary)
             throw new Error('Fixture summary model failed');
           if (stage === 'summarize')
-            return await directAgentResult(context, request, {
+            return {
               explanation: 'Observed attempt facts; cause remains a hypothesis',
               lessons: [
                 {
@@ -218,16 +192,19 @@ async function setup(
                   basis: 'hypothesis',
                 },
               ],
-            });
+            };
           if (stage === options.editRejection?.stage) {
             await Promise.resolve();
             throw options.editRejection.error;
           }
           if (stage === options.invalidEdits) {
             await Promise.resolve();
-            return await directAgentResult(context, request, {
-              reason: 123,
-            });
+            return {
+              edits: [
+                { path: 'input.py', content: 'unauthorized replacement' },
+              ],
+              reason: 'Invalid response',
+            };
           }
           const marker =
             options.metrics && options.initialValid
@@ -237,7 +214,7 @@ async function setup(
                 : generation++ === 0 && !options.initialValid
                   ? 'fixture:incorrect'
                   : 'fixture:latency=8';
-          return await directAgentResult(context, request, {
+          return {
             edits: options.noChange
               ? []
               : [
@@ -253,7 +230,7 @@ async function setup(
                   },
                 ],
             reason: options.outputReason ?? `Changed ${marker}`,
-          });
+          };
         },
         async dispose() {},
       };
@@ -1524,7 +1501,10 @@ test('asynchronous invalid generation retains error evidence and history for the
       assert.equal(error.stage, 'propose');
       assert.equal(error.phase, 'static');
       assert.equal(error.attempt, 1);
-      assert.match(string(error.message), /reason must be string/);
+      assert.match(
+        string(error.message),
+        /edits\/0\/path must be equal to one of the allowed values/,
+      );
       const summary = object(
         await context.invoke('summarizer', {
           action: 'summarize',

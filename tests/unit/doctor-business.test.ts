@@ -87,7 +87,6 @@ async function fixture(t: TestContext): Promise<{
         registry: runtime.registry,
         runtime: runtime.context.extend({
           directory: join(root, 'probe'),
-          callId: 'probe',
           signal,
         }),
         directory: join(root, 'probe'),
@@ -111,9 +110,9 @@ for (const id of [
       workingResult.checks.map((check) => check.status),
       ['passed', 'passed', 'passed'],
     );
-    const projects = await readdir(join(f.root, '.rsi/workspaces'));
+    const projects = await readdir(join(f.root, 'probe/agent-projects'));
     const instructions = await readFile(
-      join(f.root, '.rsi/workspaces', projects[0]!, 'project/AGENTS.md'),
+      join(f.root, 'probe/agent-projects', projects[0]!, 'project/AGENTS.md'),
       'utf8',
     );
     assert.match(instructions, /supplied evidence/);

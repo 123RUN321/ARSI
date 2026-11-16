@@ -45,7 +45,6 @@ export const createAgentPi: OperationDefinition<
             ...parent,
             role,
             goal,
-            mode: 'analyze',
             runId: `child-${randomUUID()}`,
             parentRunId: parent.runId,
             outputSchema: {
@@ -60,7 +59,7 @@ export const createAgentPi: OperationDefinition<
       }
       return runTask({
         ...request,
-        cwd: context.directory,
+        cwd: request.cwd,
         runId: 'main',
         parentRunId: null,
       });

@@ -8,7 +8,7 @@ import {
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 
-/** Native SDK tools retain normal host access; task mode is not a sandbox. */
+/** Native SDK tools retain normal host access; task instructions are not a sandbox. */
 export function projectTools(directory: string): ToolDefinition[] {
   return [
     defineTool(createReadToolDefinition(directory)),
