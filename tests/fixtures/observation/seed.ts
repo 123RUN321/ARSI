@@ -16,6 +16,7 @@ export async function seedObservation(
     status: 'running',
     startedAt: '2026-10-29T01:00:00.000Z',
     recipe: {
+      policy: { ref: 'policy.harness2' },
       budget: { operations: 100, modelCalls: 20 },
       bindings: { custom: { config: { apiKey: 'fixture-private-value' } } },
     },
