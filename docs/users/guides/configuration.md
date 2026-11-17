@@ -150,7 +150,13 @@ bindings:
 | DSH | Configure the model in the native headless profile |
 | OpenCode | `model`: `provider/model`, optionally followed by `#variant` |
 
-RSI keeps native model and authentication settings while limiting tasks to read-only proposals with no interactive approvals. Claude Code Hooks and MCP are disabled for RSI calls.
+RSI keeps native model and authentication settings and validates proposed edits before applying them. Claude Code Hooks and MCP are disabled for RSI calls.
+
+RSI launches Codex with `approval_policy = "never"`. Sandbox failures are returned to the agent without an approval prompt.
+
+On Windows, if the effective Codex configuration explicitly sets `windows.sandbox` to `"elevated"` or `"unelevated"`, RSI starts the session in `workspace-write` mode with network access. Windows without an explicit sandbox and Linux use `danger-full-access`, so commands can access files and resources available to the account running RSI. Other platforms use a read-only project profile.
+
+On Windows, RSI removes the Desktop-only `CODEX_WINDOWS_REGISTERED_CORE` variable from its standalone Codex child process so workspace commands can use the standalone sandbox.
 
 ### Check and start
 
