@@ -41,10 +41,12 @@ export async function runSession(options: {
     instruction:
       'Use the project instructions and return the requested JSON result.',
   });
+  // The elevated Windows sandbox requires effective root read access.
+  const rootAccess = process.platform === 'win32' ? 'read' : 'deny';
   const launchConfig = [
     `project_root_markers=[${JSON.stringify(projectMarker)}]`,
     `default_permissions=${JSON.stringify(permissions)}`,
-    `permissions.${permissions}.filesystem={":root"="deny",":minimal"="read",":workspace_roots"="read"${process.platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : ''}}`,
+    `permissions.${permissions}.filesystem={":root"="${rootAccess}",":minimal"="read",":workspace_roots"="read"${process.platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : ''}}`,
   ];
   const agentsDir = join(options.directory, '.codex', 'agents');
   const roles = await readdir(agentsDir, { withFileTypes: true }).catch(

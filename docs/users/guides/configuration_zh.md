@@ -152,6 +152,8 @@ bindings:
 
 RSI 保留原生模型和认证配置，但限制任务为只读提案，不接受交互式审批。Claude Code 的 Hooks 和 MCP 在 RSI 调用中禁用。
 
+在 Windows 上，`agent.codex` 授予根路径读取权限，因为 Codex 的 elevated 沙箱需要该权限才能启动会话。Codex 可以读取本机账户可访问的工作区外文件，会话仍为只读。
+
 ### 检查并启动
 
 完成所选后端的配置后，将下面的路径换成你的完整 Recipe 文件路径，在同一个终端运行：

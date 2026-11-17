@@ -331,7 +331,16 @@ test('Codex uses the managed project cwd and the native tool surface', async (t)
     assert.equal(object(audit.thread).ephemeral, false);
     assert.match(JSON.stringify(audit.args), /project_root_markers/);
     assert.match(String(object(audit.thread).permissions), /^rsi-agent-/);
-    assert.match(JSON.stringify(audit.args), /workspace_roots/);
+    const rootAccess = process.platform === 'win32' ? 'read' : 'deny';
+    const openssl =
+      process.platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : '';
+    const permissions = object(audit.thread).permissions;
+    assert.ok(Array.isArray(audit.args));
+    assert.ok(
+      audit.args.includes(
+        `permissions.${permissions}.filesystem={":root"="${rootAccess}",":minimal"="read",":workspace_roots"="read"${openssl}}`,
+      ),
+    );
   } else {
     assert.match(JSON.stringify(f.requests[0]), /PROJECT_INSTRUCTIONS/);
     const childRequest = f.requests.find((request) =>
