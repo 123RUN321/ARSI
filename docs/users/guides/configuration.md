@@ -171,7 +171,7 @@ For native CLI backends, add `timeoutMs: 180000` to limit each Agent task to 3 m
 
 For inference optimization, `evaluator.inferencebench` supports `benchmark.name: aisbench` with the bundled SSH solver, or `agentx` with the replay solver. Use the same benchmark workload for the baseline and candidate trials. The Runtime enforces the experiment-wide limits in the Recipe’s `budget`.
 
-For `parameter.agent`, `policy.config.candidatesPerRound` defaults to 4 and accepts 1 through 6. The tuning Proposer returns that many candidates at most, ordered by priority and based on the same incumbent. The Policy invokes `evaluator.inferencebench` directly and serially, then uses the latest incumbent when requesting the next batch. `maxTrials` caps candidate attempts across all batches. Confirmed, cleaned startup failures reject the candidate; SDK measurement failures, cancellation or uncertain cleanup stop the experiment.
+For `policy.parameter-agent`, `policy.config.candidatesPerRound` defaults to 4 and accepts 1 through 6. The tuning Proposer returns that many candidates at most, ordered by priority and based on the same incumbent. The Policy invokes `evaluator.inferencebench` directly and serially, then uses the latest incumbent when requesting the next batch. `maxTrials` caps candidate attempts across all batches. Confirmed, cleaned startup failures reject the candidate; SDK measurement failures, cancellation or uncertain cleanup stop the experiment.
 
 `policy.config.maxTrials` must be a positive integer (default 8). It also bounds
 proposal rounds so repeated empty responses cannot create an unbounded loop.
@@ -186,7 +186,7 @@ is `max-trials` when the candidate limit is reached, `max-proposal-rounds` when
 the round limit is reached first, otherwise `null`. Budget exhaustion is recorded
 at experiment level and preserves the last committed incumbent in `partialOutput`.
 
-`parameter.agent` also supports independent `policy.config.memory` and
+`policy.parameter-agent` also supports independent `policy.config.memory` and
 `policy.config.reflection` switches, both `false` by default. Memory consolidates
 measured batches and passes the saved `memoryRef` to subsequent proposals;
 Reflection revises only Proposer `guidance` between batches when another trial
@@ -224,7 +224,7 @@ To migrate a custom Proposer prompt, remove `editProtocol` from the binding and 
 
 ## Limits and budgets
 
-When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `arsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `parameter.agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
+When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `arsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `policy.parameter-agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
 
 Omitted Recipe binding settings first inherit Policy defaults. The “When omitted” column describes settings that remain unset; limits at other layers can still apply.
 

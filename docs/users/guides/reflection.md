@@ -6,7 +6,7 @@ Reflection improves target plugins using execution evidence so later calls adopt
 
 - The built-in Harness² Policy configures Reflection to improve the Invariant and Domain Proposers, currently authorizing changes to their `guidance`. Its `improve_guidance` step is commented out by default. See the [Harness² Policy](../../../src/policies/harness2/policy.yaml) and its [Reflection configuration](../../../src/policies/harness2/reflection.yaml).
 
-The built-in `parameter.agent` Policy declares a [configuration-search Reflection
+The built-in `policy.parameter-agent` Policy declares a [configuration-search Reflection
 module](../../../src/policies/parameter/agent/reflection.yaml). Set
 `policy.config.reflection: true` to invoke it after proposal rounds, including empty proposals, while another
 round and candidate attempt remain; the default is `false`, independently of Memory. It reads proposal,
@@ -133,7 +133,7 @@ reflection:
 ```
 
 This `reflection.configFile` resolves relative to the Recipe file. The selected file follows section 1 and completely replaces the Policy's default configuration, so the Policy must already declare `defaults.reflection`. The Policy still determines when Reflection runs.
-To specialize `parameter.agent`, copy its `reflection.yaml` and `reflection.md` into the scenario,
+To specialize `policy.parameter-agent`, copy its `reflection.yaml` and `reflection.md` into the scenario,
 edit the local goal, and select that YAML file here. The generic goal, implementation
 and orchestration stay in RSI; the scenario owns its specialized copies.
 
