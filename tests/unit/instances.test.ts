@@ -564,7 +564,7 @@ test('failed disposal does not block other instances and reconciliation never re
   assert.deepEqual(disposed.sort(), [1, 2]);
 });
 
-test('CallExecutor normalizes defaults on a clone before identity and reuses legacy raw-input receipts', async (t) => {
+test('CallExecutor normalizes defaults on a clone before identity and reuses the normalized receipt', async (t) => {
   let executions = 0;
   const definition: OperationDefinition = {
     id: 'instance.defaults',
@@ -615,23 +615,6 @@ test('CallExecutor normalizes defaults on a clone before identity and reuses leg
       'new',
     ),
     { enabled: true },
-  );
-  assert.equal(executions, 1);
-  const legacyId =
-    'call-' +
-    digest({
-      experiment: 'exp-instance',
-      bindingId: 'worker',
-      path: 'legacy',
-      input: {},
-    }).slice(0, 32);
-  await facts.write('calls', legacyId, {
-    status: 'succeeded',
-    output: { fromLegacy: true },
-  });
-  assert.deepEqual(
-    await calls.invoke('worker', {}, context('_root', 'root'), 'legacy'),
-    { fromLegacy: true },
   );
   assert.equal(executions, 1);
 });

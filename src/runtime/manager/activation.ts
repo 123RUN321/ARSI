@@ -1,3 +1,7 @@
+import {
+  executionOptionsSchema,
+  type ExecutionOptions,
+} from '../../contracts/recipe.js';
 import type {
   Binding,
   EventPipeline,
@@ -5,7 +9,7 @@ import type {
   JsonObject,
 } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
+import { parseConfig, validate } from '../../shared/schema.js';
 import type { Registry } from '../registry/index.js';
 import type { Instances } from './instances.js';
 import type { CleanupLifecycle } from './cleanup.js';
@@ -34,6 +38,15 @@ function parseActivation(value: JsonObject): Activation {
     bindings[id] = {
       plugin: string(binding.plugin),
       config: object(binding.config),
+      ...(binding.execution === undefined
+        ? {}
+        : {
+            execution: parseConfig<ExecutionOptions>(
+              executionOptionsSchema,
+              binding.execution,
+              'Activation execution',
+            ),
+          }),
     };
   }
   return {

@@ -454,7 +454,7 @@ test('bundled Recipes preserve time budgets without injecting call or token limi
       name === 'dsh-harness2' ? { elapsedWallMs: 3600000 } : {},
     );
     assert.equal(configured.bindings.agent!.config.timeoutMs, 1800000);
-    assert.equal(configured.bindings.agent!.config.executionTimeoutMs, 3600000);
+    assert.equal(configured.bindings.agent!.execution?.timeoutMs, 3600000);
     assert.equal(configured.bindings.agent!.config.retries, 3);
     assert.equal(configured.bindings.agent!.config.retryBaseDelayMs, 2000);
     assert.equal(
@@ -462,7 +462,7 @@ test('bundled Recipes preserve time budgets without injecting call or token limi
       name === 'dsh-harness2' ? 4500 : 3600,
     );
     delete agentConfig.timeoutMs;
-    delete agentConfig.executionTimeoutMs;
+    delete object(overrides.agent).execution;
     const recipe = await Recipe.fromJSON(raw, registry, { sourcePath });
     assert.equal(recipe.budget.modelCalls, undefined);
     assert.equal(recipe.bindings.agent!.config.maxTokens, undefined);
@@ -471,7 +471,7 @@ test('bundled Recipes preserve time budgets without injecting call or token limi
     ))
       assert.equal(object(service).maxTokens, undefined);
     assert.equal(recipe.bindings.agent!.config.timeoutMs, undefined);
-    assert.equal(recipe.bindings.agent!.config.executionTimeoutMs, undefined);
+    assert.equal(recipe.bindings.agent!.execution?.timeoutMs, undefined);
     assert.equal(recipe.reflection?.budget.modelCalls, undefined);
     assert.equal(
       recipe.reflection?.implementation.config.maxModelCalls,
@@ -501,7 +501,7 @@ test('bundled Recipes preserve time budgets without injecting call or token limi
     agentConfig.maxTokens = 32768;
     object(evaluatorServices.default).maxTokens = 65536;
     agentConfig.timeoutMs = 1800000;
-    agentConfig.executionTimeoutMs = 3600000;
+    object(overrides.agent).execution = { timeoutMs: 3600000 };
     const limited = await Recipe.fromJSON(raw, registry, { sourcePath });
     assert.equal(limited.budget.modelCalls, 17);
     assert.equal(limited.bindings.agent!.config.maxTokens, 32768);
@@ -511,7 +511,7 @@ test('bundled Recipes preserve time budgets without injecting call or token limi
       65536,
     );
     assert.equal(limited.bindings.agent!.config.timeoutMs, 1800000);
-    assert.equal(limited.bindings.agent!.config.executionTimeoutMs, 3600000);
+    assert.equal(limited.bindings.agent!.execution?.timeoutMs, 3600000);
   }
 });
 
@@ -627,4 +627,67 @@ test('Recipe rejects missing bindings and unavailable input roots during assembl
     }),
   );
   await assert.rejects(Recipe.load(path, registry), /state/);
+});
+
+test('framework execution configuration survives plugin switches, resource revisions and serialization', async (t) => {
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  for (const id of ['first', 'second'])
+    register(registry, id, { type: 'object', additionalProperties: false });
+  const binding = Binding.resolve({
+    name: 'worker',
+    required: contract,
+    registry,
+    defaults: {
+      declaration: {
+        plugin: 'first',
+        config: {},
+        execution: { timeoutMs: 300 },
+      },
+      directory: '.',
+    },
+    override: { declaration: { plugin: 'second' }, directory: '.' },
+  });
+  assert.deepEqual(binding.config, {});
+  assert.deepEqual(binding.execution, { timeoutMs: 300 });
+  assert.deepEqual(binding.withConfig({}).toJSON(), binding.toJSON());
+  const restored = Binding.resolve({
+    name: 'worker',
+    required: contract,
+    registry,
+    override: { declaration: binding.toJSON(), directory: '.' },
+  });
+  assert.deepEqual(restored.toJSON(), binding.toJSON());
+  for (const execution of [
+    { timeoutMs: 0 },
+    { timeoutMs: '10' },
+    { unknown: 10 },
+  ]) {
+    assert.throws(
+      () =>
+        Binding.resolve({
+          name: 'worker',
+          required: contract,
+          registry,
+          override: {
+            declaration: { plugin: 'first', execution },
+            directory: '.',
+          },
+        }),
+      /execution/,
+    );
+  }
+  assert.throws(
+    () =>
+      Binding.resolve({
+        name: 'worker',
+        required: contract,
+        registry,
+        override: {
+          declaration: { plugin: 'first', config: { executionTimeoutMs: 10 } },
+          directory: '.',
+        },
+      }),
+    /additional properties/,
+  );
 });

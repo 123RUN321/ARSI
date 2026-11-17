@@ -29,11 +29,7 @@ test('agent records preserve content without redaction and enforce call ownershi
     'calls',
     'agent-call',
   );
-  const writer = new FileAgentRecorder(location, {
-    version: 1,
-    backend: 'agent.codex',
-    input: {},
-  });
+  const writer = new FileAgentRecorder(location);
   writer.record({
     runId: 'main',
     event: {

@@ -270,11 +270,7 @@ test('actual request, workspace, diagnostic trace and patch files are readable a
   });
   const callDirectory = join(f.root, 'experiments/experiment/calls/agent');
   await mkdir(callDirectory, { recursive: true });
-  const recorder = new FileAgentRecorder(callDirectory, {
-    version: 1,
-    backend: 'fixture',
-    input: {},
-  });
+  const recorder = new FileAgentRecorder(callDirectory);
   recorder.record({
     runId: 'main',
     event: {

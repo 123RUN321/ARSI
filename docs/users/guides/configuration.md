@@ -115,7 +115,7 @@ bindings:
 - `api_key` must be an environment-variable reference, not a literal key.
 
 - `timeoutMs` limits each model request. The underlying HTTP client uses a ten-minute request timeout when `timeoutMs` is omitted. Both timeout fields accept integer milliseconds from 1 to 2,147,483,647.
-- `executionTimeoutMs` limits the complete Agent invocation, including model requests, tools, context compaction, retry waits, and awaited subagents. It does not reset between requests.
+- Binding-level `execution.timeoutMs`, outside `config`, limits the complete invocation, including model requests, tools, context compaction, retry waits, and awaited subagents. It does not reset between requests.
 
 ### Native CLI backends
 
@@ -137,6 +137,7 @@ Then update the Agent binding in your Recipe, replacing `plugin` with your chose
 bindings:
   agent:
     plugin: agent.codex
+    execution: { timeoutMs: 180000 }
     config: {}
 ```
 
@@ -144,13 +145,13 @@ bindings:
 
 | Backend | Optional settings |
 | --- | --- |
-| All | `executable`: full CLI path; `executionTimeoutMs`: deadline in milliseconds for one Agent task |
+| All | `executable`: full CLI path |
 | Codex | `model`, `thinkingLevel` |
 | Claude Code | `model`, `effort` |
 | DSH | Configure the model in the native headless profile |
 | OpenCode | `model`: `provider/model`, optionally followed by `#variant` |
 
-RSI retains native model settings, authentication, tools, Hooks and MCP configuration. Calls are non-interactive: requests requiring approval fail. The task prompt asks for JSON proposals; RSI validates and applies the returned edits. Native tool access is not a sandbox. No RSI model retry is added to repair invalid output. Pi and native CLI calls share `executionTimeoutMs` for the complete invocation.
+RSI retains native model settings, authentication, tools, Hooks and MCP configuration. Calls are non-interactive: requests requiring approval fail. The task prompt asks for JSON proposals; RSI validates and applies the returned edits. Native tool access is not a sandbox. No RSI model retry is added to repair invalid output. The Runtime applies binding-level `execution.timeoutMs` to every plugin invocation. This field belongs beside `plugin` and `config`; it is never passed to the plugin factory or its Schema.
 
 ### Check and start
 
@@ -165,7 +166,7 @@ Resolve Doctor failures before running the experiment. `model-access: unchecked`
 
 When running from the source repository, replace `ember-rsi` with `pnpm ember-rsi`. If the native CLI cannot be found, open a new terminal or set `executable` to its full path under the binding's `config`.
 
-For native CLI backends, add `executionTimeoutMs: 180000` to limit each Agent task to 3 minutes; omitting it leaves that deadline unset. These backends cannot enforce `budget.modelCalls`. The Agent proposes changes for RSI to check and apply; configure prompts and Skills in the calling component, such as the Proposer.
+For native CLI backends, add `execution: { timeoutMs: 180000 }` to limit each Agent task to 3 minutes; set it beside `plugin` and `config`; omitting it leaves that deadline unset. These backends cannot enforce `budget.modelCalls`. The Agent proposes changes for RSI to check and apply; configure prompts and Skills in the calling component, such as the Proposer.
 
 ## Inference optimization
 
@@ -238,8 +239,7 @@ Omitted Recipe binding settings first inherit Policy defaults. The “When omitt
 | Pi                                    | `maxTokens`                                        | Maximum output tokens per model request.                                                                                                                              | Omit the output-token limit from the request; the model service decides.                                          |
 | Pi                                    | `contextWindow`                                    | Context-window size in tokens used by Pi for context management; match it to the model's capabilities.                                                                | 262144 tokens.                                                                                                    |
 | Pi                                    | `timeoutMs`                                        | Duration limit per model request, in milliseconds.                                                                                                                    | The underlying HTTP client uses 600000 ms (10 minutes).                                                           |
-| Pi                                    | `executionTimeoutMs`                               | Duration limit for a complete Agent call in milliseconds, including requests, tools, compaction, retry waits, and subagents.                                          | No separate duration limit for the complete call.                                                                 |
-| Codex / Claude Code / DSH / OpenCode | `executionTimeoutMs`                                        | Duration limit for the complete Agent call, in milliseconds.                                                                                                          | RSI sets no separate timeout for the call.                                                                        |
+| Binding | `execution.timeoutMs` | Runtime-owned duration limit per invocation, including tools and native child sessions. Configure it beside `plugin` and `config`. | No separate per-call deadline. |
 | Operator Proposer                     | `modelRequestTimeoutMs`                            | Shared duration limit for a complete model stage in milliseconds, including tool continuations and delegated Agents.                                                  | 120000 ms (2 minutes).                                                                                            |
 | AgentBench Evaluator                  | `services.<service>.maxTokens`                     | Per-turn output-token limit for the model service used by the evaluated Agent.                                                                                        | Determined by Solver or model-service defaults.                                                                   |
 | AgentBench / InferenceBench Evaluator | `run.timeoutSeconds`                               | Duration limit for one benchmark task attempt, in seconds.                                                                                                            | Use the SDK benchmark profile's value; fall back to 7200 seconds (2 hours) if the profile omits it.               |

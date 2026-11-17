@@ -134,9 +134,10 @@ policy:
 bindings:
   agent:
     plugin: agent.pi
+    execution:
+      timeoutMs: 3600000
     config:
       timeoutMs: 1800000
-      executionTimeoutMs: 3600000
   evaluator:
     plugin: evaluator.agentbench
     config:

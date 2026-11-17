@@ -3,7 +3,6 @@ import type { JsonSchema } from '../../contracts/index.js';
 export type AgentOpenCodeConfig = {
   executable?: string;
   model?: string;
-  executionTimeoutMs?: number;
 };
 export type ResolvedAgentOpenCodeConfig = AgentOpenCodeConfig & {
   executable: string;
@@ -15,10 +14,5 @@ export const configSchema: JsonSchema = {
   properties: {
     executable: { type: 'string', minLength: 1, default: 'opencode' },
     model: { type: 'string', minLength: 1, pattern: '\\S' },
-    executionTimeoutMs: {
-      type: 'integer',
-      minimum: 1,
-      maximum: 2147483647,
-    },
   },
 };

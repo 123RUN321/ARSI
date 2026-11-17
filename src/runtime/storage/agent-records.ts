@@ -6,7 +6,8 @@ import {
   openSync,
   writeFileSync,
 } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { mkdir, open, rename } from 'node:fs/promises';
+import { safeId } from './index.js';
 import { join } from 'node:path';
 import { constants } from 'node:fs';
 import type {
@@ -19,24 +20,12 @@ export class FileAgentRecorder {
   private sequence = 0;
   private descriptor: number | undefined;
   readonly directory: string;
-  constructor(
-    callDirectory: string,
-    manifest: {
-      version: 1;
-      backend: string;
-      input: import('../../contracts/json.js').JsonObject;
-    },
-  ) {
+  constructor(callDirectory: string) {
     this.directory = join(callDirectory, 'agent');
     mkdirSync(join(this.directory, 'payloads'), {
       recursive: true,
       mode: 0o700,
     });
-    writeFileSync(
-      join(this.directory, 'manifest.json'),
-      JSON.stringify(manifest) + '\n',
-      { flag: 'wx', mode: 0o600 },
-    );
     this.descriptor = openSync(
       join(this.directory, 'events.jsonl'),
       'wx',
@@ -233,5 +222,21 @@ export async function readAgentTrace(callDirectory: string): Promise<string> {
     return output.join('\n') + '\n';
   } finally {
     await file.close();
+  }
+}
+
+/** Only the Manager may archive records after admitting a safe retry. */
+export async function archiveAgentRecords(
+  callDirectory: string,
+  attemptId: string,
+): Promise<void> {
+  const attempts = join(callDirectory, 'agent-attempts', safeId(attemptId));
+  await mkdir(attempts, { recursive: true });
+  try {
+    await rename(join(callDirectory, 'agent'), join(attempts, 'agent'));
+  } catch (error) {
+    // Calls rejected before Agent execution have no conversation directory.
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
+      throw error;
   }
 }

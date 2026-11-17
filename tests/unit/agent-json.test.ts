@@ -65,34 +65,3 @@ test('invalid optional observations report a gap without failing execution', asy
     ),
   );
 });
-
-test('framework execution deadlines abort an ordinary Agent without backend cooperation hooks', async (t) => {
-  const f = await agentFixture();
-  t.after(() => f.close());
-  let aborted = false;
-  await assert.rejects(
-    f.execute(
-      {
-        async execute(_input, context) {
-          await new Promise<void>((resolve) => {
-            context.signal.addEventListener(
-              'abort',
-              () => {
-                aborted = true;
-                resolve();
-              },
-              { once: true },
-            );
-          });
-          return { answer: 'late' };
-        },
-        async dispose() {},
-      },
-      f.request,
-      f.context,
-      { executionTimeoutMs: 20 },
-    ),
-    /timed out/,
-  );
-  assert(aborted);
-});

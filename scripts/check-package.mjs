@@ -656,8 +656,9 @@ try {
  });
  const contract=defineContract({id:'contract.consumer-worker',input_schema:{type:'object'},output_schema:{type:'object'}});
  runtime.registry.registerOperation({
-  id:'consumer.worker',contract,configSchema:{type:'object'},
+  id:'consumer.worker',contract,configSchema:{type:'object',additionalProperties:false},
   async create(_config,factoryCtx){
+   assert.deepEqual(_config,{});
    creations++;
    factoryCtx.event.on('consumer/notice',function(event,ctx){
     assert.equal(this.tag,'package');assert.equal(ctx.bindingId,'worker');
@@ -682,7 +683,7 @@ try {
  await writeFile(recipePath,JSON.stringify({
   schemaVersion:'rsi.recipe/v1',id:'consumer.recipe',application:{plugin:'consumer.application',config:{}},
   policy:{id:'consumer.policy',config:{},input:{}},budget:{operations:10,elapsedWallMs:10000},
-  bindings:{worker:{plugin:'consumer.worker',config:{}},unused:{plugin:'consumer.worker',config:{}}}
+  bindings:{worker:{plugin:'consumer.worker',config:{},execution:{timeoutMs:5000}},unused:{plugin:'consumer.worker',config:{}}}
  }));
  const experiment=await runtime.manager.run(recipePath,{id:'consumer.experiment'});
  assert.equal(experiment.status,'succeeded');assert.equal(experiment.recipeId,'consumer.recipe');
@@ -712,7 +713,9 @@ console.log('Installed resources and managed ctx.event subscriptions, publishing
     `
 import type { Context, Events } from '@deepseek-ai/cordis';
 import { Registry } from 'ember-rsi';
-import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput } from 'ember-rsi/contracts';
+import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput, type ExecutionOptions, type BindingDeclaration } from 'ember-rsi/contracts';
+export const bindingExecution: ExecutionOptions = { timeoutMs: 5000 };
+export const configuredBinding: BindingDeclaration = { plugin: 'consumer.worker', config: {}, execution: bindingExecution };
 declare module 'ember-rsi/contracts' {
  interface RuntimeContext { traceId?: string; }
 }

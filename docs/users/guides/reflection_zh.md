@@ -76,7 +76,7 @@ budget:
 | `budget.modelCalls`     | 限制一次 Reflection 最多新增多少次模型调用。 | 非负整数，如 `10`；`0` 表示禁止新增模型调用。省略时不设置这项局部上限。 |
 | `budget.timeoutSeconds` | 限制一次 Reflection 最长运行多久，单位为秒。 | 正整数，如 `3600` 表示 60 分钟。省略时不设置这项局部上限。              |
 
-注意，实验总预算和 Agent 自身的限制仍同时生效，例如 `agent.pi` 的 `executionTimeoutMs`。
+实验总预算、binding 级 `execution.timeoutMs` 和后端的单次模型请求限制仍同时生效。
 
 ### Reflection 收到哪些证据
 

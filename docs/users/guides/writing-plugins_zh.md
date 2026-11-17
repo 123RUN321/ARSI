@@ -103,6 +103,19 @@ Agent 保持 `{ goal, cwd, role?, outputSchema } → JsonObject` 契约。Runtim
 
 观察不改变业务结果：编辑任务返回 JSON `edits`；Proposer 可在一次 Agent 调用中请求 `proposals[]`，随后从同一父候选分别校验和应用各提案。候选仍由 Application 验收，不引入直接编辑文件的结果协议。
 
+公共执行配置属于 binding，不属于插件配置：
+
+```yaml
+agent:
+  plugin: custom.agent
+  execution: { timeoutMs: 180000 }
+  config: {}
+```
+
+即使插件只接受空配置，Runtime 仍会校验并执行此截止时间。插件工厂只收到 `config`，无需声明超时字段或生命周期钩子。截止时间通过已有的 `context.signal` 传播；超时后的结果不会被接收，局部截止时间也不会取消父调用信号。
+
+当已有的 `canRetry` 接口允许重试时，Runtime 将上次对话归档到 `agent-attempts/<recoveredFrom>/agent/`，然后创建新的 `agent/` 记录；对应旧回执保留在 `call-attempts` 中。结果未知或被拒绝的重试不会归档或替换当前记录。日志只保存对话详情，不再另存重复的输入 manifest，也不增加旧格式读取器。
+
 ## 示例：编写并使用一个最小 Proposer
 
 这个插件始终保留父候选，用于验证注册和调用流程，不需要模型。

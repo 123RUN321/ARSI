@@ -19,11 +19,7 @@ import { object } from '../../../shared/json.js';
 import { FileAgentRecorder } from '../../storage/agent-records.js';
 
 /** Installed by the registry for every Agent. Plugins need only execute/dispose. */
-export function managedAgentOperation(
-  operation: Operation,
-  backend: string,
-  timeout?: number,
-): Operation {
+export function managedAgentOperation(operation: Operation): Operation {
   const active = new Map<AbortController, Promise<JsonObject>>();
   return {
     async execute(input, context) {
@@ -37,20 +33,8 @@ export function managedAgentOperation(
       const directory = request.cwd;
       const controller = new AbortController();
       const signal = AbortSignal.any([context.signal, controller.signal]);
-      const timer =
-        timeout === undefined
-          ? undefined
-          : setTimeout(
-              () =>
-                controller.abort(new Error(`${backend} execution timed out`)),
-              timeout,
-            );
       const execution = (async (): Promise<JsonObject> => {
-        const recorder = new FileAgentRecorder(context.directory, {
-          version: 1,
-          backend,
-          input: object(request),
-        });
+        const recorder = new FileAgentRecorder(context.directory);
         let unconfirmed: unknown;
         const record = (observation: AgentObservation): void => {
           try {
@@ -141,7 +125,6 @@ export function managedAgentOperation(
         return await execution;
       } finally {
         active.delete(controller);
-        clearTimeout(timer);
       }
     },
     ...(operation.canRetry
@@ -154,20 +137,4 @@ export function managedAgentOperation(
       await operation.dispose();
     },
   };
-}
-
-/** Validate framework-owned settings before a plugin factory acquires resources. */
-export function agentExecutionTimeout(config: JsonObject): number | undefined {
-  const timeout = config.executionTimeoutMs;
-  if (
-    timeout !== undefined &&
-    (typeof timeout !== 'number' ||
-      !Number.isInteger(timeout) ||
-      timeout < 1 ||
-      timeout > 2147483647)
-  )
-    throw new Error(
-      'Agent executionTimeoutMs must be an integer from 1 to 2147483647',
-    );
-  return timeout;
 }

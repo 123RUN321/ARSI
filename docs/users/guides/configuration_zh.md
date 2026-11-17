@@ -115,7 +115,7 @@ bindings:
 - `api_key` 必须是环境变量引用，不能直接填写密钥。
 
 - `timeoutMs` 限制每次模型请求，省略 `timeoutMs` 时底层 HTTP 客户端使用十分钟请求超时。两个字段都接受 1 到 2,147,483,647 的整数毫秒。
-- `executionTimeoutMs` 限制整个 Agent 调用，包括模型请求、工具、上下文压缩、重试等待和等待中的子 Agent，不会在每次请求后重置。
+- 在 `config` 外的 binding 级 `execution.timeoutMs` 限制整次调用，包括模型请求、工具、上下文压缩、重试等待和等待中的子 Agent，不会在每次请求后重置。
 
 ### 原生 CLI 后端
 
@@ -137,6 +137,7 @@ bindings:
 bindings:
   agent:
     plugin: agent.codex
+    execution: { timeoutMs: 180000 }
     config: {}
 ```
 
@@ -144,13 +145,13 @@ bindings:
 
 | 后端 | 可选设置 |
 | --- | --- |
-| 全部 | `executable`：CLI 完整路径；`executionTimeoutMs`：单次 Agent 任务的毫秒期限 |
+| 全部 | `executable`：CLI 完整路径 |
 | Codex | `model`、`thinkingLevel` |
 | Claude Code | `model`、`effort` |
 | DSH | 模型在原生 headless profile 中配置 |
 | OpenCode | `model`：`provider/model`，可追加 `#variant` |
 
-RSI 保留原生模型、认证、工具、Hooks 和 MCP 配置。调用以非交互方式运行，需要批准的请求会失败。任务提示要求返回 JSON 提案，由 RSI 校验并应用 edits；原生工具访问不构成沙箱。不增加用于纠正无效输出的 RSI 模型重试。Pi 和原生 CLI 均使用 `executionTimeoutMs` 限制整个调用。
+RSI 保留原生模型、认证、工具、Hooks 和 MCP 配置。调用以非交互方式运行，需要批准的请求会失败。任务提示要求返回 JSON 提案，由 RSI 校验并应用 edits；原生工具访问不构成沙箱。不增加用于纠正无效输出的 RSI 模型重试。Runtime 使用 binding 级 `execution.timeoutMs` 限制所有插件的整次调用。该字段与 `plugin`、`config` 同级，不传入插件工厂或其 Schema。
 
 ### 检查并启动
 
@@ -165,7 +166,7 @@ ember-rsi run path/to/recipe.yaml
 
 使用源码仓库时，将 `ember-rsi` 换为 `pnpm ember-rsi`。如果找不到原生 CLI，重新打开终端，或在绑定的 `config` 中用 `executable` 指定 CLI 完整路径。
 
-原生 CLI 后端可加 `executionTimeoutMs: 180000`，将每次 Agent 任务限制为 3 分钟；省略则不设此期限。它们不支持用 `budget.modelCalls` 限制模型请求次数。Agent 返回修改建议，由 RSI 检查并应用；提示词和 Skills 在 Proposer 等调用组件中配置。
+原生 CLI 后端可加 `execution: { timeoutMs: 180000 }`，将每次 Agent 任务限制为 3 分钟；该字段与 `plugin`、`config` 同级，省略则不设此期限。它们不支持用 `budget.modelCalls` 限制模型请求次数。Agent 返回修改建议，由 RSI 检查并应用；提示词和 Skills 在 Proposer 等调用组件中配置。
 
 ## 推理优化
 
@@ -229,8 +230,7 @@ Recipe 中省略的绑定配置会先继承 Policy 默认值。下表的“缺�
 | Pi                                    | `maxTokens`                                        | 单次模型请求的最大输出 Token 数。                                                                       | 不发送输出 Token 上限，由模型服务决定。                                           |
 | Pi                                    | `contextWindow`                                    | Pi 用于上下文管理的窗口大小，单位 Token，应与模型能力匹配。                                             | 262144 Token。                                                                    |
 | Pi                                    | `timeoutMs`                                        | 单次模型请求的时长上限，单位毫秒。                                                                      | 底层 HTTP 客户端使用 600000 毫秒（10 分钟）。                                     |
-| Pi                                    | `executionTimeoutMs`                               | 完整 Agent 调用的时长上限，单位毫秒，包含请求、工具、压缩、重试等待和子 Agent。                         | 无整次调用的独立时长上限。                                                        |
-| Codex / Claude Code / DSH / OpenCode | `executionTimeoutMs`                                        | 完整 Agent 调用的时长上限，单位毫秒。                                                                   | RSI 不为该调用设置独立超时。                                                      |
+| Binding | `execution.timeoutMs` | Runtime 管理的整次调用时长上限，包含工具和原生子会话，与 `plugin`、`config` 同级配置。 | 无单次调用的独立截止时间。 |
 | Operator Proposer                     | `modelRequestTimeoutMs`                            | 一个完整模型阶段的共享时长上限，单位毫秒，包含工具续调与子 Agent。                                      | 120000 毫秒（2 分钟）。                                                           |
 | AgentBench Evaluator                  | `services.<service>.maxTokens`                     | 被测 Agent 所用模型服务的每轮输出 Token 上限。                                                          | 由 Solver 或模型服务的默认设置决定。                                              |
 | AgentBench / InferenceBench Evaluator | `run.timeoutSeconds`                               | 单个基准任务一次执行的时长上限，单位秒。                                                                | 使用 SDK 基准 profile 的值；profile 未指定时为 7200 秒（2 小时）。                |

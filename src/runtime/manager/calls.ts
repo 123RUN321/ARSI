@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { archiveAgentRecords } from '../storage/agent-records.js';
 import { OperationRejectedError } from '../../contracts/runtime/errors.js';
 import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
@@ -72,7 +74,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       throw new Error('Experiment no longer accepts business calls');
     if (caller.experimentId !== id)
       throw new Error('Call belongs to another experiment');
-    const rawInput = input;
     let definition: OperationDefinition;
     try {
       const selected = options.binding(bindingId);
@@ -94,7 +95,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
         input: value,
       }).slice(0, 32);
     const callId = identity(input);
-    const legacyId = identity(rawInput);
     const existing = active.get(callId);
     if (existing) return existing;
     const checkedOutput = (value: unknown): JsonValue => {
@@ -154,22 +154,17 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       }
 
       let prior: JsonObject | undefined;
-      // Prior direct calls hashed input before defaults. Inspect that receipt too,
-      // so upgrading a running experiment cannot repeat its external effects.
-      for (const ref of new Set([callId, legacyId])) {
-        try {
-          prior = await options.facts.read('calls', ref);
-          break;
-        } catch (error) {
-          if (
-            !(
-              error instanceof Error &&
-              'code' in error &&
-              error.code === 'ENOENT'
-            )
+      try {
+        prior = await options.facts.read('calls', callId);
+      } catch (error) {
+        if (
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'ENOENT'
           )
-            throw error;
-        }
+        )
+          throw error;
       }
       if (prior?.status === 'succeeded') return checkedOutput(prior.output);
       ctx.signal.throwIfAborted();
@@ -229,11 +224,12 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
         }
         await charge('operations', 1, ctx);
         await mkdir(ctx.directory, { recursive: true });
-        const recoveredFrom = prior
-          ? `${callId}-${digest(prior).slice(0, 24)}`
-          : null;
-        if (prior && recoveredFrom)
+        const recoveredFrom = prior ? `${callId}-${randomUUID()}` : null;
+        if (prior && recoveredFrom) {
           await options.facts.write('call-attempts', recoveredFrom, prior);
+          if (definition.contract.id === agentContract.id)
+            await archiveAgentRecords(ctx.directory, recoveredFrom);
+        }
         const receipt: JsonObject = {
           ...info,
           pluginId: binding.plugin,
@@ -285,6 +281,23 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             }
           }
         });
+        const parentSignal = ctx.signal;
+        const deadline = new AbortController();
+        const timeout = binding.execution?.timeoutMs;
+        const timer =
+          timeout === undefined
+            ? undefined
+            : setTimeout(
+                () =>
+                  deadline.abort(
+                    new Error(`Call ${bindingId} execution timed out`),
+                  ),
+                timeout,
+              );
+        if (timeout !== undefined)
+          ctx = ctx.extend({
+            signal: AbortSignal.any([parentSignal, deadline.signal]),
+          });
         let output: JsonValue;
         let memoryFailed = false;
         try {
@@ -305,6 +318,9 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           if (decision.kind === 'reject')
             throw new Error(`Call admission rejected: ${decision.reason}`);
           output = checkedOutput(await lease.operation.execute(input, ctx));
+          // An expired local deadline rejects a late result. Parent cancellation
+          // still allows confirmed effects to settle into a reusable receipt.
+          deadline.signal.throwIfAborted();
           memoryFailed = isMemory && object(output).status === 'failed';
           if (
             !(await commit({
@@ -323,7 +339,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             explicit === 'unknown'
               ? 'unknown'
               : explicit === 'cancelled' ||
-                  (ctx.signal.aborted &&
+                  (parentSignal.aborted &&
                     !(
                       childFailures.has(callId) &&
                       childFailures.get(callId) === error
@@ -366,6 +382,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           }
           throw error;
         } finally {
+          clearTimeout(timer);
           childFailures.delete(callId);
           uncertain.delete(callId);
         }

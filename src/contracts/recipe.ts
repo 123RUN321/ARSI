@@ -1,22 +1,37 @@
 import type { JsonObject, JsonSchema } from './json.js';
 
+/** Runtime-owned limits; never passed to a plugin's configuration Schema. */
+export type ExecutionOptions = {
+  timeoutMs?: number;
+};
+
+export const executionOptionsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    timeoutMs: { type: 'integer', minimum: 1, maximum: 2147483647 },
+  },
+  additionalProperties: false,
+};
+
 /** A declaration may inherit its plugin and individual configuration fields. */
 export interface BindingDeclaration {
   plugin?: string;
   config?: JsonObject;
+  execution?: ExecutionOptions;
 }
 
 /** The serializable form of one complete plugin binding. */
 export interface Binding {
   plugin: string;
   config: JsonObject;
+  execution?: ExecutionOptions;
 }
 
 export interface RecipeDeclaration {
   schemaVersion: 'rsi.recipe/v1';
   id: string;
   description?: string;
-  application: { plugin: string; config?: JsonObject };
+  application: BindingDeclaration & { plugin: string };
   policy: { id: string; config?: JsonObject; input?: JsonObject };
   bindings?: Record<string, BindingDeclaration>;
   budget?: Record<string, number>;
@@ -36,6 +51,7 @@ export const bindingDeclarationSchema: JsonSchema = {
   properties: {
     plugin: { type: 'string', minLength: 1 },
     config: { type: 'object' },
+    execution: executionOptionsSchema,
   },
   additionalProperties: false,
 };

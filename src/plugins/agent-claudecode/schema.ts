@@ -4,7 +4,6 @@ export type AgentClaudeCodeConfig = {
   executable?: string;
   model?: string;
   effort?: string;
-  executionTimeoutMs?: number;
 };
 export type ResolvedAgentClaudeCodeConfig = AgentClaudeCodeConfig & {
   executable: string;
@@ -17,10 +16,5 @@ export const configSchema: JsonSchema = {
     executable: { type: 'string', minLength: 1, default: 'claude' },
     model: { type: 'string', minLength: 1, pattern: '\\S' },
     effort: { type: 'string', enum: ['low', 'medium', 'high', 'xhigh', 'max'] },
-    executionTimeoutMs: {
-      type: 'integer',
-      minimum: 1,
-      maximum: 2147483647,
-    },
   },
 };

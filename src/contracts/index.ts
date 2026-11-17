@@ -19,10 +19,15 @@ export type {
 export type {
   Binding,
   BindingDeclaration,
+  ExecutionOptions,
   Recipe,
   RecipeDeclaration,
 } from './recipe.js';
-export { bindingDeclarationSchema, recipeDeclarationSchema } from './recipe.js';
+export {
+  executionOptionsSchema,
+  bindingDeclarationSchema,
+  recipeDeclarationSchema,
+} from './recipe.js';
 export type { Candidate } from './models/candidate.js';
 export * from './models/measurement.js';
 export * from './models/file-tree.js';

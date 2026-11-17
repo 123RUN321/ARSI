@@ -13,11 +13,7 @@ import { agentFixture } from '../fixtures/agent-execution.js';
 test('record pagination reaches beyond the former 4 MiB prefix without dropping full payloads', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-agent-records-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const writer = new FileAgentRecorder(root, {
-    version: 1,
-    backend: 'test',
-    input: {},
-  });
+  const writer = new FileAgentRecorder(root);
   for (let index = 0; index < 5000; index++)
     writer.record({
       runId: 'main',
@@ -55,17 +51,13 @@ test('record pagination reaches beyond the former 4 MiB prefix without dropping 
     text,
   );
   assert.equal(page.recording, 'closed');
-  await assert.rejects(readAgentPayload(root, '../manifest.json'), /Invalid/);
+  await assert.rejects(readAgentPayload(root, '../events.jsonl'), /Invalid/);
 });
 
 test('an interrupted trailing append exposes only complete records', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-agent-interrupted-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const writer = new FileAgentRecorder(root, {
-    version: 1,
-    backend: 'test',
-    input: {},
-  });
+  const writer = new FileAgentRecorder(root);
   writer.record({
     runId: 'main',
     event: { type: 'run.started', backend: 'test', parentRunId: null },
@@ -109,7 +101,7 @@ test('a recording failure cancels execution and cannot publish a successful resu
   assert(stopped);
 });
 
-test('unconfirmed process cleanup remains unknown when terminal recording and close also fail', async (t) => {
+test('unconfirmed process cleanup remains unknown when closing the record also fails', async (t) => {
   const f = await agentFixture();
   t.after(() => f.close());
   const unknown = Object.assign(
@@ -117,19 +109,6 @@ test('unconfirmed process cleanup remains unknown when terminal recording and cl
     { status: 'unknown' },
   );
   const originalClose = FileAgentRecorder.prototype.close;
-  const originalRecord = FileAgentRecorder.prototype.record;
-  t.mock.method(
-    FileAgentRecorder.prototype,
-    'record',
-    function (
-      this: FileAgentRecorder,
-      observation: import('../../src/contracts/index.js').AgentObservation,
-    ) {
-      if (observation.event.type === 'run.finished')
-        throw new Error('Disk write failed');
-      originalRecord.call(this, observation);
-    },
-  );
   t.mock.method(
     FileAgentRecorder.prototype,
     'close',

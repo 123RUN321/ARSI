@@ -1,7 +1,4 @@
-import {
-  managedAgentOperation,
-  agentExecutionTimeout,
-} from '../services/agent-execution/task.js';
+import { managedAgentOperation } from '../services/agent-execution/task.js';
 import { agentContract } from '../../contracts/plugin-types/agent.js';
 import { Context } from '@deepseek-ai/cordis';
 import type {
@@ -107,13 +104,9 @@ export class Registry {
       services: RuntimeContext,
     ): Promise<Operation> => {
       validate(definition.configSchema, config, 'plugin config');
-      const timeout =
-        contract.id === agentContract.id
-          ? agentExecutionTimeout(config)
-          : undefined;
       const operation = await definition.create(config as C, services);
       return contract.id === agentContract.id
-        ? managedAgentOperation(operation, definition.id, timeout)
+        ? managedAgentOperation(operation)
         : operation;
     };
     const { doctor, ...capabilities } = definition;

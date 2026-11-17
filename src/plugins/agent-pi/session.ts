@@ -128,9 +128,6 @@ export async function createPiSession(
         publish,
         signal,
       );
-      const record = (type: string, data: unknown): void => {
-        if (type === 'error') observe({ type, data });
-      };
       try {
         directory = await mkdtemp(join(context.directory, 'pi-'));
         signal.throwIfAborted();
@@ -230,11 +227,7 @@ export async function createPiSession(
             (event.type === 'message_end' &&
               event.message.role === 'assistant') ||
             event.type === 'tool_execution_start' ||
-            event.type === 'tool_execution_end' ||
-            event.type === 'auto_retry_start' ||
-            event.type === 'auto_retry_end' ||
-            event.type === 'compaction_start' ||
-            event.type === 'compaction_end'
+            event.type === 'tool_execution_end'
           )
             observe(event);
         });
@@ -365,7 +358,6 @@ export async function createPiSession(
       } catch (error) {
         const cause: unknown = signal.aborted ? signal.reason : error;
         const message = cause instanceof Error ? cause.message : String(cause);
-        record('error', { message });
         if (request.parentRunId !== null)
           context.event.emit('rsi/agent-observation', {
             runId: request.runId,

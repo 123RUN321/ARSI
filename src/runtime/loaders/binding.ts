@@ -1,10 +1,16 @@
-import type { Binding as BindingData } from '../../contracts/recipe.js';
-import { bindingDeclarationSchema } from '../../contracts/recipe.js';
+import type {
+  ExecutionOptions,
+  Binding as BindingData,
+} from '../../contracts/recipe.js';
+import {
+  bindingDeclarationSchema,
+  executionOptionsSchema,
+} from '../../contracts/recipe.js';
 import type { JsonObject, JsonValue } from '../../contracts/json.js';
 import type { PluginContract } from '../../contracts/contract.js';
 import type { OperationDefinition } from '../../contracts/operation.js';
 import { object, string, freezeSnapshot } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
+import { parseConfig, validate } from '../../shared/schema.js';
 import type { Registry } from '../registry/index.js';
 import { resolvePaths } from './config.js';
 
@@ -32,11 +38,13 @@ export class Binding {
   readonly name: string;
   readonly definition: OperationDefinition;
   readonly config: JsonObject;
+  readonly execution?: ExecutionOptions;
 
   private constructor(
     name: string,
     definition: OperationDefinition,
     config: JsonObject,
+    execution?: ExecutionOptions,
   ) {
     this.name = name;
     this.definition = Object.freeze({
@@ -45,6 +53,7 @@ export class Binding {
       configSchema: freezeSnapshot(structuredClone(definition.configSchema)),
     });
     this.config = freezeSnapshot(config);
+    if (execution) this.execution = freezeSnapshot(structuredClone(execution));
     Object.freeze(this);
   }
 
@@ -141,7 +150,18 @@ export class Binding {
         current = current.slice(0, current.lastIndexOf('/'));
       return origins.get(current) ?? fallbackDirectory;
     });
-    return new Binding(name, definition, config);
+    const execution =
+      defaults.execution === undefined && override.execution === undefined
+        ? undefined
+        : parseConfig<ExecutionOptions>(
+            executionOptionsSchema,
+            {
+              ...object(defaults.execution ?? {}),
+              ...object(override.execution ?? {}),
+            },
+            `${label}.execution`,
+          );
+    return new Binding(name, definition, config, execution);
   }
 
   /** The caller supplies a full configuration with already prepared resource paths. */
@@ -154,10 +174,14 @@ export class Binding {
       owned,
       `Binding ${this.name}.config`,
     );
-    return new Binding(this.name, this.definition, owned);
+    return new Binding(this.name, this.definition, owned, this.execution);
   }
 
   toJSON(): BindingData {
-    return { plugin: this.pluginId, config: structuredClone(this.config) };
+    return {
+      plugin: this.pluginId,
+      config: structuredClone(this.config),
+      ...(this.execution ? { execution: structuredClone(this.execution) } : {}),
+    };
   }
 }
