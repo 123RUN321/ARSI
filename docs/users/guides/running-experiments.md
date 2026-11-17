@@ -10,8 +10,8 @@ Run commands from the workspace that should own the experiment's `.rsi/` directo
 
 Use `arsi --help` to list commands and `arsi <command> --help` for a command's syntax. From a source checkout without a global install, use `pnpm arsi`.
 
-| Command                                | Purpose                                                                                                                                   |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Command                                     | Purpose                                                                                                                                   |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `arsi catalog`                         | List registered plugin and Policy IDs.                                                                                                    |
 | `arsi list plugins`                    | Inspect plugin descriptions, contracts, Schemas, and compatible Policy bindings.                                                          |
 | `arsi list policies`                   | Inspect Policy descriptions, Schemas, requirements, and compatible plugins.                                                               |
@@ -40,7 +40,7 @@ These options apply across commands:
 
 | Option                     | Description                                                                                                                                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `-h, --help`               | Display help and exit. `arsi --help` lists commands; `arsi <command> --help` shows that command's parameters.                                                                                                                                                      |
+| `-h, --help`               | Display help and exit. `arsi --help` lists commands; `arsi <command> --help` shows that command's parameters.                                                                                                                                            |
 | `--plugin-dir <directory>` | Load custom plugins and Policies from a directory. Repeat the option for multiple directories; see [plugin registration](writing-plugins.md#step-2-register-the-plugin) and [Policy registration and Recipe configuration](writing-policies.md#register-a-policy). |
 
 ### Command-specific options
@@ -105,8 +105,6 @@ arsi dashboard --port <port>
 ```
 
 Run from an experiment workspace that already contains `.rsi/`. The web dashboard displays experiments, summaries, candidates, diffs, measurements, calls, Agent traces, results, and charts, as shown below.
-
-A recorded `running` experiment is displayed as running only while its Runtime execution lock has a fresh heartbeat. Missing, expired, or unreadable locks display `unconfirmed` in both the list and detail view. The lock expires after 60 seconds without a heartbeat, plus the view's refresh delay. This confirms Runtime ownership, not model progress. Unmanaged recovery scripts cannot establish ownership through recorded status alone. Observation never changes the saved status, results, or budgets; inspect the runner before recovery.
 
 Measurement details show each recorded item's full identifier, subject kind, status, coverage, and metrics. Failed, cancelled, and unknown items show no valid score rather than a numeric result. Missing item evidence is reported explicitly; a successful zero score remains zero.
 Metrics that share a display label include their recorded metric names so distinct values remain identifiable.
