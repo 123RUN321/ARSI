@@ -152,6 +152,8 @@ bindings:
 
 RSI keeps native model and authentication settings while limiting tasks to read-only proposals with no interactive approvals. Claude Code Hooks and MCP are disabled for RSI calls.
 
+RSI launches Codex with `approval_policy = "never"`. If a command requires permissions that the sandbox does not grant, Codex reports the failure to the agent without prompting for approval.
+
 On Windows, `agent.codex` grants root read access because the elevated Codex sandbox requires it to start a session. Codex can read files accessible to the local account outside the project. The session remains read-only.
 
 ### Check and start

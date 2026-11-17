@@ -336,6 +336,7 @@ test('Codex uses the managed project cwd and the native tool surface', async (t)
       process.platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : '';
     const permissions = object(audit.thread).permissions;
     assert.ok(Array.isArray(audit.args));
+    assert.ok(audit.args.includes('approval_policy="never"'));
     assert.ok(
       audit.args.includes(
         `permissions.${permissions}.filesystem={":root"="${rootAccess}",":minimal"="read",":workspace_roots"="read"${openssl}}`,
@@ -537,7 +538,7 @@ for (const scenario of [
       await f.close();
     }
   });
-test('Codex surfaces interactive approval requests without silently approving or overriding policy', async () => {
+test('Codex fails closed if the server sends an unexpected approval request', async () => {
   const f = await fixture([], { approvalRequired: true });
   try {
     await assert.rejects(f.run(), /interactive input or approval/);

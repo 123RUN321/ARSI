@@ -44,6 +44,7 @@ export async function runSession(options: {
   // The elevated Windows sandbox requires effective root read access.
   const rootAccess = process.platform === 'win32' ? 'read' : 'deny';
   const launchConfig = [
+    'approval_policy="never"',
     `project_root_markers=[${JSON.stringify(projectMarker)}]`,
     `default_permissions=${JSON.stringify(permissions)}`,
     `permissions.${permissions}.filesystem={":root"="${rootAccess}",":minimal"="read",":workspace_roots"="read"${process.platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : ''}}`,
