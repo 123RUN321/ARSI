@@ -53,11 +53,11 @@ export function Experiments(): React.JSX.Element {
           >
             <option value="">All policies</option>
             {policy && !result.data?.policies.includes(policy) ? (
-              <option value={policy}>{policy}</option>
+              <option value={policy}>{policy.replace(/^policy\./, '')}</option>
             ) : null}
             {result.data?.policies.map((ref) => (
               <option key={ref} value={ref}>
-                {ref}
+                {ref.replace(/^policy\./, '')}
               </option>
             ))}
           </select>
@@ -105,7 +105,10 @@ export function Experiments(): React.JSX.Element {
                         <Status value={entry.status} />
                       </TableCell>
                       <TableCell>{entry.recipeId ?? 'Not recorded'}</TableCell>
-                      <TableCell>{entry.policyRef ?? 'Not recorded'}</TableCell>
+                      <TableCell>
+                        {entry.policyRef?.replace(/^policy\./, '') ??
+                          'Not recorded'}
+                      </TableCell>
                       <TableCell>
                         <Timestamp value={entry.startedAt} />
                       </TableCell>
