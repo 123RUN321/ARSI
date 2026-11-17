@@ -378,10 +378,10 @@ export function register(registry) {
   assert.deepEqual(
     [...catalog.policies].sort(),
     [
-      'parameter.agent',
       'policy.gepa',
       'policy.harness2',
       'policy.operator-search',
+      'policy.parameter-agent',
       'policy.parameter-grid',
       'policy.parameter-optuna',
       'policy.wikiskill',
@@ -544,7 +544,7 @@ try {
    assert.equal(recipe.bindings.evolutionProposer.pluginId,'proposer.pareto-evolution','installed consumer assembles built-in GEPA without an extension directory');
   }
   if(name==='parameter-agent'){
-   assert.equal(recipe.policy.id,'parameter.agent');
+   assert.equal(recipe.policy.id,'policy.parameter-agent');
    assert.equal(recipe.bindings.selector.pluginId,'selector.inference');
    assert.equal(recipe.bindings.evaluator.pluginId,'evaluator.inferencebench');
   }

@@ -15,7 +15,7 @@ import { Recipe } from '../../src/runtime/loaders/recipe.js';
 import { registerBuiltins } from '../../src/runtime/builtins.js';
 import { object } from '../../src/shared/json.js';
 
-test('parameter.agent loads default learning resources with either Reflection switch value', async (t) => {
+test('policy.parameter-agent loads default learning resources with either Reflection switch value', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-parameter-defaults-'));
   const registry = new Registry();
   t.after(async () => {
@@ -41,7 +41,7 @@ test('parameter.agent loads default learning resources with either Reflection sw
     schemaVersion: 'rsi.recipe/v1',
     id: 'parameter-defaults',
     application: { plugin: 'custom.application' },
-    policy: { id: 'parameter.agent', config: {} as JsonObject },
+    policy: { id: 'policy.parameter-agent', config: {} as JsonObject },
     bindings: {
       proposer: { config: { prompt: './prompt.md' } },
       evaluator: { plugin: 'custom.evaluator' },
@@ -88,12 +88,12 @@ test('parameter.agent loads default learning resources with either Reflection sw
   );
 });
 
-test('parameter.agent follows selector decisions and returns the measured incumbent before constraints are met', async () => {
+test('policy.parameter-agent follows selector decisions and returns the measured incumbent before constraints are met', async () => {
   const registry = new Registry();
   try {
     await registerBuiltins(registry);
     const policy = await Policy.load(
-      registry.policy('parameter.agent'),
+      registry.policy('policy.parameter-agent'),
       registry,
     );
     const events: string[] = [];
@@ -210,7 +210,7 @@ test('parameter.agent follows selector decisions and returns the measured incumb
 });
 
 for (const scenario of ['empty', 'recover', 'cancel'] as const) {
-  test(`parameter.agent bounds empty proposal retries: ${scenario}`, async () => {
+  test(`policy.parameter-agent bounds empty proposal retries: ${scenario}`, async () => {
     const registry = new Registry();
     const abort = new AbortController();
     const stopped = new Error('Experiment cancelled');
@@ -219,7 +219,7 @@ for (const scenario of ['empty', 'recover', 'cancel'] as const) {
     try {
       await registerBuiltins(registry);
       const policy = await Policy.load(
-        registry.policy('parameter.agent'),
+        registry.policy('policy.parameter-agent'),
         registry,
       );
       const execution = policy.execute({

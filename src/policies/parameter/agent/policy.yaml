@@ -1,5 +1,5 @@
 schemaVersion: rsi.policy/v1
-id: parameter.agent
+id: policy.parameter-agent
 description: Search configuration candidates with Agent proposals, measured selection and optional learning.
 # policy schema
 input_schema:
