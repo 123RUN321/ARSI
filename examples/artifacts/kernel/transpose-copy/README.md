@@ -84,9 +84,9 @@ a positive `batchSize` (for example `32`), and a `files` inventory of relative p
 ```bash
 pnpm install --frozen-lockfile
 pnpm build
-pnpm ember-rsi doctor examples/artifacts/kernel/transpose-copy/recipe.search.yaml
+pnpm arsi doctor examples/artifacts/kernel/transpose-copy/recipe.search.yaml
 node --import ./examples/artifacts/kernel/transpose-copy/http-timeout.mjs dist/src/entries/cli/main.js run examples/artifacts/kernel/transpose-copy/recipe.search.yaml --id transpose-copy-search-001
-pnpm ember-rsi show transpose-copy-search-001
+pnpm arsi show transpose-copy-search-001
 ```
 
 The run command preloads the [HTTP timeout configuration](./http-timeout.mjs) so the client uses the Recipe’s per-request timeout when waiting for response headers or body data. If the model endpoint uses a buffering proxy, configure its timeout to allow that wait as well. Set `benchmark.config.device` to the device allocated for the run.
@@ -181,7 +181,7 @@ It marks timeline evidence as unavailable; it does not establish PipeTimeline,
 overlap, bubble, or Double Buffer results. Choose `PipeTimeline,Default` explicitly
 when usable trace evidence is required. The SDK owns collection, cleanup,
 metric units, and evidence validation; see its pinned
-[NPU kernel guide](https://github.com/evolving-foundry/ember-evaluator/blob/99392461cfdac9edb4ad2b49fa7c52a954125f1b/docs/users/benchmarks/kernel-npu.md).
+[NPU kernel guide](https://github.com/ARSI-LAB/ARSI-Evaluator/blob/99392461cfdac9edb4ad2b49fa7c52a954125f1b/docs/users/benchmarks/kernel-npu.md).
 
 ## Results and verification
 

@@ -1,4 +1,4 @@
-import { parseKernelAssessment, type KernelAssessment } from 'ember-evaluator';
+import { parseKernelAssessment, type KernelAssessment } from 'arsi-evaluator';
 import type { JsonObject } from '../../contracts/index.js';
 import { compareFilePaths } from '../../shared/paths.js';
 import { digest, object, string } from '../../shared/json.js';

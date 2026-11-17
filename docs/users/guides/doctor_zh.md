@@ -4,13 +4,13 @@
 
 ## 1. 简介
 
-`ember-rsi doctor` 用于在启动实验前，检查实验配置、输入和已支持的运行前提是否就绪。准备 Recipe、更换组件、模型或凭据，或迁移实验环境后都可以运行。
+`arsi doctor` 用于在启动实验前，检查实验配置、输入和已支持的运行前提是否就绪。准备 Recipe、更换组件、模型或凭据，或迁移实验环境后都可以运行。
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml
+arsi doctor my-experiment/recipe.yaml
 ```
 
-- 在源码仓库中，完成 `pnpm build` 后使用 `pnpm ember-rsi doctor my-experiment/recipe.yaml`，运行前设置所选组件需要的环境变量。
+- 在源码仓库中，完成 `pnpm build` 后使用 `pnpm arsi doctor my-experiment/recipe.yaml`，运行前设置所选组件需要的环境变量。
 - `doctor` 将 Recipe 校验与组件专用检查结合起来，可以发现提示词或基线缺失、绑定不兼容、提案侧模型连接失败，以及 SDK 报告的评测配置、运行前提或下载路线问题。
 
 - 只需快速检查生效配置和已声明的本地路径时，可以加上 `--static`。
@@ -23,7 +23,7 @@ ember-rsi doctor my-experiment/recipe.yaml
 
 ```mermaid
 flowchart TD
-    A["运行 ember-rsi doctor"] --> B["加载 Runtime 并注册内置组件和扩展"]
+    A["运行 arsi doctor"] --> B["加载 Runtime 并注册内置组件和扩展"]
     B --> C{"注册成功？"}
     C -- 否 --> D["记录 runtime.registration 失败"]
     C -- 是 --> E["加载并校验 Recipe<br/>合并生效配置"]
@@ -45,7 +45,7 @@ flowchart TD
     O --> P["输出 JSON 报告<br/>有 failed：退出码 1；否则：退出码 0"]
 ```
 
-1. **加载注册。** CLI 沿用正常 Runtime 注册流程，加载内置组件、`~/.ember-rsi/plugins/<name>/index.mjs` 中的用户扩展，以及 `--plugin-dir` 指定的扩展。
+1. **加载注册。** CLI 沿用正常 Runtime 注册流程，加载内置组件、`~/.arsi/plugins/<name>/index.mjs` 中的用户扩展，以及 `--plugin-dir` 指定的扩展。
 2. **加载生效 Recipe。** `Recipe.load` 校验 Schema、绑定、契约兼容性、Policy 编译、预算和已声明的 Reflection 资源。
    - 探测使用合并 Policy 默认配置与 Recipe 覆盖后的配置。
    - 加载失败时输出失败诊断，不再执行组件探测。
@@ -130,7 +130,7 @@ flowchart TD
 
 ### 编写并声明检测函数
 
-从 `ember-rsi/contracts` 或 `ember-rsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorResult`。
+从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorResult`。
 
 - 组件注册和 Recipe 加载负责保留回调，`doctor` 命令才会调用它。
 - 省略 `doctor` 时，框架仍执行通用检查，并将组件专用的 `plugin` 项标为 `unchecked`。
@@ -147,8 +147,8 @@ flowchart TD
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { runDoctorCheck } from 'ember-rsi';
-import type { OperationDoctor } from 'ember-rsi/contracts';
+import { runDoctorCheck } from 'arsi';
+import type { OperationDoctor } from 'arsi/contracts';
 
 type CustomConfig = { inputFile: string };
 
@@ -173,7 +173,7 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 在组件的 `index.ts` 或 `index.js` 中，将检测函数加入组件定义。
 
 ```js
-import { proposerContract } from 'ember-rsi/contracts';
+import { proposerContract } from 'arsi/contracts';
 import { configSchema } from './schema.js';
 import { createCustom } from './service.js';
 import { checkCustom } from './doctor.js';
@@ -190,7 +190,7 @@ export const customDefinition = {
 构建扩展，在扩展的 `index.mjs` 中调用 `registry.registerOperation(customDefinition)`，再通过 CLI 加载扩展。
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
+arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 ```
 
 ## 5. doctor 的时间限制

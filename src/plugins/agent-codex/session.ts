@@ -88,7 +88,7 @@ export async function runSession(options: {
       id: 1,
       method: 'initialize',
       params: {
-        clientInfo: { name: 'ember_rsi', version: '0.0.0' },
+        clientInfo: { name: 'arsi', version: '0.0.0' },
         capabilities: { experimentalApi: true },
       },
     }) + '\n',

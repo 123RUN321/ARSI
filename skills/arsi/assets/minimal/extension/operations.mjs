@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { proposerContract, agentbenchContract } from 'ember-rsi';
-import { typedArtifact } from 'ember-rsi/contracts';
+import { proposerContract, agentbenchContract } from 'arsi';
+import { typedArtifact } from 'arsi/contracts';
 const emptyConfig = {
   type: 'object',
   properties: {},

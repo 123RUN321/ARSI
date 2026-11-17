@@ -6,9 +6,9 @@
 
 可通过以下命令查看当前可用的组件：
 
-- `ember-rsi catalog`：列出已注册的插件和 Policy ID。
-- `ember-rsi list plugins`：查看插件描述、契约及输入、输出和配置 Schema。
-- `ember-rsi list policies`：查看 Policy 描述、Schema、所需契约及符合契约的插件。
+- `arsi catalog`：列出已注册的插件和 Policy ID。
+- `arsi list plugins`：查看插件描述、契约及输入、输出和配置 Schema。
+- `arsi list policies`：查看 Policy 描述、Schema、所需契约及符合契约的插件。
 
 内置注册定义见[内置注册表](../../../src/runtime/builtins.ts)。在使用时需要内置组件时注意：契约匹配表示接口兼容，选择插件时还需确认其功能是否适合当前任务。
 

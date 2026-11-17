@@ -28,7 +28,7 @@ import {
   canModifyTargetFile,
   parseTarget,
 } from '../shared/file-application/target.js';
-import { EvaluatorRunError } from 'ember-evaluator';
+import { EvaluatorRunError } from 'arsi-evaluator';
 import {
   sdkRunner,
   type EvaluatorRunner,
@@ -342,7 +342,7 @@ export function prepareEvaluationConfig(
 
 async function sdkBuildIdentity(): Promise<string> {
   const directory = fileURLToPath(
-    new URL('.', import.meta.resolve('ember-evaluator')),
+    new URL('.', import.meta.resolve('arsi-evaluator')),
   );
   const files: { path: string; sha256: string }[] = [];
   const walk = async (relative: string): Promise<void> => {

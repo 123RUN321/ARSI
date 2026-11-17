@@ -6,9 +6,9 @@ This guide explains the roles and combinations of built-in Policies and plugins 
 
 Use these commands to inspect the available components:
 
-- `ember-rsi catalog`: List registered plugin and Policy IDs.
-- `ember-rsi list plugins`: View plugin descriptions, contracts, and input, output, and configuration Schemas.
-- `ember-rsi list policies`: View Policy descriptions, Schemas, required contracts, and plugins that satisfy those contracts.
+- `arsi catalog`: List registered plugin and Policy IDs.
+- `arsi list plugins`: View plugin descriptions, contracts, and input, output, and configuration Schemas.
+- `arsi list policies`: View Policy descriptions, Schemas, required contracts, and plugins that satisfy those contracts.
 
 Built-in registrations are defined in the [built-in registry](../../../src/runtime/builtins.ts). Matching contracts indicate compatible interfaces; check whether a plugin's functionality suits your task before selecting it.
 

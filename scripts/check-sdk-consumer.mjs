@@ -18,14 +18,14 @@ import {tmpdir} from 'node:os';
 import {join,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createBundleSdk} from 'agent-bundle-core';
-import {Evaluator} from 'ember-evaluator';
+import {Evaluator} from 'arsi-evaluator';
 import {RuntimeContext} from './dist/src/contracts/index.js';
 import {FileArtifacts} from './dist/src/runtime/storage/index.js';
 import {createAgentbench} from './dist/src/plugins/evaluator-agentbench/service.js';
 import {sdkDoctor} from './dist/src/plugins/shared/evaluator-adapter/doctor-sdk.js';
 if(${JSON.stringify(isolated)}){
  const installed=await realpath(${JSON.stringify(packageDirectory)});
- for(const name of ['agent-bundle-core','ember-evaluator']){
+ for(const name of ['agent-bundle-core','arsi-evaluator']){
   const entry=await realpath(fileURLToPath(import.meta.resolve(name)));
   assert.ok(entry.startsWith(installed+sep),name+' must be bundled inside the installed RSI package');
  }

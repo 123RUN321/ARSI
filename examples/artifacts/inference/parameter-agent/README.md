@@ -6,12 +6,12 @@ the same workload to select a configuration based on throughput and latency.
 
 ## Usage
 
-1. Install the `ember-rsi` CLI and companion skill by following the
+1. Install the `arsi` CLI and companion skill by following the
    [repository README](../../../../README.md#installation).
 2. Give your coding agent the instruction below.
 
 ```text
-Use the ember-rsi skill to start a vLLM inference parameter optimization experiment.
+Use the arsi skill to start a vLLM inference parameter optimization experiment.
 
 1. Goal. Maximize output throughput (tokens/s) while meeting my P90 TTFT and
    P90 TPOT limits. Ask me for both limits in milliseconds and the run budget
@@ -37,9 +37,9 @@ Use the ember-rsi skill to start a vLLM inference parameter optimization experim
      confirm cleanup. Set the serving endpoint in the Recipe and point
      application.config.remote.script to the verified deployment script.
 
-3. Run and monitor. Check the prepared Recipe with ember-rsi doctor <recipe.yaml>
-   and start it with ember-rsi run <recipe.yaml> --id <experiment-id>. Keep the
-   run active and check ember-rsi show <experiment-id> from another terminal
+3. Run and monitor. Check the prepared Recipe with arsi doctor <recipe.yaml>
+   and start it with arsi run <recipe.yaml> --id <experiment-id>. Keep the
+   run active and check arsi show <experiment-id> from another terminal
    in the same working directory until it finishes. Report the baseline and
    best measured throughput, TTFT, and TPOT, and say whether both limits were met.
 ```

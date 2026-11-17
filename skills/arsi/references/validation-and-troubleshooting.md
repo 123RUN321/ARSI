@@ -4,7 +4,7 @@ For a new installation, use [quickstart](quickstart.md) in an isolated workspace
 
 | Symptom                                           | Correction                                                                                                                |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Cannot resolve ember-rsi                          | Install the supplied package in the extension's ancestor workspace; cwd alone does not affect ESM lookup                  |
+| Cannot resolve arsi                          | Install the supplied package in the extension's ancestor workspace; cwd alone does not affect ESM lookup                  |
 | Unknown Policy/plugin                             | Pass --plugin-dir to the executing CLI/server, or register in the same embedded Runtime                                   |
 | Definition rejected                               | `contract` is an imported contract object; Policy require uses the contract ID string                                     |
 | Target fields missing                             | Start from bundled target.yaml; id, entries, kind, description and changes are required                                   |

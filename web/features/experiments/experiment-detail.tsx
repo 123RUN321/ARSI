@@ -119,7 +119,14 @@ export function Experiment({
             ) : selected === 'recipe' ? (
               <Recipe id={id} />
             ) : selected === 'results' ? (
-              <Results id={id} />
+              <>
+                {result.data.error ? (
+                  <p className="error-notice" role="alert">
+                    {result.data.error}
+                  </p>
+                ) : null}
+                <Results id={id} status={result.data.status} />
+              </>
             ) : selected === 'overview' ? (
               <>
                 {result.data.error ? (

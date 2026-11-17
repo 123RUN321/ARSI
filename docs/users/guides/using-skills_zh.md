@@ -8,7 +8,7 @@
 
 RSI Skill 用来指导编程助手编写 Recipe、校验配置和排查实验。
 
-1. 将完整的 [RSI Skill 目录](../../../skills/ember-rsi/SKILL.md)放到 Agent 支持的 Skill 目录中，保留 `SKILL.md` 及同级的 `references/`、`assets/`。
+1. 将完整的 [RSI Skill 目录](../../../skills/arsi/SKILL.md)放到 Agent 支持的 Skill 目录中，保留 `SKILL.md` 及同级的 `references/`、`assets/`。
 2. 让 Agent 读取该 Skill，再提出具体任务，例如“为当前项目编写 Recipe 并执行校验”。也可以直接向助手提供 `SKILL.md` 的路径。
 
 ## 为被评测的 Agent 添加 Skill

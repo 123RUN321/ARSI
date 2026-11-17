@@ -19,7 +19,7 @@ pnpm install --frozen-lockfile
 pnpm build
 pnpm add -g .
 
-pnpm ember-rsi --help
+pnpm arsi --help
 ```
 
 AgentBundle 和 Evaluator SDK 会在安装时构建，无需相邻的源码检出目录。克隆及各平台的设置见 [仓库安装说明](../../README.zh-CN.md)。
@@ -208,17 +208,17 @@ export MODEL_API_KEY="your-api-key"
 - 本教程用 `MODEL_NAME` 配置优化器、用 `EVALUATOR_MODEL_NAME` 配置被评测的 Solver。仓库中的 WikiSkill Recipe 两者均使用 `MODEL_NAME`，Harness² Recipe 则分别配置。参见 [Agent 与环境变量](guides/configuration_zh.md#环境变量)。
 
 ```sh
-ember-rsi catalog # List registered IDs
-ember-rsi doctor my-experiment/recipe.yaml # Check configuration and runtime prerequisites
-ember-rsi run my-experiment/recipe.yaml --id terminal-skills-01 # Run the experiment
-ember-rsi show terminal-skills-01 # Inspect the saved status and results
+arsi catalog # List registered IDs
+arsi doctor my-experiment/recipe.yaml # Check configuration and runtime prerequisites
+arsi run my-experiment/recipe.yaml --id terminal-skills-01 # Run the experiment
+arsi show terminal-skills-01 # Inspect the saved status and results
 ```
 
-- 用 `ember-rsi list` 查看已保存的实验。
-- 用 `ember-rsi cancel terminal-skills-01` 请求取消。
-- 用 `ember-rsi doctor my-experiment/recipe.yaml` 检查 Schema、绑定、契约、已声明的 Reflection 资源、本地输入和已支持的运行前提。Evaluator 委托 SDK 的完整 doctor，包括其下载与 Docker 构建探针；覆盖范围与副作用见 [doctor 指南](guides/doctor_zh.md)。
-- 用 `ember-rsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume` 恢复中断的实验，沿用原 Recipe、工作目录和实验 ID。
-- 用 `ember-rsi dashboard --port <端口号>` 查看候选、测量和调用记录。从包含 `.rsi/` 的同一工作目录执行，并打开命令输出的地址。`Reflection & Memory` 页签还可检查经验与修订版本，并预览、应用 Reflection 修改；详见[工作台](guides/running-experiments_zh.md#工作台)。启动、恢复和取消仍通过 CLI 操作。
+- 用 `arsi list` 查看已保存的实验。
+- 用 `arsi cancel terminal-skills-01` 请求取消。
+- 用 `arsi doctor my-experiment/recipe.yaml` 检查 Schema、绑定、契约、已声明的 Reflection 资源、本地输入和已支持的运行前提。Evaluator 委托 SDK 的完整 doctor，包括其下载与 Docker 构建探针；覆盖范围与副作用见 [doctor 指南](guides/doctor_zh.md)。
+- 用 `arsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume` 恢复中断的实验，沿用原 Recipe、工作目录和实验 ID。
+- 用 `arsi dashboard --port <端口号>` 查看候选、测量和调用记录。从包含 `.rsi/` 的同一工作目录执行，并打开命令输出的地址。`Reflection & Memory` 页签还可检查经验与修订版本，并预览、应用 Reflection 修改；详见[工作台](guides/running-experiments_zh.md#工作台)。启动、恢复和取消仍通过 CLI 操作。
 
 运行后应分别查看保存的实验状态、Measurement 状态与覆盖率，以及得分。参见 [实验运行与排障](guides/running-experiments_zh.md)。
 

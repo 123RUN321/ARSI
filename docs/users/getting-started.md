@@ -19,7 +19,7 @@ pnpm install --frozen-lockfile
 pnpm build
 pnpm add -g .
 
-pnpm ember-rsi --help
+pnpm arsi --help
 ```
 
 AgentBundle and the Evaluator SDK build during installation; sibling checkouts are not required. See the [repository setup instructions](../../README.md) for cloning and platform-specific setup.
@@ -208,17 +208,17 @@ export MODEL_API_KEY="your-api-key"
 - This tutorial uses `MODEL_NAME` for the optimizer and `EVALUATOR_MODEL_NAME` for the evaluated Solver. The checked-in WikiSkill Recipe uses `MODEL_NAME` for both; the Harness² Recipe separates them. See [Agent and environment variables](guides/configuration.md#environment-variables).
 
 ```sh
-ember-rsi catalog # List registered IDs
-ember-rsi doctor my-experiment/recipe.yaml # Check configuration and runtime prerequisites
-ember-rsi run my-experiment/recipe.yaml --id terminal-skills-01 # Run the experiment
-ember-rsi show terminal-skills-01 # Inspect the saved status and results
+arsi catalog # List registered IDs
+arsi doctor my-experiment/recipe.yaml # Check configuration and runtime prerequisites
+arsi run my-experiment/recipe.yaml --id terminal-skills-01 # Run the experiment
+arsi show terminal-skills-01 # Inspect the saved status and results
 ```
 
-- Use `ember-rsi list` to find saved experiments.
-- Use `ember-rsi cancel terminal-skills-01` to request cancellation.
-- Use `ember-rsi doctor my-experiment/recipe.yaml` to check schemas, bindings, contracts, declared Reflection resources, local inputs and supported runtime prerequisites. Evaluators delegate to the SDK's full doctor, including its download and Docker build probes. For coverage and side effects, see the [doctor guide](guides/doctor.md).
-- Use `ember-rsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume` to resume an interrupted experiment, reusing the original Recipe, working directory, and experiment ID.
-- Use `ember-rsi dashboard --port <port>` to inspect candidates, measurements, and calls. Run it from the same working directory containing `.rsi/` and open the address printed by the command. The `Reflection & Memory` tab also lets you inspect experience and revisions, and preview and apply Reflection changes; see [Dashboard](guides/running-experiments.md#dashboard). Start, resume, and cancel through the CLI.
+- Use `arsi list` to find saved experiments.
+- Use `arsi cancel terminal-skills-01` to request cancellation.
+- Use `arsi doctor my-experiment/recipe.yaml` to check schemas, bindings, contracts, declared Reflection resources, local inputs and supported runtime prerequisites. Evaluators delegate to the SDK's full doctor, including its download and Docker build probes. For coverage and side effects, see the [doctor guide](guides/doctor.md).
+- Use `arsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume` to resume an interrupted experiment, reusing the original Recipe, working directory, and experiment ID.
+- Use `arsi dashboard --port <port>` to inspect candidates, measurements, and calls. Run it from the same working directory containing `.rsi/` and open the address printed by the command. The `Reflection & Memory` tab also lets you inspect experience and revisions, and preview and apply Reflection changes; see [Dashboard](guides/running-experiments.md#dashboard). Start, resume, and cancel through the CLI.
 
 Inspect the saved experiment status, Measurement status and coverage, and scores separately after a run. See [running and troubleshooting experiments](guides/running-experiments.md).
 

@@ -8,7 +8,7 @@ This guide covers three ways to provide skills: to a coding Agent, to the evalua
 
 The RSI skill guides a coding Agent through writing Recipes, validating configuration, and troubleshooting experiments.
 
-1. Place the complete [RSI skill directory](../../../skills/ember-rsi/SKILL.md) in a skill location supported by your Agent, keeping `SKILL.md` and its sibling `references/` and `assets/` directories.
+1. Place the complete [RSI skill directory](../../../skills/arsi/SKILL.md) in a skill location supported by your Agent, keeping `SKILL.md` and its sibling `references/` and `assets/` directories.
 2. Ask the Agent to read the skill, then give it a concrete task, such as “Write a Recipe for this project and validate it.” You can also give the Agent the path to `SKILL.md` directly.
 
 ## Add a skill to the evaluated Agent

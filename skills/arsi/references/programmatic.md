@@ -1,10 +1,10 @@
 # Embed the Runtime
 
-The fully runnable [run.mjs](../assets/minimal/run.mjs) creates a host, loads extensions, assembles a Recipe, awaits execution, checks facts and disposes in finally. Copy its entire directory as described in [quickstart](quickstart.md). For experiment preflight, run `ember-rsi doctor <recipe.yaml>` in the intended environment with the same extension directories.
+The fully runnable [run.mjs](../assets/minimal/run.mjs) creates a host, loads extensions, assembles a Recipe, awaits execution, checks facts and disposes in finally. Copy its entire directory as described in [quickstart](quickstart.md). For experiment preflight, run `arsi doctor <recipe.yaml>` in the intended environment with the same extension directories.
 
 ```js
 import { resolve } from 'node:path';
-import { createRuntime, Recipe } from 'ember-rsi';
+import { createRuntime, Recipe } from 'arsi';
 const runtime = await createRuntime({
   rootDirectory: process.cwd(),
   directory: resolve('.rsi'),

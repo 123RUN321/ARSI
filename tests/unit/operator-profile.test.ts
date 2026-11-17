@@ -212,7 +212,7 @@ test('a rebuilt SDK cannot profile an assessment from the previous build', async
   for (const name of await readdir(join(repository, 'node_modules'))) {
     const installed = join(repository, 'node_modules', name);
     const isolated = join(modules, name);
-    if (name === 'ember-evaluator')
+    if (name === 'arsi-evaluator')
       await cp(await realpath(installed), isolated, { recursive: true });
     else await symlink(installed, isolated, 'dir');
   }
@@ -346,7 +346,7 @@ test('a rebuilt SDK cannot profile an assessment from the previous build', async
     { action: 'evaluate', candidateRef: 'candidate', caseIds: ['fixed'] },
     context,
   );
-  const distribution = join(modules, 'ember-evaluator/dist');
+  const distribution = join(modules, 'arsi-evaluator/dist');
   const replay = 'plugins/benchmarks/operator/kernel/runtime/msprof_replay.py';
   await appendFile(
     join(distribution, replay),

@@ -89,7 +89,7 @@ test('SDK doctor invokes the installed public CLI with isolated configuration an
   const call = f.calls[0];
   assert.equal(call.executable, process.execPath);
   const cli = join(
-    dirname(fileURLToPath(import.meta.resolve('ember-evaluator'))),
+    dirname(fileURLToPath(import.meta.resolve('arsi-evaluator'))),
     'cli.js',
   );
   await access(cli);

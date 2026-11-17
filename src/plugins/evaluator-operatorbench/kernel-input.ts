@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { parseKernelContract, type KernelContract } from 'ember-evaluator';
+import { parseKernelContract, type KernelContract } from 'arsi-evaluator';
 import type { JsonObject } from '../../contracts/index.js';
 import type { OperatorbenchInput } from '../../contracts/plugin-types/operatorbench.js';
 import type { KernelExecution } from '../application-kernel/schema.js';

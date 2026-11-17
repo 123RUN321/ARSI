@@ -2,7 +2,7 @@ import {
   HarborBenchmark,
   parseHarborConfig,
   PINNED_NODE_IMAGE,
-} from 'ember-evaluator';
+} from 'arsi-evaluator';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';

@@ -4,7 +4,7 @@ Apply [experiment workflow](experiment-workflow.md); this reference specializes 
 
 ## Reuse and known gaps
 
-The registered `policy.parameter-grid` uses `proposer.grid`, `evaluator.inferencebench` and `selector.metric`. Use `ember-rsi catalog` to check IDs and [public schema lookup](plugins.md#discover-schemas-through-public-apis) for configuration schemas on the installed version. Inference Application config has the same Target/baseline pair as [Recipes](recipes.md), plus exactly one of:
+The registered `policy.parameter-grid` uses `proposer.grid`, `evaluator.inferencebench` and `selector.metric`. Use `arsi catalog` to check IDs and [public schema lookup](plugins.md#discover-schemas-through-public-apis) for configuration schemas on the installed version. Inference Application config has the same Target/baseline pair as [Recipes](recipes.md), plus exactly one of:
 
 - Local: `start: { argv: [...] }`, `endpoint: { model, basePath? }`. Application owns the launched process and allocated endpoint.
 - Remote: `remote: { script, executable?, parametersFile?, timeoutMs? }`, `endpoint: { origin, model, basePath? }`. A supplied adapter implements start/status/stop for the authorized environment; an arbitrary SSH command is not that protocol.

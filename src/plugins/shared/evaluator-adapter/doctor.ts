@@ -22,7 +22,7 @@ async function networkConfigPath(
 ): Promise<string> {
   if (process.env.EVALUATOR_NETWORK_CONFIG)
     return resolve(process.env.EVALUATOR_NETWORK_CONFIG);
-  const configured = join(homedir(), '.ember-evaluator', 'network.yaml');
+  const configured = join(homedir(), '.arsi-evaluator', 'network.yaml');
   try {
     await lstat(configured);
     return configured;

@@ -165,7 +165,7 @@ steps:
 在插件的配置 Schema 中，标明 `prompt` 填文件路径、`guidance` 填目录路径。`x-rsi-path` 是给 Runtime 识别路径用的标记，让它能够读取相应内容：
 
 ```ts
-import type { JsonSchema } from 'ember-rsi/contracts';
+import type { JsonSchema } from 'arsi/contracts';
 
 export const configSchema: JsonSchema = {
   type: 'object',
@@ -237,9 +237,9 @@ targets:
 使用与实验相同的 Runtime 数据目录执行：
 
 ```text
-ember-rsi reflection list [experimentId]
-ember-rsi reflection show <revisionID>
-ember-rsi reflection apply <revisionID>
+arsi reflection list [experimentId]
+arsi reflection show <revisionID>
+arsi reflection apply <revisionID>
 ```
 
 - `list` 列出初始版、生成版和旧版，可按实验筛选。
