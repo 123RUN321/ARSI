@@ -24,6 +24,10 @@ export const createAgentOpenCode: OperationDefinition<
   );
   return {
     async execute(request, context) {
+      if (request.role !== undefined)
+        throw new Error(
+          'OpenCode role dispatch is not supported by this adapter; use native delegation',
+        );
       return runSession({
         config,
         directory: request.cwd,

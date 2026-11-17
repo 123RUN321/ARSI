@@ -101,6 +101,11 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
         target.args = event.input;
         target.status = 'Running';
       } else {
+        if (target.status === 'Running' && target.at && record.at) {
+          const elapsed = Date.parse(record.at) - Date.parse(target.at);
+          if (Number.isFinite(elapsed) && elapsed >= 0)
+            target.duration = elapsed / 1000;
+        }
         target.result = event.output;
         target.status =
           event.status === 'failed'

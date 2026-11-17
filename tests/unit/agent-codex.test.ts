@@ -102,3 +102,98 @@ test('native agents reject an unenforceable modelCalls budget before launch', as
     /cannot enforce/,
   );
 });
+
+for (const model of [undefined, 'explicit-model']) {
+  test(`Codex preserves native instructions and forwards schema with model ${model ?? 'default'}`, async (t) => {
+    const sent: Array<Record<string, unknown>> = [];
+    const f = await agentFixture(async (_spec, consume) => {
+      const send = (message: unknown) => {
+        sent.push(JSON.parse(JSON.stringify(message)));
+      };
+      await consume(JSON.stringify({ id: 1, result: {} }), send);
+      await consume(
+        JSON.stringify({ id: 2, result: { thread: { id: 't' } } }),
+        send,
+      );
+      await consume(
+        JSON.stringify({
+          method: 'item/completed',
+          params: {
+            threadId: 't',
+            item: { type: 'agentMessage', text: '{"answer":"ok"}' },
+          },
+        }),
+        send,
+      );
+      await consume(
+        JSON.stringify({
+          method: 'turn/completed',
+          params: { threadId: 't', turn: { status: 'completed' } },
+        }),
+        send,
+      );
+    });
+    t.after(() => f.close());
+    const agent = await createAgentCodex(
+      {
+        executable: process.execPath,
+        ...(model ? { model } : {}),
+        thinkingLevel: 'high',
+      },
+      f.context,
+    );
+    assert.deepEqual(await f.execute(agent), { answer: 'ok' });
+    assert.deepEqual(sent[1], {
+      id: 2,
+      method: 'thread/start',
+      params: {
+        cwd: f.directory,
+        ephemeral: true,
+        ...(model ? { model } : {}),
+        config: { model_reasoning_effort: 'high' },
+      },
+    });
+    const turn = sent[2].params as Record<string, unknown>;
+    assert.deepEqual(turn.outputSchema, f.request.outputSchema);
+    assert.equal('baseInstructions' in turn, false);
+    assert.equal('approvalPolicy' in turn, false);
+  });
+}
+
+for (const [message, pattern] of [
+  [
+    { id: 1, error: { code: -32000, message: 'Native transport failed' } },
+    /Native transport failed.*-32000/,
+  ],
+  [
+    { id: 9, method: 'item/commandExecution/requestApproval', params: {} },
+    /requires interactive input or approval/,
+  ],
+  [
+    {
+      method: 'turn/completed',
+      params: {
+        turn: {
+          status: 'failed',
+          error: { code: 'context_window_exceeded', message: 'Context full' },
+        },
+      },
+    },
+    /Context full.*context_window_exceeded/,
+  ],
+] as const) {
+  test(`Codex preserves native failure: ${pattern.source}`, async (t) => {
+    let launches = 0;
+    const f = await agentFixture(async (_spec, consume) => {
+      launches++;
+      await consume(JSON.stringify(message), () => {});
+    });
+    t.after(() => f.close());
+    const agent = await createAgentCodex(
+      { executable: process.execPath },
+      f.context,
+    );
+    await assert.rejects(f.execute(agent), pattern);
+    assert.equal(launches, 1);
+  });
+}

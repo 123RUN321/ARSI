@@ -80,7 +80,7 @@ The entire `budget` object is optional, and either field can also be omitted ind
 | `budget.modelCalls`     | Cap new model calls made by one Reflection invocation.     | A nonnegative integer, such as `10`. `0` prevents new model calls. Omit it to apply no local limit for this dimension. |
 | `budget.timeoutSeconds` | Cap the duration of one Reflection invocation, in seconds. | A positive integer, such as `3600` for 60 minutes. Omit it to apply no local limit for this dimension.                 |
 
-Experiment budgets, binding-level `execution.timeoutMs` and backend model-request limits still apply.
+Experiment budgets and the Agent's own limits still apply, such as `agent.pi`'s `executionTimeoutMs`.
 
 ### Evidence supplied to Reflection
 

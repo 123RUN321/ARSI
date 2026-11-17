@@ -7,10 +7,11 @@ function event(
   sequence: number,
   value: AgentEvent,
   runId = 'main',
+  at: string | null = null,
 ): CallTrace['items'][number] {
   return {
     sequence,
-    at: null,
+    at,
     type: value.type,
     runId,
     event: value,
@@ -69,4 +70,58 @@ test('parallel tools pair by run and ID, and final messages replace their deltas
   assert.equal(rows[2].body, 'hello');
   assert.equal(rows[3].result, 'child');
   assert.equal(rows.length, 4);
+});
+
+test('tool durations use matching run timestamps and leave missing starts unknown', () => {
+  const rows = traceRows([
+    event(
+      1,
+      { type: 'tool.started', toolCallId: 'a', name: 'Read', input: {} },
+      'main',
+      '2026-11-17T00:00:00.000Z',
+    ),
+    event(
+      2,
+      { type: 'tool.started', toolCallId: 'a', name: 'Read', input: {} },
+      'child',
+      '2026-11-17T00:00:01.000Z',
+    ),
+    event(
+      3,
+      {
+        type: 'tool.completed',
+        toolCallId: 'a',
+        output: '',
+        status: 'succeeded',
+      },
+      'main',
+      '2026-11-17T00:00:02.500Z',
+    ),
+    event(
+      4,
+      {
+        type: 'tool.completed',
+        toolCallId: 'a',
+        output: '',
+        status: 'succeeded',
+      },
+      'child',
+      '2026-11-17T00:00:04.000Z',
+    ),
+    event(
+      5,
+      {
+        type: 'tool.completed',
+        toolCallId: 'orphan',
+        output: '',
+        status: 'succeeded',
+      },
+      'main',
+      '2026-11-17T00:00:05.000Z',
+    ),
+  ]);
+  assert.deepEqual(
+    rows.map((row) => row.duration),
+    [2.5, 3, null],
+  );
 });

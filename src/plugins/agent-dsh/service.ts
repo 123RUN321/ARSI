@@ -26,6 +26,8 @@ export const createAgentDsh: OperationDefinition<
   );
   return {
     async execute(request, context) {
+      if (request.role !== undefined)
+        throw new Error('For DSH role delegation, use native subagents');
       const launch: import('../../contracts/index.js').AgentProcessLauncher = (
         spec,
         onLine,
@@ -70,9 +72,10 @@ export const createAgentDsh: OperationDefinition<
           JSON.stringify({
             goal: request.goal,
             instruction:
-              'Read AGENTS.md. Return proposed changes through the requested result Schema; leave task input files unchanged. Return only the JSON object matching outputSchema.',
+              'Read AGENTS.md and follow the project instructions. Use native subagents for delegation, reading roles/<name>.md when a role is listed. The project is read-only; return proposed edits in the requested JSON rather than modifying files. Return only the JSON object matching outputSchema in your final answer.',
             outputSchema: request.outputSchema,
-          }),
+          }) +
+            '\n\nAfter completing the task, your final response MUST be only the JSON object matching outputSchema above. Do not summarize your work in prose or Markdown. A prose response is a failed task.',
           (line) => {
             const event = object(JSON.parse(line));
             observe(event);

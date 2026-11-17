@@ -24,6 +24,8 @@ export const createAgentClaudeCode: OperationDefinition<
   );
   return {
     async execute(request, context) {
+      if (request.role !== undefined)
+        throw new Error('For Claude Code role delegation, use native Agent');
       return runSession({
         config,
         directory: request.cwd,

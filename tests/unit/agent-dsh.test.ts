@@ -7,6 +7,17 @@ import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 test('DSH consumes committed text, thinking, tools, truncation and its native final result', async (t) => {
   const f = await agentFixture(async (spec, consume) => {
     assert(!spec.args.includes('--permission-mode'));
+    const [body, reminder] = spec.input.split('\n\n');
+    assert.deepEqual(JSON.parse(body), {
+      goal: 'Return an answer',
+      instruction:
+        'Read AGENTS.md and follow the project instructions. Use native subagents for delegation, reading roles/<name>.md when a role is listed. The project is read-only; return proposed edits in the requested JSON rather than modifying files. Return only the JSON object matching outputSchema in your final answer.',
+      outputSchema: f.request.outputSchema,
+    });
+    assert.equal(
+      reminder,
+      'After completing the task, your final response MUST be only the JSON object matching outputSchema above. Do not summarize your work in prose or Markdown. A prose response is a failed task.',
+    );
     for (const event of [
       { type: 'session', sessionId: 's1' },
       { type: 'thinking', text: 'Visible reasoning' },

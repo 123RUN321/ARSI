@@ -80,6 +80,7 @@ export async function createPiSession(
     role: string,
     goal: string,
     parent: PiTask,
+    signal: AbortSignal,
   ) => Promise<AgentOutput>,
 ): Promise<{
   execute(request: PiTask, context: RuntimeContext): Promise<AgentOutput>;
@@ -206,8 +207,15 @@ export async function createPiSession(
         await resourceLoader.reload();
         const tools = projectTools(cwd);
         if (request.role === undefined) {
-          const tool = await createProjectSubagentTool(cwd, (role, goal) =>
-            delegate(role, goal, request),
+          const tool = await createProjectSubagentTool(
+            cwd,
+            (role, goal, toolSignal) =>
+              delegate(
+                role,
+                goal,
+                request,
+                toolSignal ? AbortSignal.any([signal, toolSignal]) : signal,
+              ),
           );
           if (tool) tools.push(tool);
         }

@@ -29,7 +29,10 @@ export const createAgentPi: OperationDefinition<
     throw new Error('agent.pi maxTokens must not exceed contextWindow');
   return {
     async execute(request, context) {
-      async function runTask(task: PiTask): Promise<AgentOutput> {
+      async function runTask(
+        task: PiTask,
+        signal: AbortSignal,
+      ): Promise<AgentOutput> {
         if (task.parentRunId !== null)
           context.event.emit('rsi/agent-observation', {
             runId: task.runId,
@@ -40,29 +43,37 @@ export const createAgentPi: OperationDefinition<
               text: task.goal,
             },
           });
-        const session = await createPiSession(config, (role, goal, parent) =>
-          runTask({
-            ...parent,
-            role,
-            goal,
-            runId: `child-${randomUUID()}`,
-            parentRunId: parent.runId,
-            outputSchema: {
-              type: 'object',
-              properties: { findings: { type: 'string' } },
-              required: ['findings'],
-              additionalProperties: false,
-            },
-          }),
+        const session = await createPiSession(
+          config,
+          (role, goal, parent, childSignal) =>
+            runTask(
+              {
+                ...parent,
+                role,
+                goal,
+                runId: `child-${randomUUID()}`,
+                parentRunId: parent.runId,
+                outputSchema: {
+                  type: 'object',
+                  properties: { findings: { type: 'string' } },
+                  required: ['findings'],
+                  additionalProperties: false,
+                },
+              },
+              childSignal,
+            ),
         );
-        return session.execute(task, context);
+        return session.execute(task, context.extend({ signal }));
       }
-      return runTask({
-        ...request,
-        cwd: request.cwd,
-        runId: 'main',
-        parentRunId: null,
-      });
+      return runTask(
+        {
+          ...request,
+          cwd: request.cwd,
+          runId: 'main',
+          parentRunId: null,
+        },
+        context.signal,
+      );
     },
     async dispose() {},
   };

@@ -21,7 +21,11 @@ export async function readProjectRole(
 /** Native Pi delegation stays inside the SDK call and its shared model budget. */
 export async function createProjectSubagentTool(
   cwd: string,
-  invoke: (role: string, task: string) => Promise<JsonObject>,
+  invoke: (
+    role: string,
+    task: string,
+    signal?: AbortSignal,
+  ) => Promise<JsonObject>,
 ): Promise<ToolDefinition | undefined> {
   const entries = await readdir(join(cwd, 'roles'), {
     withFileTypes: true,
@@ -52,7 +56,12 @@ export async function createProjectSubagentTool(
       signal?.throwIfAborted();
       validate(parameters, input, 'subagent input');
       const task = object(input);
-      const result = await invoke(string(task.agent), string(task.task));
+      const result = await invoke(
+        string(task.agent),
+        string(task.task),
+        signal,
+      );
+      signal?.throwIfAborted();
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
         details: {},

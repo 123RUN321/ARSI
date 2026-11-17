@@ -24,6 +24,8 @@ export const createAgentCodex: OperationDefinition<
   );
   return {
     async execute(request, context) {
+      if (request.role !== undefined)
+        throw new Error('For Codex role delegation, use native spawn_agent');
       return runSession({
         executable: config.executable,
         model: config.model,

@@ -95,27 +95,6 @@ Runtime executes this object's `execute(input, context)` for each plugin call. I
 | `dispose()`                         | Release instance-owned processes, connections, listeners, and other long-lived resources. | Required; complete cleanup asynchronously. May be empty when there are no resources.                                                      |
 | `canRetry(input, receipt, context)` | Confirm whether a failed or cancelled call can be replayed safely.                        | Optional; return `true` only after read-only checks confirm replay cannot duplicate effects. Does not replay calls with unknown outcomes. |
 
-## Agent execution and conversation observation
-
-Keep the Agent contract `{ goal, cwd, role?, outputSchema } → JsonObject`. The Runtime automatically validates the requested result Schema and owns conversation storage for every registered `contract.agent` operation. Existing plugins need no observation hooks. Call receipts remain the sole source of input, output and execution status.
-
-Native adapters may emit `context.event.emit('rsi/agent-observation', observation)` using the exported `AgentObservation` type. Missing or invalid observations produce an explicit coverage gap; they do not fail normal execution. A record storage failure aborts the call and prevents accepting its result. Messages, tools, usage and native child sessions use the same Dashboard view, with complete content and lazy loading for large payloads. Native children stay within the parent Runtime call. Historical diagnostic files are not read by this interface.
-
-Observation does not change business results: editors return JSON `edits`; the Proposer can request `proposals[]` in one Agent invocation, then validate and apply each proposal independently from the same parent candidate. The Application still accepts or rejects each candidate. There is no direct-file-editing result protocol.
-
-Public execution settings belong to the binding, not its plugin configuration:
-
-```yaml
-agent:
-  plugin: custom.agent
-  execution: { timeoutMs: 180000 }
-  config: {}
-```
-
-The Runtime validates and applies this deadline even when the plugin accepts only an empty configuration. Plugin factories receive only `config`; no deadline field or lifecycle hook is required. Deadlines propagate through the existing `context.signal`. A timed-out result cannot be accepted, and the parent signal is not cancelled by the local deadline.
-
-When the existing `canRetry` interface admits a retry, the Runtime archives the previous conversation under `agent-attempts/<recoveredFrom>/agent/` and starts a fresh `agent/` record. The matching prior receipt remains in `call-attempts`. Unknown outcomes and rejected retries do not archive or replace the active record. The journal stores conversation details only; there is no duplicate input manifest or old-format reader.
-
 ## Example: Write and use a minimal Proposer
 
 This plugin always keeps the parent candidate to verify registration and calls. It does not need a model.
