@@ -12,12 +12,12 @@ test('OpenCode records its V2 parts and returns only the stopped final message',
         sessionID: 's1',
         part: {
           id: 'p1',
-          callID: 't1',
           tool: 'read',
           state: {
             status: 'completed',
             input: { path: 'candidate/input.txt' },
             output: 'original',
+            time: { start: 1000, end: 3500 },
           },
         },
       },
@@ -46,5 +46,12 @@ test('OpenCode records its V2 parts and returns only the stopped final message',
   );
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
-  assert(records.items.some((r) => r.event?.type === 'tool.completed'));
+  assert(
+    records.items.some(
+      (r) =>
+        r.event.type === 'tool.completed' &&
+        r.event.toolCallId === 'p1' &&
+        r.event.durationMs === 2500,
+    ),
+  );
 });

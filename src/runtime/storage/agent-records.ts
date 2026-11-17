@@ -36,6 +36,7 @@ export class FileAgentRecorder {
     if (this.descriptor === undefined)
       throw new Error('Agent record is closed');
     const text = JSON.stringify(observation.event);
+    const event = { ...observation.event };
     let payload: AgentRecord['payload'] = null;
     if (Buffer.byteLength(text) > 8192) {
       const ref = createHash('sha256').update(text).digest('hex');
@@ -65,6 +66,11 @@ export class FileAgentRecorder {
         }
       }
       payload = { ref, bytes: bytes.length };
+      // Keep identities and status inline so lazy bodies remain filterable and pairable.
+      if ('text' in event) event.text = '';
+      if ('thinking' in event) event.thinking = '';
+      if ('input' in event) event.input = null;
+      if ('output' in event) event.output = null;
     }
     const record: AgentRecord = {
       sequence: this.sequence + 1,
@@ -72,7 +78,7 @@ export class FileAgentRecorder {
       recordedAt: new Date().toISOString(),
       runId: observation.runId,
       ...(observation.native ? { native: observation.native } : {}),
-      event: payload ? null : observation.event,
+      event,
       payload,
     };
     const bytes = Buffer.from(JSON.stringify(record) + '\n');

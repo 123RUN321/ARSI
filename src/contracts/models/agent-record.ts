@@ -25,6 +25,7 @@ export type AgentEvent =
       name?: string;
       output: JsonValue;
       status: 'succeeded' | 'failed' | 'unknown';
+      durationMs?: number;
     }
   | {
       type: 'usage.reported';
@@ -55,7 +56,7 @@ export interface AgentRecord {
   recordedAt: string;
   runId: string;
   native?: AgentObservation['native'];
-  event: AgentEvent | null;
+  event: AgentEvent;
   payload: AgentPayload | null;
 }
 
@@ -110,6 +111,7 @@ export const agentObservationSchema = recordSchema(
             name: text,
             output: value,
             status: { enum: ['succeeded', 'failed', 'unknown'] },
+            durationMs: { type: 'number', minimum: 0 },
           },
           ['type', 'toolCallId', 'output', 'status'],
         ),

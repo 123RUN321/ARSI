@@ -59,23 +59,28 @@ export function openCodeObservations(
       });
     else if (
       event.type === 'tool_use' &&
-      typeof part.callID === 'string' &&
+      typeof part.id === 'string' &&
       typeof part.tool === 'string'
     ) {
       const state = object(part.state);
       emit({
         type: 'tool.started',
-        toolCallId: part.callID,
+        toolCallId: part.id,
         name: part.tool,
         input: state.input ?? null,
       });
-      if (state.status === 'completed' || state.status === 'error')
+      if (state.status === 'completed' || state.status === 'error') {
+        const time = object(state.time ?? {});
         emit({
           type: 'tool.completed',
-          toolCallId: part.callID,
+          toolCallId: part.id,
           output: state.output ?? state.error ?? null,
           status: state.status === 'error' ? 'failed' : 'succeeded',
+          ...(typeof time.start === 'number' && typeof time.end === 'number'
+            ? { durationMs: time.end - time.start }
+            : {}),
         });
+      }
     } else if (event.type === 'step_finish' && part.tokens !== undefined)
       emit({
         type: 'usage.reported',

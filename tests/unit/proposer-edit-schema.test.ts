@@ -13,7 +13,9 @@ test('proposer edit anyOf preserves the exclusive tagged operation contract', ()
     const branch = object(value);
     assert.ok(Array.isArray(branch.required));
     assert.ok(branch.required.includes('op'));
-    const tag = object(object(branch.properties).op).const;
+    const operation = object(object(branch.properties).op);
+    assert.equal(operation.type, 'string');
+    const tag = operation.const;
     assert.equal(typeof tag, 'string');
     return tag;
   });

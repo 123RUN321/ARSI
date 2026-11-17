@@ -61,15 +61,10 @@ export function TraceInspector({
         (filter === 'Tools' && r.kind === 'tool') ||
         (filter === 'Errors' && r.status === 'Failed')),
   );
-  const selected =
-    visible.find(
-      (r) =>
-        r.id === selection || (!!selection && r.aliases?.includes(selection)),
-    ) ?? visible[0];
-  const selectedEvent = events.find(
-    (event) => String(event.sequence) === selected?.id,
-  );
-  const payloadRef = !closed ? selectedEvent?.payloadRef : null;
+  const selected = visible.find((r) => r.id === selection) ?? visible[0];
+  const payloadRef = !closed
+    ? selected?.payloadRefs?.find((ref) => !Object.hasOwn(payloads, ref))
+    : null;
   const payload = useObservation(
     payloadRef && !payloads[payloadRef]
       ? `/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}/agent/payloads/${encodeURIComponent(payloadRef)}`

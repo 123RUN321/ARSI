@@ -14,7 +14,7 @@ export interface TraceRow {
   body?: string;
   args?: unknown;
   result?: unknown;
-  aliases?: string[];
+  payloadRefs?: string[];
 }
 export function eventObject(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -52,11 +52,6 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
       at: record.at,
       duration: null,
     };
-    if (record.payloadRef && !event.type) {
-      row.summary = 'Select to load the complete recorded content';
-      rows.push(row);
-      continue;
-    }
     const key = (id: unknown): string => `${runId}:${String(id)}`;
     if (
       event.type === 'message.appended' ||
@@ -73,13 +68,19 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
         messages.set(messageKey, target);
         rows.push(target);
       }
-      (target.aliases ??= []).push(String(record.sequence));
+      if (record.payloadRef)
+        (target.payloadRefs ??= []).push(record.payloadRef);
       target.body =
         event.type === 'message.appended'
           ? (target.body ?? '') + eventText(event.text)
           : eventText(event.text);
       if (typeof event.thinking === 'string') target.thinking = event.thinking;
-      target.summary = target.body || target.thinking || 'Recorded message';
+      target.summary =
+        target.body ||
+        target.thinking ||
+        (target.payloadRefs?.length
+          ? 'Select to load the complete recorded content'
+          : 'Recorded message');
       target.status =
         event.type === 'message.completed' ? 'Completed' : 'Streaming';
     } else if (
@@ -95,13 +96,16 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
         tools.set(toolKey, target);
         rows.push(target);
       }
-      (target.aliases ??= []).push(String(record.sequence));
+      if (record.payloadRef)
+        (target.payloadRefs ??= []).push(record.payloadRef);
       if (typeof event.name === 'string') target.title = event.name;
       if (event.type === 'tool.started') {
         target.args = event.input;
         target.status = 'Running';
       } else {
-        if (target.status === 'Running' && target.at && record.at) {
+        if (typeof event.durationMs === 'number') {
+          target.duration = event.durationMs / 1000;
+        } else if (target.status === 'Running' && target.at && record.at) {
           const elapsed = Date.parse(record.at) - Date.parse(target.at);
           if (Number.isFinite(elapsed) && elapsed >= 0)
             target.duration = elapsed / 1000;

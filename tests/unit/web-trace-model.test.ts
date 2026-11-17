@@ -125,3 +125,27 @@ test('tool durations use matching run timestamps and leave missing starts unknow
     [2.5, 3, null],
   );
 });
+
+test('lazy tool bodies retain pairing, completion status and both payload references', () => {
+  const start = event(1, {
+    type: 'tool.started',
+    toolCallId: 't',
+    name: 'Read',
+    input: null,
+  });
+  const end = event(2, {
+    type: 'tool.completed',
+    toolCallId: 't',
+    output: null,
+    status: 'succeeded',
+    durationMs: 2500,
+  });
+  start.payloadRef = 'input-ref';
+  end.payloadRef = 'output-ref';
+  const rows = traceRows([start, end]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'tool');
+  assert.equal(rows[0].status, 'Succeeded');
+  assert.equal(rows[0].duration, 2.5);
+  assert.deepEqual(rows[0].payloadRefs, ['input-ref', 'output-ref']);
+});

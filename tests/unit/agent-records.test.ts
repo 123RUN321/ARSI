@@ -43,7 +43,12 @@ test('record pagination reaches beyond the former 4 MiB prefix without dropping 
   assert.equal(page.total, 5002);
   assert.equal(page.items[0]?.sequence, 5000);
   const large = page.items[1]!;
-  assert.equal(large.event, null);
+  assert.deepEqual(large.event, {
+    type: 'message.completed',
+    messageId: 'large',
+    role: 'assistant',
+    text: '',
+  });
   assert(large.payload);
   assert.equal(
     JSON.parse((await readAgentPayload(root, large.payload.ref)).toString())
