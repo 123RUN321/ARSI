@@ -106,8 +106,6 @@ arsi dashboard --port <port>
 
 Run from an experiment workspace that already contains `.rsi/`. The web dashboard displays experiments, summaries, candidates, diffs, measurements, calls, Agent traces, results, and charts, as shown below.
 
-On the Experiments page, select a Policy to filter the full experiment collection before pagination. All policies clears the selection. Changing Policy returns to the first page, and the URL retains the selection on refresh. The text search filters only the current page.
-
 Measurement details show each recorded item's full identifier, subject kind, status, coverage, and metrics. Failed, cancelled, and unknown items show no valid score rather than a numeric result. Missing item evidence is reported explicitly; a successful zero score remains zero.
 Metrics that share a display label include their recorded metric names so distinct values remain identifiable.
 
