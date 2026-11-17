@@ -28,7 +28,7 @@ The helper runs authenticated GET `/models` using Node in the SDK's pinned gatew
 
 ## Run and inspect
 
-After source metadata, Docker access, gateway connectivity and the external request/token allowance are confirmed, launch the small Recipe. The supplied example starts with one task, one proposal round and concurrency one; adapt those limits to the authorized campaign. A real run may still reveal a preparation error: preserve native error details and follow bounded recovery, without altering the scorer or manufacturing metrics.
+After source metadata, Docker access, gateway connectivity and the external request/token allowance are confirmed, complete the [configuration and readiness review](experiment-workflow.md#review-the-prepared-experiment-with-the-user) before launching the small Recipe. The supplied example starts with one task, one proposal round and concurrency one; analyze execution and preparation limits for the actual Policy and host before adapting those values. A real run may still reveal a preparation error: preserve native error details and follow bounded recovery, without altering the scorer or manufacturing metrics.
 
 Verify actual Measurement `status`, `coverage`, metric definitions and native task results. Confirm the selected Candidate belongs to the returned Measurement and compare under identical task IDs and conditions. No-change or a tie is legitimate but does not prove a changed candidate was evaluated; report that boundary explicitly.
 

@@ -11,6 +11,8 @@ RSI Skill 用来指导编程助手编写 Recipe、校验配置和排查实验。
 1. 将完整的 [RSI Skill 目录](../../../skills/arsi/SKILL.md)放到 Agent 支持的 Skill 目录中，保留 `SKILL.md` 及同级的 `references/`、`assets/`。
 2. 让 Agent 读取该 Skill，再提出具体任务，例如“为当前项目编写 Recipe 并执行校验”。也可以直接向助手提供 `SKILL.md` 的路径。
 
+对于 SDK 评估实验，Skill 会优先复用已安装 Evaluator 支持的配置及原生数据、运行环境准备流程。编写 Recipe 后，先验证配置，再分别分析执行并发和预热并发，并在已授权的准备范围内于实际执行主机运行 doctor。助手会汇报失败项、未检查项和未执行的检查，再给出最终配置、并发上限、预算及下一步操作，在计分执行前请你确认。已经确认过的相同配置和执行范围继续有效。详见[实验准备流程](../../../skills/arsi/references/experiment-workflow.md#validate-the-written-configuration)。
+
 ## 为被评测的 Agent 添加 Skill
 
 这类 Skill 随 Baseline Agent Bundle 提供，由 Bundle 中的 Agent 插件读取，指导被评测的 Agent 完成任务。

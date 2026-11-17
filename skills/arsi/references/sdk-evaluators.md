@@ -4,6 +4,18 @@ The starter's `evaluator.skill-text` demonstrates a legal custom evaluator. For 
 
 Both config schemas require `services` (nonempty object) and `benchmark` (name string or object). Optional fields are `environment`, `scheduler`, `store`, `reporter` (string or object), `metrics` (array), `run`, `deployment`, `output` (objects). Their nested provider-specific meaning belongs to the installed SDK; RSI's broad schema acceptance does not prove that a provider exists or accepts those fields.
 
+## Start from the installed Evaluator configuration
+
+Find the selected benchmark's playbook/example or profile in the installed Evaluator version, then read its public schemas and network/preparation guidance. Reuse its supported data source, revision/format, verifier, environment and runtime preparation. Adapt only the fields required by the user's experiment and the RSI application/solver lifecycle; record those overrides. If no example exists, use the installed public schemas and documentation before concluding that an integration is missing.
+
+Prefer native data downloading, integrity validation and caching. A local corpus override is appropriate when an accessible, verified source is deliberately selected; do not make it mandatory when the SDK supports downloading. Data access credentials and any required account approval still need to be supplied to the actual launching process. A readable dataset description or metadata response does not prove that restricted files can be downloaded. Diagnose the native authorization error rather than replacing the source or inventing a manual download requirement.
+
+Treat historical machine names, operating-system versions, absolute paths and local runbooks as evidence about that run. Require them only when the installed SDK or current execution setup actually depends on them. Preserve scientific comparison conditions while checking the available host's supported environment.
+
+Keep the requested model route, gateway/provider mapping and returned model ID distinct. An ID in a model response is not necessarily a valid request alias. Use an existing verified route where available; a model-list response alone does not establish successful inference or tool calling. Check those capabilities only within the authorized probe budget, and report untested paths explicitly. Keep credential values in host-local configuration and shared Recipes limited to environment references.
+
+After writing the Recipe, follow the [validation, concurrency analysis, diagnostics and user review](experiment-workflow.md#validate-the-written-configuration) before launch. Reuse native SDK diagnostics and warmup instead of creating a separate preparation runner.
+
 ## Complete TerminalBench campaign
 
 Copy the base [starter](quickstart.md), then copy the contents of `assets/terminalbench/` into the same destination, including [terminalbench-recipe.yaml](../assets/terminalbench/terminalbench-recipe.yaml) and [terminalbench-policy.yaml](../assets/terminalbench/terminalbench-policy.yaml). This variant uses the real SDK evaluator, the bundled AgentBundle, a real model proposer and metric selection. It measures the baseline, proposes at most one changed candidate, evaluates it on the same task and retains the selected candidate/measurement pair. A no-change proposal retains the baseline. It does not use the synthetic text evaluator.
@@ -19,8 +31,11 @@ Follow [TerminalBench runtime preparation](terminalbench-runtime.md) and the bun
 - The user authorizes the benchmark cost. The recipe limits each evaluator run to 300 seconds and the RSI stage to 900000 ms with cleanup reserve. RSI `modelCalls` counts editor calls, **not all benchmark solver requests**. Establish a separate solver/gateway spending limit before real execution; if unavailable, stop at prepared configuration.
 
 ```sh
+arsi doctor .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension --static
+# Analyze execution/preparation concurrency, then diagnose on the execution host.
 arsi doctor .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension
-# Run only after the prerequisites and external spending limit above are satisfied.
+# Present readiness findings and obtain configuration/execution confirmation before run.
+# Reuse existing approval for the same configuration, prerequisites and spending limit.
 arsi run .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension --id terminalbench-01
 arsi show terminalbench-01
 ```

@@ -11,6 +11,8 @@ The RSI skill guides a coding Agent through writing Recipes, validating configur
 1. Place the complete [RSI skill directory](../../../skills/arsi/SKILL.md) in a skill location supported by your Agent, keeping `SKILL.md` and its sibling `references/` and `assets/` directories.
 2. Ask the Agent to read the skill, then give it a concrete task, such as “Write a Recipe for this project and validate it.” You can also give the Agent the path to `SKILL.md` directly.
 
+For SDK-backed experiments, the skill first reuses the installed Evaluator's supported configuration and native data/runtime preparation. After writing the Recipe, it validates the configuration, analyzes execution and preparation concurrency separately, and runs doctor on the intended host within the authorized preparation scope. It reports failures, unchecked items and any checks not run, then presents the final configuration, concurrency limits, budgets and proposed next step for your confirmation before scored execution. Approval already given for the same configuration and scope remains valid. See the [experiment preparation workflow](../../../skills/arsi/references/experiment-workflow.md#validate-the-written-configuration).
+
 ## Add a skill to the evaluated Agent
 
 These skills are provided with the Baseline Agent Bundle and read by its Agent plugin to guide the evaluated Agent's task execution.
