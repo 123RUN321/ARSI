@@ -105,7 +105,18 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const request = JSON.parse(line);
   (async () => {
     if (request.method === 'initialize') send({ id: request.id, result: {} });
-    else if (request.method === 'thread/start') {
+    else if (request.method === 'config/read') {
+      const windows = config.windowsSandbox
+        ? { sandbox: config.windowsSandbox }
+        : {};
+      send({
+        id: request.id,
+        result: {
+          ...(config.malformedWindowsConfig ? {} : { config: { windows } }),
+          origins: config.windowsSandbox ? { 'windows.sandbox': {} } : {},
+        },
+      });
+    } else if (request.method === 'thread/start') {
       if (config.rpcError) {
         send({
           id: request.id,
@@ -134,6 +145,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
           dir: process.cwd(),
           pid: process.pid,
           home: process.env.CODEX_HOME,
+          registeredCore: process.env.CODEX_WINDOWS_REGISTERED_CORE ?? null,
           args,
           thread: threadParams,
           turn: request.params,

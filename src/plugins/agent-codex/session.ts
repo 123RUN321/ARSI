@@ -46,14 +46,36 @@ export async function runSession(options: {
   let threadId = '';
   let response = '';
   let result: JsonObject | undefined;
+  const platform = process.platform;
   const prompt = JSON.stringify({
     goal: request.goal,
     instruction:
       'Use the project instructions and return the requested JSON result.',
   });
   const launchConfig = [
+    'approval_policy="never"',
     `project_root_markers=[${JSON.stringify(projectMarker)}]`,
   ];
+  if (platform === 'win32')
+    launchConfig.push('sandbox_workspace_write.network_access=true');
+  const startThread = (
+    send: (message: unknown) => void,
+    policy: JsonObject,
+  ): void => {
+    send({
+      id: 2,
+      method: 'thread/start',
+      params: {
+        cwd: options.directory,
+        ephemeral: !hasRoles,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(options.reasoningEffort === undefined
+          ? {}
+          : { config: { model_reasoning_effort: options.reasoningEffort } }),
+        ...policy,
+      },
+    });
+  };
   const agentsDir = join(options.directory, '.codex', 'agents');
   const roles = await readdir(agentsDir, { withFileTypes: true }).catch(
     (error: unknown) => {
@@ -101,20 +123,42 @@ export async function runSession(options: {
         );
       if (message.method === undefined && message.id === 1) {
         send({ method: 'initialized' });
-        send({
-          id: 2,
-          method: 'thread/start',
-          params: {
-            cwd: options.directory,
-            ephemeral: !hasRoles,
-            ...(options.model === undefined ? {} : { model: options.model }),
-            ...(options.reasoningEffort === undefined
-              ? {}
-              : {
-                  config: { model_reasoning_effort: options.reasoningEffort },
-                }),
-          },
-        });
+        if (platform === 'win32') {
+          send({
+            id: 4,
+            method: 'config/read',
+            params: { cwd: options.directory },
+          });
+        } else {
+          startThread(send, {});
+        }
+      } else if (
+        platform === 'win32' &&
+        message.method === undefined &&
+        message.id === 4
+      ) {
+        const configRead = object(message.result, 'Codex config/read');
+        const config = object(configRead.config, 'Codex config');
+        const origins = object(configRead.origins, 'Codex config origins');
+        const windows =
+          config.windows == null
+            ? {}
+            : object(config.windows, 'Codex Windows config');
+        if (
+          windows.sandbox === 'elevated' ||
+          windows.sandbox === 'unelevated'
+        ) {
+          startThread(send, { sandbox: 'workspace-write' });
+        } else if (
+          windows.sandbox == null &&
+          !Object.hasOwn(origins, 'windows.sandbox')
+        ) {
+          startThread(send, { sandbox: 'danger-full-access' });
+        } else {
+          throw new Error(
+            'Cannot determine the configured Windows Codex sandbox',
+          );
+        }
       } else if (message.method === undefined && message.id === 2) {
         const configuration = object(message.result);
         threadId = string(object(configuration.thread).id);

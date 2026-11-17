@@ -11,6 +11,7 @@ test('Codex drives app-server, records commentary and tools, and validates the t
     const send = (message: unknown) => sent.push(message);
     for (const message of [
       { id: 1, result: {} },
+      { id: 4, result: { config: { windows: {} }, origins: {} } },
       { id: 2, result: { thread: { id: 'thread1' }, model: 'test' } },
       {
         method: 'item/completed',
@@ -67,7 +68,7 @@ test('Codex drives app-server, records commentary and tools, and validates the t
     f.context,
   );
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
-  assert.equal(sent.length, 3);
+  assert.equal(sent.length, process.platform === 'win32' ? 4 : 3);
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
   assert(
     records.items.some(
@@ -106,11 +107,19 @@ test('native agents reject an unenforceable modelCalls budget before launch', as
 for (const model of [undefined, 'explicit-model']) {
   test(`Codex preserves native instructions and forwards schema with model ${model ?? 'default'}`, async (t) => {
     const sent: Array<Record<string, unknown>> = [];
-    const f = await agentFixture(async (_spec, consume) => {
+    const f = await agentFixture(async (spec, consume) => {
       const send = (message: unknown) => {
         sent.push(JSON.parse(JSON.stringify(message)));
       };
+      assert(spec.args.includes('approval_policy="never"'));
       await consume(JSON.stringify({ id: 1, result: {} }), send);
+      await consume(
+        JSON.stringify({
+          id: 4,
+          result: { config: { windows: {} }, origins: {} },
+        }),
+        send,
+      );
       await consume(
         JSON.stringify({ id: 2, result: { thread: { id: 't' } } }),
         send,
@@ -143,17 +152,24 @@ for (const model of [undefined, 'explicit-model']) {
       f.context,
     );
     assert.deepEqual(await f.execute(agent), { answer: 'ok' });
-    assert.deepEqual(sent[1], {
-      id: 2,
-      method: 'thread/start',
-      params: {
-        cwd: f.directory,
-        ephemeral: true,
-        ...(model ? { model } : {}),
-        config: { model_reasoning_effort: 'high' },
+    assert.deepEqual(
+      sent.find((message) => message.method === 'thread/start'),
+      {
+        id: 2,
+        method: 'thread/start',
+        params: {
+          cwd: f.directory,
+          ephemeral: true,
+          ...(model ? { model } : {}),
+          config: { model_reasoning_effort: 'high' },
+          ...(process.platform === 'win32'
+            ? { sandbox: 'danger-full-access' }
+            : {}),
+        },
       },
-    });
-    const turn = sent[2].params as Record<string, unknown>;
+    );
+    const turn = sent.find((message) => message.method === 'turn/start')!
+      .params as Record<string, unknown>;
     assert.deepEqual(turn.outputSchema, f.request.outputSchema);
     assert.equal('baseInstructions' in turn, false);
     assert.equal('approvalPolicy' in turn, false);
@@ -196,4 +212,71 @@ for (const [message, pattern] of [
     await assert.rejects(f.execute(agent), pattern);
     assert.equal(launches, 1);
   });
+}
+
+for (const sandbox of ['elevated', 'unelevated'] as const) {
+  test(
+    `Codex retains the native Windows ${sandbox} sandbox in standalone execution`,
+    { skip: process.platform !== 'win32' },
+    async (t) => {
+      const sent: Array<Record<string, unknown>> = [];
+      const f = await agentFixture(async (spec, consume) => {
+        assert(
+          spec.args.includes('sandbox_workspace_write.network_access=true'),
+        );
+        assert.equal(
+          Object.keys(spec.env ?? {}).some(
+            (name) => name.toUpperCase() === 'CODEX_WINDOWS_REGISTERED_CORE',
+          ),
+          false,
+        );
+        const send = (message: unknown) =>
+          sent.push(JSON.parse(JSON.stringify(message)));
+        for (const message of [
+          { id: 1, result: {} },
+          {
+            id: 4,
+            result: {
+              config: { windows: { sandbox } },
+              origins: { 'windows.sandbox': {} },
+            },
+          },
+          { id: 2, result: { thread: { id: 't' } } },
+          {
+            method: 'item/completed',
+            params: {
+              threadId: 't',
+              item: { type: 'agentMessage', text: '{"answer":"ok"}' },
+            },
+          },
+          {
+            method: 'turn/completed',
+            params: { threadId: 't', turn: { status: 'completed' } },
+          },
+        ])
+          await consume(JSON.stringify(message), send);
+      });
+      t.after(() => f.close());
+      const previous = process.env.CODEX_WINDOWS_REGISTERED_CORE;
+      process.env.CODEX_WINDOWS_REGISTERED_CORE = '1';
+      t.after(() => {
+        if (previous === undefined)
+          delete process.env.CODEX_WINDOWS_REGISTERED_CORE;
+        else process.env.CODEX_WINDOWS_REGISTERED_CORE = previous;
+      });
+      const agent = await createAgentCodex(
+        { executable: process.execPath },
+        f.context,
+      );
+      assert.deepEqual(await f.execute(agent), { answer: 'ok' });
+      assert.equal(
+        (
+          sent.find((message) => message.method === 'thread/start')!
+            .params as Record<string, unknown>
+        ).sandbox,
+        'workspace-write',
+      );
+      assert.equal(process.env.CODEX_WINDOWS_REGISTERED_CORE, '1');
+    },
+  );
 }

@@ -8,14 +8,14 @@ Memory stores experience documents for later optimization, such as effective exe
 
 ## 1. Use Memory in a built-in Policy
 
-Harness², WikiSkill and parameter.agent configure the Memory plugin, its prompt, its Agent binding, and the steps that save and consume its output:
+Harness², WikiSkill and policy.parameter-agent configure the Memory plugin, its prompt, its Agent binding, and the steps that save and consume its output:
 
 | Policy    | Evidence view      | When Memory is used                                                                                                                                              |
 | --------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Harness²  | `execution`        | Update the experience documents after each task and pass `memoryRef` to Proposers in later tasks. Enabled by default through `policy.config.memory`.             |
 | WikiSkill | `training-summary` | Update the experience documents after each round's training evaluation and pass `memoryRef` to that round's Proposer. There is no `memory` configuration switch. |
 
-`parameter.agent` enables Memory with `policy.config.memory: true` (default:
+`policy.parameter-agent` enables Memory with `policy.config.memory: true` (default:
 `false`). It consolidates each measured batch using `training-summary`, candidate
 sources and selector outcomes, then delivers the saved experience to subsequent
 proposals. Its output includes `memoryRef`. It retains the previous version on an

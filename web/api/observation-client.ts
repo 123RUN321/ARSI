@@ -26,6 +26,7 @@ import type {
   CandidateSummary,
   ExperimentOverview,
   ExperimentSummary,
+  ExperimentPage,
   JsonPreview,
   MeasurementSummary,
   MetricObservation,
@@ -104,6 +105,7 @@ export function parseExperiment(raw: unknown): ExperimentSummary {
   return {
     id: text(data.id),
     recipeId: nullable(data.recipeId),
+    policyRef: nullable(data.policyRef),
     status: text(data.status),
     startedAt: nullable(data.startedAt),
     finishedAt: nullable(data.finishedAt),
@@ -200,7 +202,12 @@ export const parseMetricRecords = parsePage((raw: unknown): MetricRecord => {
       : null,
   };
 });
-export const parseExperiments = parsePage(parseExperiment);
+export function parseExperiments(raw: unknown): ExperimentPage {
+  return {
+    ...parsePage(parseExperiment)(raw),
+    policies: array(record(raw).policies, text),
+  };
+}
 export const parseCalls = parsePage(parseCall);
 export const parseCandidates = parsePage(parseCandidate);
 export const parseMeasurements = parsePage(parseMeasurement);

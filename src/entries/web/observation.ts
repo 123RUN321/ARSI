@@ -27,10 +27,25 @@ export function registerObservationRoutes(
     additionalProperties: false,
   };
   type Window = { offset?: number; limit?: number };
-  app.get<{ Querystring: Window }>(
+  app.get<{ Querystring: Window & { policy?: string } }>(
     '/api/observation/experiments',
-    { schema: { querystring: pagination } },
-    (request) => queries.experiments(request.query.offset, request.query.limit),
+    {
+      schema: {
+        querystring: {
+          ...pagination,
+          properties: {
+            ...pagination.properties,
+            policy: { type: 'string', minLength: 1, maxLength: 256 },
+          },
+        },
+      },
+    },
+    (request) =>
+      queries.experiments(
+        request.query.offset,
+        request.query.limit,
+        request.query.policy,
+      ),
   );
   app.get<{ Params: { id: string } }>(
     '/api/observation/experiments/:id',

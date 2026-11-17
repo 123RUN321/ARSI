@@ -150,7 +150,13 @@ bindings:
 | DSH | Configure the model in the native headless profile |
 | OpenCode | `model`: `provider/model`, optionally followed by `#variant` |
 
-RSI keeps native model and authentication settings while limiting tasks to read-only proposals with no interactive approvals. Claude Code Hooks and MCP are disabled for RSI calls.
+RSI keeps native model and authentication settings and validates proposed edits before applying them.
+
+RSI launches Codex with `approval_policy = "never"`. Sandbox failures are returned to the agent without an approval prompt.
+
+On Windows, if the effective Codex configuration explicitly sets `windows.sandbox` to `"elevated"` or `"unelevated"`, RSI starts the session in `workspace-write` mode with network access. Windows without an explicit sandbox uses `danger-full-access`. Other platforms retain the native Codex execution configuration.
+
+On Windows, RSI removes the Desktop-only `CODEX_WINDOWS_REGISTERED_CORE` variable from its standalone Codex child process so workspace commands can use the standalone sandbox.
 
 ### Check and start
 
@@ -171,7 +177,7 @@ For native CLI backends, add `timeoutMs: 180000` to limit each Agent task to 3 m
 
 For inference optimization, `evaluator.inferencebench` supports `benchmark.name: aisbench` with the bundled SSH solver, or `agentx` with the replay solver. Use the same benchmark workload for the baseline and candidate trials. The Runtime enforces the experiment-wide limits in the Recipe’s `budget`.
 
-For `parameter.agent`, `policy.config.candidatesPerRound` defaults to 4 and accepts 1 through 6. The tuning Proposer returns that many candidates at most, ordered by priority and based on the same incumbent. The Policy invokes `evaluator.inferencebench` directly and serially, then uses the latest incumbent when requesting the next batch. `maxTrials` caps candidate attempts across all batches. Confirmed, cleaned startup failures reject the candidate; SDK measurement failures, cancellation or uncertain cleanup stop the experiment.
+For `policy.parameter-agent`, `policy.config.candidatesPerRound` defaults to 4 and accepts 1 through 6. The tuning Proposer returns that many candidates at most, ordered by priority and based on the same incumbent. The Policy invokes `evaluator.inferencebench` directly and serially, then uses the latest incumbent when requesting the next batch. `maxTrials` caps candidate attempts across all batches. Confirmed, cleaned startup failures reject the candidate; SDK measurement failures, cancellation or uncertain cleanup stop the experiment.
 
 `policy.config.maxTrials` must be a positive integer (default 8). It also bounds
 proposal rounds so repeated empty responses cannot create an unbounded loop.
@@ -186,7 +192,7 @@ is `max-trials` when the candidate limit is reached, `max-proposal-rounds` when
 the round limit is reached first, otherwise `null`. Budget exhaustion is recorded
 at experiment level and preserves the last committed incumbent in `partialOutput`.
 
-`parameter.agent` also supports independent `policy.config.memory` and
+`policy.parameter-agent` also supports independent `policy.config.memory` and
 `policy.config.reflection` switches, both `false` by default. Memory consolidates
 measured batches and passes the saved `memoryRef` to subsequent proposals;
 Reflection revises only Proposer `guidance` between batches when another trial
@@ -224,7 +230,7 @@ To migrate a custom Proposer prompt, remove `editProtocol` from the binding and 
 
 ## Limits and budgets
 
-When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `arsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `parameter.agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
+When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `arsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `policy.parameter-agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
 
 Omitted Recipe binding settings first inherit Policy defaults. The “When omitted” column describes settings that remain unset; limits at other layers can still apply.
 
@@ -238,8 +244,7 @@ Omitted Recipe binding settings first inherit Policy defaults. The “When omitt
 | Pi                                    | `maxTokens`                                        | Maximum output tokens per model request.                                                                                                                              | Omit the output-token limit from the request; the model service decides.                                          |
 | Pi                                    | `contextWindow`                                    | Context-window size in tokens used by Pi for context management; match it to the model's capabilities.                                                                | 262144 tokens.                                                                                                    |
 | Pi                                    | `timeoutMs`                                        | Duration limit per model request, in milliseconds.                                                                                                                    | The underlying HTTP client uses 600000 ms (10 minutes).                                                           |
-| Pi                                    | `executionTimeoutMs`                               | Duration limit for a complete Agent call in milliseconds, including requests, tools, compaction, retry waits, and subagents.                                          | No separate duration limit for the complete call.                                                                 |
-| Codex / Claude Code / DSH | `timeoutMs`                                        | Duration limit for the complete Agent call, in milliseconds.                                                                                                          | RSI sets no separate timeout for the call.                                                                        |
+| All Agent bindings | `execution.timeoutMs` | Duration limit for the complete Agent call, in milliseconds, outside plugin configuration. | No separate duration limit for the complete call. |
 | Operator Proposer                     | `modelRequestTimeoutMs`                            | Shared duration limit for a complete model stage in milliseconds, including tool continuations and delegated Agents.                                                  | 120000 ms (2 minutes).                                                                                            |
 | AgentBench Evaluator                  | `services.<service>.maxTokens`                     | Per-turn output-token limit for the model service used by the evaluated Agent.                                                                                        | Determined by Solver or model-service defaults.                                                                   |
 | AgentBench / InferenceBench Evaluator | `run.timeoutSeconds`                               | Duration limit for one benchmark task attempt, in seconds.                                                                                                            | Use the SDK benchmark profile's value; fall back to 7200 seconds (2 hours) if the profile omits it.               |

@@ -7,10 +7,14 @@ export interface Page<T> {
 export interface ExperimentSummary {
   id: string;
   recipeId: string | null;
+  policyRef: string | null;
   status: string;
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;
+}
+export interface ExperimentPage extends Page<ExperimentSummary> {
+  policies: string[];
 }
 export interface JsonPreview {
   text: string;

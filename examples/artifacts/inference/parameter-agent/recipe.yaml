@@ -19,7 +19,7 @@ application:
     shutdown: { gracePeriodMs: 30000 }
     credentials: { apiKeyEnv: VLLM_API_KEY }
 policy:
-  id: parameter.agent
+  id: policy.parameter-agent
   config:
     parameterFile: tuning.json
     maxTrials: 8

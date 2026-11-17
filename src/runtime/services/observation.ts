@@ -18,6 +18,7 @@ import type {
 import type {
   Page,
   ExperimentSummary,
+  ExperimentPage,
   ExperimentOverview,
   CallSummary,
   CallDetail,
@@ -70,6 +71,11 @@ function recordedStrings(
 }
 function optionalText(value: JsonValue | undefined): string | null {
   return typeof value === 'string' ? value : null;
+}
+function experimentPolicyRef(record: JsonObject): string | null {
+  const policy = record.recipe ? object(record.recipe).policy : undefined;
+  // Existing experiment snapshots use ref; current Recipes use id.
+  return policy ? optionalText(object(policy).id ?? object(policy).ref) : null;
 }
 function numbers(value: JsonValue | undefined): Record<string, number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -482,6 +488,7 @@ export class ObservationQueries {
     return {
       id: string(record.id),
       recipeId: optionalText(record.recipeId),
+      policyRef: experimentPolicyRef(record),
       status: string(record.status),
       startedAt: optionalText(record.startedAt),
       finishedAt: optionalText(record.finishedAt),
@@ -491,16 +498,35 @@ export class ObservationQueries {
           : null,
     };
   }
-  async experiments(offset = 0, limit = 50): Promise<Page<ExperimentSummary>> {
+  async experiments(
+    offset = 0,
+    limit = 50,
+    policy?: string,
+  ): Promise<ExperimentPage> {
     const entries = await this.facts.list('experiments');
+    const policies = [
+      ...new Set(
+        entries.flatMap((entry) => {
+          const ref = experimentPolicyRef(entry);
+          return ref ? [ref] : [];
+        }),
+      ),
+    ].sort();
     entries.sort(
       (a, b) =>
         String(b.startedAt ?? '').localeCompare(String(a.startedAt ?? '')) ||
         string(a.id).localeCompare(string(b.id)),
     );
-    const selected = page(entries, offset, limit);
+    const selected = page(
+      policy
+        ? entries.filter((entry) => experimentPolicyRef(entry) === policy)
+        : entries,
+      offset,
+      limit,
+    );
     return {
       ...selected,
+      policies,
       items: await Promise.all(
         selected.items.map(async (entry) =>
           this.summary(entry, await this.secrets(string(entry.id))),
