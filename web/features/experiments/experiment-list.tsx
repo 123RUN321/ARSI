@@ -19,7 +19,6 @@ import {
   TableRow,
 } from '../../components/ui/table';
 import { useObservation } from './use-observation';
-import { experimentStatus } from './experiment-summary';
 export function Experiments(): React.JSX.Element {
   const location = useRoute();
   const offset = location.offset ?? 0,
@@ -31,7 +30,7 @@ export function Experiments(): React.JSX.Element {
   if (policy) query.set('policy', policy);
   const result = useObservation(`?${query}`, parseExperiments);
   const visible = result.data?.items.filter((entry) =>
-    `${entry.id} ${entry.recipeId ?? ''} ${experimentStatus(entry)}`
+    `${entry.id} ${entry.recipeId ?? ''} ${entry.status}`
       .toLowerCase()
       .includes(search.trim().toLowerCase()),
   );
@@ -103,7 +102,7 @@ export function Experiments(): React.JSX.Element {
                         </a>
                       </TableCell>
                       <TableCell>
-                        <Status value={experimentStatus(entry)} />
+                        <Status value={entry.status} />
                       </TableCell>
                       <TableCell>{entry.recipeId ?? 'Not recorded'}</TableCell>
                       <TableCell>

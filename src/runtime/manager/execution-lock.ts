@@ -10,20 +10,18 @@ export function executionLockPath(directory: string, id: string): string {
 }
 
 /** A fresh lock confirms Runtime ownership, not model progress or task health. */
-export async function executionStatus(
+export async function isExecutionActive(
   directory: string | undefined,
   id: string,
-): Promise<'active' | 'unconfirmed'> {
-  if (!directory) return 'unconfirmed';
+): Promise<boolean> {
+  if (!directory) return false;
   try {
-    return (await check(executionLockPath(directory, id), {
+    return await check(executionLockPath(directory, id), {
       realpath: false,
       stale: executionLockTiming.stale,
-    }))
-      ? 'active'
-      : 'unconfirmed';
+    });
   } catch {
     // An unreadable lock cannot establish that an execution owner is alive.
-    return 'unconfirmed';
+    return false;
   }
 }

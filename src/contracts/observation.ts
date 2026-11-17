@@ -1,4 +1,4 @@
-/** Read-only Web projections. These describe recorded facts, not inferred Policy state. */
+/** Read-only Web projections of recorded facts and current execution ownership. */
 export interface Page<T> {
   items: T[];
   total: number;
@@ -8,9 +8,8 @@ export interface ExperimentSummary {
   id: string;
   recipeId: string | null;
   policyRef: string | null;
+  /** Recorded status, with running projected as unconfirmed without a fresh execution lock. */
   status: string;
-  /** Live ownership observation for running records; absent for terminal records. */
-  executionStatus?: 'active' | 'unconfirmed';
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;

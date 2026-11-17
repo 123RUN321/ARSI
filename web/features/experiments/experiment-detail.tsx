@@ -18,7 +18,6 @@ import { Candidates } from './candidates';
 import { Measurements } from './measurements';
 import { Overview } from './overview';
 import { useObservation } from './use-observation';
-import { experimentStatus } from './experiment-summary';
 const ScoreCharts = lazy(() =>
   import('./charts/metric-panel').then((module) => ({
     default: module.ScoreCharts,
@@ -83,9 +82,7 @@ export function Experiment({
           ) : null}
         </div>
         <div className="actions">
-          {result.data ? (
-            <Status value={experimentStatus(result.data)} />
-          ) : null}
+          {result.data ? <Status value={result.data.status} /> : null}
         </div>
       </header>
       <nav className="view-nav" aria-label="Experiment views">

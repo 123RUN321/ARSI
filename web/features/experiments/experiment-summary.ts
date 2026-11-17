@@ -2,16 +2,7 @@ import type {
   CandidateSummary,
   MeasurementSummary,
   MetricObservation,
-  ExperimentSummary,
 } from '../../api/observation-client.js';
-
-/** Historical running facts alone do not establish a currently owned execution. */
-export function experimentStatus(experiment: ExperimentSummary): string {
-  return experiment.status === 'running' &&
-    experiment.executionStatus !== 'active'
-    ? 'unconfirmed'
-    : experiment.status;
-}
 
 export function recordedDuration(
   start: string | null,

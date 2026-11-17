@@ -14,7 +14,6 @@ import {
   parseExperiment,
   parseOverview,
 } from '../../web/api/observation-client.js';
-import { experimentStatus } from '../../web/features/experiments/experiment-summary.js';
 
 test('list and detail require a live Runtime owner, preserve facts, and observe resume', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'rsi-execution-observation-'));
@@ -38,25 +37,18 @@ test('list and detail require a live Runtime owner, preserve facts, and observe 
   });
   const query = new ObservationQueries(facts, artifacts, directory);
   const expectStatus = async (
-    expected: 'active' | 'unconfirmed',
+    expected: 'running' | 'unconfirmed',
   ): Promise<void> => {
     const list = await query.experiments();
     const entry = list.items.find((item) => item.id === 'run')!;
     const detail = parseOverview(await query.overview('run'));
     for (const item of [parseExperiment(entry), detail]) {
-      assert.equal(item.status, 'running');
-      assert.equal(item.executionStatus, expected);
-      assert.equal(
-        experimentStatus(item),
-        expected === 'active' ? 'running' : 'unconfirmed',
-      );
+      assert.equal(item.status, expected);
+      assert.equal('executionStatus' in item, false);
     }
+    assert.equal('executionStatus' in entry, false);
     assert.equal(
-      list.items.find((item) => item.id === 'finished')?.executionStatus,
-      undefined,
-    );
-    assert.equal(
-      experimentStatus(list.items.find((item) => item.id === 'finished')!),
+      list.items.find((item) => item.id === 'finished')?.status,
       'failed',
     );
     assert.deepEqual(await facts.read('experiments', 'run'), saved);
@@ -66,14 +58,14 @@ test('list and detail require a live Runtime owner, preserve facts, and observe 
   await mkdir(dirname(path), { recursive: true });
   let release = await lock(path, { realpath: false, ...executionLockTiming });
   try {
-    await expectStatus('active');
+    await expectStatus('running');
   } finally {
     await release();
   }
   await expectStatus('unconfirmed');
   release = await lock(path, { realpath: false, ...executionLockTiming });
   try {
-    await expectStatus('active');
+    await expectStatus('running');
   } finally {
     await release();
   }
@@ -91,23 +83,13 @@ test('stale or uninspectable locks and unavailable execution sources remain unco
   const old = new Date(Date.now() - executionLockTiming.stale - 10_000);
   await utimes(path, old, old);
   const before = await stat(path);
-  assert.equal((await query.overview('run')).executionStatus, 'unconfirmed');
+  assert.equal((await query.overview('run')).status, 'unconfirmed');
   assert.equal((await stat(path)).mtimeMs, before.mtimeMs);
   await rm(dirname(path), { recursive: true });
   await writeFile(dirname(path), 'not a lock directory');
-  assert.equal((await query.overview('run')).executionStatus, 'unconfirmed');
+  assert.equal((await query.overview('run')).status, 'unconfirmed');
   assert.equal(
-    (await new ObservationQueries(facts, artifacts).overview('run'))
-      .executionStatus,
+    (await new ObservationQueries(facts, artifacts).overview('run')).status,
     'unconfirmed',
-  );
-  assert.throws(
-    () =>
-      parseExperiment({
-        id: 'run',
-        status: 'running',
-        executionStatus: 'invalid',
-      }),
-    /execution status/,
   );
 });

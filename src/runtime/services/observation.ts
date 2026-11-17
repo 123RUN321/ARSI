@@ -38,7 +38,7 @@ import { readIterationScopes } from '../../shared/iterations.js';
 import { safeId } from '../storage/index.js';
 import type { PolicyStructure } from '../../shared/observation/policy-structure.js';
 import { queryPolicyStructure } from './policy-structure-query.js';
-import { executionStatus } from '../manager/execution-lock.js';
+import { isExecutionActive } from '../manager/execution-lock.js';
 
 function restrictedFile(path: string): boolean {
   return /(^|\/)(\.env(?:\..*)?|\.npmrc|\.?netrc|credentials(?:\.json|\.ya?ml|\.toml)?|secrets?\.(?:json|ya?ml|toml)|id_(?:rsa|ed25519|ecdsa|dsa)|private[-_]?key(?:\.pem|\.key)?|[^/]+\.(?:p12|pfx))$/i.test(
@@ -491,15 +491,11 @@ export class ObservationQueries {
       id: string(record.id),
       recipeId: optionalText(record.recipeId),
       policyRef: experimentPolicyRef(record),
-      status: string(record.status),
-      ...(record.status === 'running'
-        ? {
-            executionStatus: await executionStatus(
-              this.directory,
-              string(record.id),
-            ),
-          }
-        : {}),
+      status:
+        record.status === 'running' &&
+        !(await isExecutionActive(this.directory, string(record.id)))
+          ? 'unconfirmed'
+          : string(record.status),
       startedAt: optionalText(record.startedAt),
       finishedAt: optionalText(record.finishedAt),
       error:
