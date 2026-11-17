@@ -11,6 +11,7 @@ export interface RouteSelection {
   file?: string;
   directory?: string;
   search?: string;
+  policy?: string;
   status?: string;
   offset?: number;
   fileSearch?: string;
@@ -39,6 +40,7 @@ const textKeys = [
   'file',
   'directory',
   'search',
+  'policy',
   'status',
   'fileSearch',
   'scope',

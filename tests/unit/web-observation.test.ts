@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from '../../src/entries/web/server.js';
 import { seedObservation } from '../fixtures/observation/seed.js';
+import { ObservationQueries } from '../../src/runtime/services/observation.js';
+import { parseRoute, route } from '../../web/app/routing.js';
 import {
   parseExperiments,
   parseOverview,
@@ -64,6 +66,18 @@ test('observation HTTP projects existing facts, isolates experiments and never m
   assert.equal(list.total, 2);
   assert.equal(list.nextOffset, 1);
   assert.equal(list.items[0]?.id, 'run-alpha');
+  assert.equal(list.items[0]?.policyRef, 'policy.harness2');
+  assert.deepEqual(list.policies, ['policy.harness2']);
+  const filtered = parseExperiments(await get('?policy=policy.harness2'));
+  assert.equal(filtered.total, 1);
+  assert.equal(filtered.nextOffset, null);
+  assert.deepEqual(
+    filtered.items.map((item) => item.id),
+    ['run-alpha'],
+  );
+  const absent = parseExperiments(await get('?policy=policy.unknown'));
+  assert.equal(absent.total, 0);
+  assert.deepEqual(absent.policies, ['policy.harness2']);
   assert.equal(
     parseExperiments(await get('?limit=1&offset=1')).items[0]?.id,
     'run-other',
@@ -123,6 +137,7 @@ test('observation HTTP projects existing facts, isolates experiments and never m
     '?offset=-1',
     '?offset=0.5',
     '?extra=value',
+    '?policy=',
   ])
     assert.equal(
       (await server.inject('/api/observation/experiments' + query)).statusCode,
@@ -162,6 +177,56 @@ test('observation HTTP projects existing facts, isolates experiments and never m
     (await server.inject('/api/observation/experiments/run-alpha')).statusCode,
     400,
   );
+});
+
+test('policy filtering precedes pagination and retains choices across pages and empty results', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'rsi-policy-filter-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { facts, artifacts } = await seedObservation(directory);
+  for (let index = 0; index < 52; index++) {
+    await facts.write('experiments', `run-${index}`, {
+      id: `run-${index}`,
+      status: 'succeeded',
+      startedAt: '2026-11-17T01:00:00.000Z',
+      recipe: { policy: { id: 'policy.gepa' } },
+    });
+  }
+  const queries = new ObservationQueries(facts, artifacts, directory);
+  const first = parseExperiments(
+    await queries.experiments(0, 50, 'policy.gepa'),
+  );
+  const second = parseExperiments(
+    await queries.experiments(50, 50, 'policy.gepa'),
+  );
+  assert.equal(first.total, 52);
+  assert.equal(first.items.length, 50);
+  assert.equal(first.nextOffset, 50);
+  assert.equal(second.items.length, 2);
+  assert.equal(second.nextOffset, null);
+  assert.deepEqual(second.policies, ['policy.gepa', 'policy.harness2']);
+  assert.equal(
+    new Set([...first.items, ...second.items].map((item) => item.id)).size,
+    52,
+  );
+  assert.equal(
+    (await queries.experiments(0, 50, 'policy.harness2')).items[0]?.id,
+    'run-alpha',
+  );
+  assert.equal((await queries.experiments()).total, 54);
+  assert.equal(
+    (await queries.experiments(50)).items.find(
+      (item) => item.id === 'run-other',
+    )?.policyRef,
+    null,
+  );
+  const selection = parseRoute(
+    route(null, undefined, undefined, undefined, {
+      policy: 'policy.gepa',
+      offset: 50,
+    }),
+  );
+  assert.equal(selection.policy, 'policy.gepa');
+  assert.equal(selection.offset, 50);
 });
 
 test('observation client rejects invalid payloads and propagates failures and cancellation', async (t) => {
