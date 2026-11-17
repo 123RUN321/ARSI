@@ -134,6 +134,8 @@ async function fixture(
     approvalRequired?: boolean;
     rpcError?: boolean;
     turnFailure?: boolean;
+    windowsSandbox?: 'elevated' | 'unelevated';
+    malformedWindowsConfig?: boolean;
     outputSchema?: JsonObject;
     nativeDelegate?: boolean;
   } = {},
@@ -210,6 +212,8 @@ async function fixture(
     approvalRequired: options.approvalRequired ?? false,
     rpcError: options.rpcError ?? false,
     turnFailure: options.turnFailure ?? false,
+    windowsSandbox: options.windowsSandbox,
+    malformedWindowsConfig: options.malformedWindowsConfig,
     systemInstructions: 'PERSONAL_SYSTEM_MARKER',
     developerInstructions: 'PERSONAL_DEVELOPER_MARKER',
     model_providers: {
@@ -330,18 +334,24 @@ test('Codex uses the managed project cwd and the native tool surface', async (t)
     assert.equal(object(audit.thread).dynamicTools, undefined);
     assert.equal(object(audit.thread).ephemeral, false);
     assert.match(JSON.stringify(audit.args), /project_root_markers/);
-    assert.match(String(object(audit.thread).permissions), /^rsi-agent-/);
-    const rootAccess = process.platform === 'win32' ? 'read' : 'deny';
-    const openssl =
-      process.platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : '';
-    const permissions = object(audit.thread).permissions;
     assert.ok(Array.isArray(audit.args));
     assert.ok(audit.args.includes('approval_policy="never"'));
-    assert.ok(
-      audit.args.includes(
-        `permissions.${permissions}.filesystem={":root"="${rootAccess}",":minimal"="read",":workspace_roots"="read"${openssl}}`,
-      ),
-    );
+    const thread = object(audit.thread);
+    if (process.platform === 'win32' || process.platform === 'linux') {
+      assert.equal(thread.sandbox, 'danger-full-access');
+      assert.equal(thread.permissions, undefined);
+    } else {
+      const openssl =
+        process.platform === 'darwin'
+          ? ',"/System/Library/OpenSSL"="read"'
+          : '';
+      assert.match(String(thread.permissions), /^rsi-agent-/);
+      assert.ok(
+        audit.args.includes(
+          `permissions.${thread.permissions}.filesystem={":root"="deny",":minimal"="read",":workspace_roots"="read"${openssl}}`,
+        ),
+      );
+    }
   } else {
     assert.match(JSON.stringify(f.requests[0]), /PROJECT_INSTRUCTIONS/);
     const childRequest = f.requests.find((request) =>
@@ -356,6 +366,72 @@ test('Codex uses the managed project cwd and the native tool surface', async (t)
     );
   }
 });
+
+for (const windowsSandbox of ['elevated', 'unelevated'] as const)
+  test(
+    `Codex preserves the ${windowsSandbox} Windows sandbox with network access`,
+    {
+      skip:
+        process.platform !== 'win32' || !!process.env.RSI_TEST_CODEX_EXECUTABLE,
+    },
+    async (t) => {
+      const f = await fixture(['{"answer":"ok"}'], { windowsSandbox });
+      t.after(() => f.close());
+      assert.deepEqual(await f.run(), { answer: 'ok' });
+      const audit = object(
+        JSON.parse(await readFile(join(f.directory, 'execution.json'), 'utf8')),
+      );
+      const thread = object(audit.thread);
+      assert.equal(thread.sandbox, 'workspace-write');
+      assert.equal(thread.permissions, undefined);
+      assert.ok(Array.isArray(audit.args));
+      assert.ok(
+        audit.args.includes('sandbox_workspace_write.network_access=true'),
+      );
+    },
+  );
+
+test(
+  'Codex rejects an unreadable Windows sandbox configuration before starting a thread',
+  {
+    skip:
+      process.platform !== 'win32' || !!process.env.RSI_TEST_CODEX_EXECUTABLE,
+  },
+  async (t) => {
+    const f = await fixture(['{"answer":"ok"}'], {
+      malformedWindowsConfig: true,
+    });
+    t.after(() => f.close());
+    await assert.rejects(f.run(), /Codex config: expected object/);
+    assert.equal(f.requests.length, 0);
+  },
+);
+
+test(
+  'Standalone Windows Codex does not inherit Desktop registered Core mode',
+  {
+    skip:
+      process.platform !== 'win32' || !!process.env.RSI_TEST_CODEX_EXECUTABLE,
+  },
+  async (t) => {
+    const f = await fixture(['{"answer":"ok"}']);
+    t.after(() => f.close());
+    const previous = process.env.CODEX_WINDOWS_REGISTERED_CORE;
+    delete process.env.CODEX_WINDOWS_REGISTERED_CORE;
+    process.env.codex_windows_registered_core = '1';
+    t.after(() => {
+      delete process.env.codex_windows_registered_core;
+      if (previous !== undefined)
+        process.env.CODEX_WINDOWS_REGISTERED_CORE = previous;
+    });
+    assert.deepEqual(await f.run(), { answer: 'ok' });
+    const audit = object(
+      JSON.parse(await readFile(join(f.directory, 'execution.json'), 'utf8')),
+    );
+    assert.equal(audit.registeredCore, null);
+    assert.equal(process.env.CODEX_WINDOWS_REGISTERED_CORE, '1');
+  },
+);
 
 test('Codex config defaults and validation follow its schema', async () => {
   assert.deepEqual(parseConfig(configSchema, {}, 'config'), {
@@ -402,7 +478,6 @@ for (const model of [undefined, 'selected-model'])
           'baseInstructions',
           'developerInstructions',
           'approvalPolicy',
-          'sandbox',
         ])
           assert.equal(Object.hasOwn(x.thread, name), false);
         assert.deepEqual(x.turn.outputSchema, schema);

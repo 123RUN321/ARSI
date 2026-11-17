@@ -150,11 +150,13 @@ bindings:
 | DSH | 模型在原生 headless profile 中配置 |
 | OpenCode | `model`：`provider/model`，可追加 `#variant` |
 
-RSI 保留原生模型和认证配置，但限制任务为只读提案，不接受交互式审批。Claude Code 的 Hooks 和 MCP 在 RSI 调用中禁用。
+RSI 保留原生模型和认证配置，在应用提案前会校验所提交的编辑。Claude Code 的 Hooks 和 MCP 在 RSI 调用中禁用。
 
-RSI 使用 `approval_policy = "never"` 启动 Codex。命令需要沙箱未授予的权限时，Codex 会将失败结果返回给 Agent，跳过交互式审批。
+RSI 使用 `approval_policy = "never"` 启动 Codex。沙箱拒绝命令时，Codex 会将失败结果返回给 Agent，无需交互式审批。
 
-在 Windows 上，`agent.codex` 授予根路径读取权限，因为 Codex 的 elevated 沙箱需要该权限才能启动会话。Codex 可以读取本机账户可访问的工作区外文件，会话仍为只读。
+在 Windows 上，如果 Codex 的生效配置显式将 `windows.sandbox` 设置为 `"elevated"` 或 `"unelevated"`，RSI 会使用 `workspace-write` 模式并开启网络。未显式配置原生沙箱的 Windows，以及 Linux，使用 `danger-full-access`。命令可以访问运行 RSI 的账户可用的文件和资源。其他平台使用只读工作区权限。
+
+在 Windows 上，RSI 会从独立 Codex 子进程的环境中移除桌面应用专用变量 `CODEX_WINDOWS_REGISTERED_CORE`，让工作区命令通过独立 CLI 的沙箱执行。
 
 ### 检查并启动
 
