@@ -9,6 +9,8 @@ export interface ExperimentSummary {
   recipeId: string | null;
   policyRef: string | null;
   status: string;
+  /** Live ownership observation for running records; absent for terminal records. */
+  executionStatus?: 'active' | 'unconfirmed';
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;

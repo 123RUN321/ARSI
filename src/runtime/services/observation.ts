@@ -38,6 +38,7 @@ import { readIterationScopes } from '../../shared/iterations.js';
 import { safeId } from '../storage/index.js';
 import type { PolicyStructure } from '../../shared/observation/policy-structure.js';
 import { queryPolicyStructure } from './policy-structure-query.js';
+import { executionStatus } from '../manager/execution-lock.js';
 
 function restrictedFile(path: string): boolean {
   return /(^|\/)(\.env(?:\..*)?|\.npmrc|\.?netrc|credentials(?:\.json|\.ya?ml|\.toml)?|secrets?\.(?:json|ya?ml|toml)|id_(?:rsa|ed25519|ecdsa|dsa)|private[-_]?key(?:\.pem|\.key)?|[^/]+\.(?:p12|pfx))$/i.test(
@@ -482,12 +483,23 @@ export class ObservationQueries {
     };
   }
 
-  private summary(record: JsonObject, secrets: string[]): ExperimentSummary {
+  private async summary(
+    record: JsonObject,
+    secrets: string[],
+  ): Promise<ExperimentSummary> {
     return {
       id: string(record.id),
       recipeId: optionalText(record.recipeId),
       policyRef: experimentPolicyRef(record),
       status: string(record.status),
+      ...(record.status === 'running'
+        ? {
+            executionStatus: await executionStatus(
+              this.directory,
+              string(record.id),
+            ),
+          }
+        : {}),
       startedAt: optionalText(record.startedAt),
       finishedAt: optionalText(record.finishedAt),
       error:
@@ -543,7 +555,7 @@ export class ObservationQueries {
       if (!missing(error)) throw error;
     }
     return {
-      ...this.summary(record, secrets),
+      ...(await this.summary(record, secrets)),
       observedAt: new Date().toISOString(),
       usage,
       limits: numbers(record.recipe ? object(record.recipe).budget : undefined),

@@ -102,11 +102,20 @@ export function parsePage<T>(
 }
 export function parseExperiment(raw: unknown): ExperimentSummary {
   const data = record(raw);
+  if (
+    data.executionStatus !== undefined &&
+    data.executionStatus !== 'active' &&
+    data.executionStatus !== 'unconfirmed'
+  )
+    throw new Error('Invalid experiment execution status');
   return {
     id: text(data.id),
     recipeId: nullable(data.recipeId),
     policyRef: nullable(data.policyRef),
     status: text(data.status),
+    ...(data.executionStatus === undefined
+      ? {}
+      : { executionStatus: data.executionStatus }),
     startedAt: nullable(data.startedAt),
     finishedAt: nullable(data.finishedAt),
     error: nullable(data.error),
