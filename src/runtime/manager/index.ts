@@ -16,6 +16,7 @@ import { RuntimeContext } from '../../contracts/runtime/context.js';
 import { object, string, digest } from '../../shared/json.js';
 import { createCallExecutor, type CallExecutor } from './calls.js';
 import { Instances } from './instances.js';
+import { executionLockPath, executionLockTiming } from './execution-lock.js';
 import { ManagedEvents } from '../services/events.js';
 import {
   FileArtifacts,
@@ -184,13 +185,12 @@ export class Manager {
         recipe = await Recipe.load(recipePath, this.options.registry);
         id = safeId(options.id ?? `${recipe.id}-${randomUUID().slice(0, 8)}`);
       }
-      const lock = join(this.directory, 'locks', id);
+      const lock = executionLockPath(this.directory, id);
       await mkdir(dirname(lock), { recursive: true });
       gate.assertOwned();
       releaseLock = await acquireProcessLock(lock, {
         realpath: false,
-        stale: 60000,
-        update: 10000,
+        ...executionLockTiming,
         retries: 0,
         onCompromised: (error) => controller.abort(error),
       });
