@@ -79,8 +79,8 @@ pnpm arsi show transpose-copy-search-001
 
 运行命令预加载 [HTTP 超时配置](./http-timeout.mjs)，使客户端等待响应头及响应体数据的超时与 Recipe 的单次模型请求时限一致。如果模型端点经过缓冲代理，还需按部署情况调整代理超时，以允许该等待时间。设备编号由 `benchmark.config.device` 指定。
 
-续跑时使用相同 Recipe 和 ID 再次执行 `run`，并添加 `--resume`。
-输入、构建和外部资源必须保持一致。已完成实验的续跑会复用已记录结果。
+续跑时使用原实验 ID 再次执行 `run`，并添加 `--resume`。Policy 步骤和插件 contract 需要兼容，未完成步骤使用传入的 Recipe 和当前实现。
+已完成步骤会复用已记录结果。
 运行数据存放于 `.rsi/`。
 
 Recipe 只选择正确且平均延迟降低超过 2% 的候选。`finalValidity` 记录独立最终评测，

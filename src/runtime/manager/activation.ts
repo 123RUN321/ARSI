@@ -24,6 +24,7 @@ interface RevisionActivationOptions {
   instances: Instances;
   cleanup: CleanupLifecycle;
   event: EventPipeline;
+  bindingVersions?: JsonObject;
   diagnose(event: string, error: unknown): void;
 }
 
@@ -77,8 +78,23 @@ export class RevisionActivation {
       throw error;
     }
     const activation = parseActivation(saved);
-    Object.assign(this.bindingState, activation.bindings);
-    Object.assign(this.revisionState, activation.revisions);
+    const savedVersions = object(saved.bindingVersions ?? {});
+    for (const [name, binding] of Object.entries(activation.bindings)) {
+      if (
+        this.options.bindingVersions &&
+        savedVersions[name] !== this.options.bindingVersions?.[name]
+      )
+        continue;
+      const ref = activation.revisions[name];
+      if (
+        !this.options.bindingVersions ||
+        (typeof ref === 'string' &&
+          (await this.options.facts.read('revisions', ref)).kind ===
+            'generated')
+      )
+        this.bindingState[name] = binding;
+      if (ref !== undefined) this.revisionState[name] = ref;
+    }
   }
 
   async save(
@@ -100,6 +116,9 @@ export class RevisionActivation {
         activationId,
         bindings: object(structuredClone({ ...this.bindingState, ...changes })),
         revisions: { ...this.revisionState, ...revisions },
+        ...(this.options.bindingVersions
+          ? { bindingVersions: this.options.bindingVersions }
+          : {}),
       });
     } catch (error) {
       for (const [target, instance] of prepared)

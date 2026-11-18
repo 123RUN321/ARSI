@@ -134,4 +134,4 @@ Whenever content changes, the Runtime saves a new version and leaves existing ve
 
 With local storage, the Runtime saves document contents and directory information under `.rsi/artifacts/`, while Policy checkpoints record the current `memoryRef`. **Resuming the same experiment continues with the saved document version. The built-in Policies initialize Memory as empty (`memoryRef: null`) for each new experiment, so they do not automatically inherit an earlier experiment's Memory.**
 
-An ordinary Memory update failure alone does not cancel the experiment. Cancellation, experiment budget exhaustion, and failures to save critical Runtime records still stop execution. See [cancellation and resume](running-experiments.md#cancellation-and-resume) and the [Memory implementation](../../../src/plugins/memory-agent/service.ts).
+An ordinary Memory update failure alone does not cancel the experiment. Cancellation, experiment budget exhaustion, and failures to save critical Runtime records still stop execution. See [cancellation and retry](running-experiments.md#cancellation-and-resume) and the [Memory implementation](../../../src/plugins/memory-agent/service.ts).

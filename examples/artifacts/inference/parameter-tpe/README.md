@@ -47,7 +47,8 @@ arsi show parameter-tpe-first
 arsi run examples/artifacts/inference/parameter-tpe/recipe.yaml --id parameter-tpe-first --resume
 ```
 
-Resume requires the same locked configuration and reconciliation of any unknown
-remote lifecycle outcome. The supplied deployment script is a template that
+Resume requires a compatible Policy shape. Unfinished work uses the supplied
+configuration, and an unconfirmed remote lifecycle operation can execute again.
+The supplied deployment script is a template that
 raises `NotImplementedError` until implemented; no real evaluation is performed
 by validation.

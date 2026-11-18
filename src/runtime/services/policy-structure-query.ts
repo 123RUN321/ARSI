@@ -10,7 +10,10 @@ import {
   unavailablePolicyStructure,
   policyStructureLimits,
 } from '../compiler/policy-structure.js';
-import { parseLockedReflection } from '../manager/definition-lock.js';
+import {
+  definitionLockVersion,
+  parseLockedReflection,
+} from '../manager/definition-lock.js';
 
 class DefinitionLockError extends Error {
   constructor(
@@ -29,7 +32,7 @@ function readDefinitionLock(locked: JsonObject): {
   recipe: JsonObject;
   reflection: JsonValue | null;
 } {
-  if (locked.schemaVersion !== 'rsi.definition-lock/v1')
+  if (locked.schemaVersion !== definitionLockVersion)
     throw new DefinitionLockError(
       'unsupported-source',
       'Unsupported saved definition version.',

@@ -42,6 +42,6 @@ Directory arguments resolve against the process working directory. Use `import.m
 
 Builtins register first, then home extensions, then explicit directories in argument order. Repeated directories resolving to the same real path register once per Runtime. Missing/invalid entrypoints, registration failures and duplicate IDs stop startup with directory context. Builtin IDs cannot be silently overridden. Registration runs again for each new Runtime even when Node caches the imported module.
 
-All commands share loading, including Web startup. Use the same directories for doctor, run and resume, and preserve extension versions/resources. This is startup loading; changing files does not reload a running experiment.
+All commands share loading, including Web startup. Load the required extension directories for doctor, run, and retry. Retry permits compatible implementation and configuration changes. This is startup loading; changing files does not reload a running experiment.
 
 A complete working extension is included at [extension/index.mjs](../assets/minimal/extension/index.mjs).

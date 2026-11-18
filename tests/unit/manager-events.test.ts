@@ -160,7 +160,7 @@ test('Manager creates only invoked bindings, activates before admission, and iso
   }
 });
 
-test('experiment metadata retains locked recipeId and resume rejects a different Recipe path without rewriting facts', async () => {
+test('retry loads the supplied Recipe path and preserves the experiment identity', async () => {
   for (const outcome of ['succeeded', 'failed', 'startup-failed']) {
     const lifecycle: {
       phase: string;
@@ -203,7 +203,6 @@ test('experiment metadata retains locked recipeId and resume rejects a different
       }
       const original = await fixture.manager.get(id);
       assert.equal(original.recipeId, 'test');
-      const receipts = await fixture.manager.facts.list('calls');
       const changedRecipe = recipe.replace(
         /^id: test$/m,
         'id: different-recipe',
@@ -213,18 +212,21 @@ test('experiment metadata retains locked recipeId and resume rejects a different
         'different-recipe.yaml',
       );
       await writeFile(differentPath, changedRecipe);
-      await assert.rejects(
-        fixture.manager.run(differentPath, { id, resume: true }),
-        /recipePath differs/,
-      );
-      assert.deepEqual(await fixture.manager.get(id), original);
-      assert.deepEqual(await fixture.manager.facts.list('calls'), receipts);
-      await writeFile(path, changedRecipe);
       fail = false;
-      const resumed = fixture.manager.run(path, { id, resume: true });
-      if (outcome === 'succeeded')
-        assert.equal((await resumed).status, 'succeeded');
-      else await assert.rejects(resumed, /unconfirmed\/failed effects/);
+      const retried = await fixture.manager.run(differentPath, {
+        id,
+        resume: true,
+      });
+      assert.equal(retried.status, 'succeeded');
+      assert.equal(retried.id, id);
+      assert.equal(
+        retried.recipeId,
+        outcome === 'succeeded' ? 'test' : 'different-recipe',
+      );
+      assert.equal(
+        retried.recipePath,
+        outcome === 'succeeded' ? path : differentPath,
+      );
     } finally {
       await fixture.dispose();
     }

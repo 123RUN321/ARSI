@@ -12,7 +12,7 @@ import { Manager } from '../../src/runtime/manager/index.js';
 import { PolicyCheckpoints } from '../../src/runtime/policy/checkpoint.js';
 import { object, string } from '../../src/shared/json.js';
 
-test('interrupted experiments recover locked definitions and resources after all source files disappear', async (t) => {
+test('retry preserves completed steps and locks updated resources for unfinished steps', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-locked-definition-'));
   const registry = new Registry();
   const manager = new Manager({ rootDirectory: root, registry });
@@ -119,11 +119,11 @@ test('interrupted experiments recover locked definitions and resources after all
     ...(await manager.get('locked')),
     startedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
   });
-  await Promise.all([rm(prompt), rm(policy), rm(recipe)]);
+  await writeFile(prompt, 'updated source');
   const restored = await manager.run(recipe, { id: 'locked', resume: true });
   assert.deepEqual(restored.output, {
     first: 'locked original',
-    second: 'locked original',
+    second: 'updated source',
   });
   assert.equal(calls, 2);
   assert.equal(initializations, 1);
