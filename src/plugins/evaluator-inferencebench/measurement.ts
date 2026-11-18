@@ -9,7 +9,6 @@ import {
   environmentSummarySchema,
   measurementItemsSchema,
   typedArtifact,
-  validateMeasurement,
 } from '../../contracts/models/measurement.js';
 import { digest, object, string, strings } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
@@ -18,7 +17,6 @@ import {
   plain,
   redact,
 } from '../shared/evaluator-adapter/data.js';
-import { sourceIdentity } from '../shared/evaluator-adapter/identity.js';
 import {
   nativeStatus,
   typed,
@@ -38,25 +36,6 @@ import { conditions, environmentSummary } from './conditions.js';
 import { agentxMetrics, performancePoint } from './metrics.js';
 import { inferenceProfileSchema } from './measurement-schema.js';
 
-let implementationIdentity: Promise<string> | undefined;
-function adapterIdentity(): Promise<string> {
-  return (implementationIdentity ??= sourceIdentity(import.meta.url, [
-    './index',
-    './service',
-    './schema',
-    './conditions',
-    './measurement',
-    './measurement-schema',
-    './metrics',
-    '../shared/evaluator-adapter/configuration',
-    '../shared/evaluator-adapter/data',
-    '../shared/evaluator-adapter/sdk',
-    '../shared/evaluator-adapter/measurement',
-    '../shared/evaluator-adapter/metric',
-    '../shared/evaluator-adapter/identity',
-    '../shared/evaluator-adapter/schemas/index',
-  ]));
-}
 export async function normalizeEvaluation(
   native: SdkEvaluatorConfig | null,
   input: JsonObject,
@@ -278,10 +257,7 @@ export async function normalizeEvaluation(
     experimentId: context.experimentId,
     callId: context.callId,
     candidateRef: string(input.candidateRef),
-    evaluator: {
-      pluginId: 'evaluator.inferencebench',
-      implementationDigest: await adapterIdentity(),
-    },
+    evaluator: { pluginId: 'evaluator.inferencebench' },
     startedAt:
       typeof run.startedAt === 'string'
         ? run.startedAt
@@ -323,6 +299,5 @@ export async function normalizeEvaluation(
       ),
     ],
   };
-  validateMeasurement(measurement);
   return context.recordMeasurement(measurement);
 }

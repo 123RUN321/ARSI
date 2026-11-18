@@ -83,13 +83,15 @@ export class ExperimentFacts {
       throw new Error('Invalid measurement ownership');
     const evaluator = object(measurement.evaluator);
     const pluginId = this.plugin(ctx.bindingId) ?? string(evaluator.pluginId);
+    const adapter = evaluator.implementationDigest;
+    const registration = this.registry.identity(pluginId);
     measurement.evaluator = {
       ...evaluator,
       pluginId,
-      implementationDigest: digest({
-        adapter: evaluator.implementationDigest,
-        registration: this.registry.identity(pluginId),
-      }),
+      implementationDigest:
+        adapter === undefined
+          ? registration
+          : digest({ adapter, registration }),
     };
     const { ref: _priorRef, ...content } = measurement;
     const ref = 'measurement-' + digest(content);
