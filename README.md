@@ -20,13 +20,13 @@
 
 <p align="center">
   <a href="#when-to-use">When to use</a> ·
+  <a href="#experiment-results">Experiment results</a> ·
   <a href="#overview">Overview</a> ·
   <a href="#architecture">How it works</a> ·
   <a href="#extensions">Everything is a plugin</a> ·
   <a href="#installation">Installation</a> ·
   <a href="#usage">Using arsi</a> ·
   <a href="#built-in-rsi-strategies">Built-in RSI strategies</a> ·
-  <a href="#experiment-results">Experiment results</a> ·
   <a href="#user-guide">User guides</a>
 </p>
 
@@ -41,6 +41,90 @@ When you want AI to help continuously improve agents, models, or AI infrastructu
 | **Evolve Harness Skills through task feedback**                           | Prepare a working Harness, tasks, and evaluation criteria, and reuse or implement [execution and evaluation plugins](docs/users/guides/writing-plugins.md).                                                                    | “Use arsi to improve this Harness's Skills, edit only Skill files, iterate on my tasks within my budget, and test the results on new tasks.”                                                                                                                                                                  |
 | **Automatically search for configuration parameters that fit your needs** | Provide parameter ranges, optimization metrics, and constraints, and integrate plugins that apply configurations and evaluate their effects.                                                                                   | “Use arsi to tune this configuration within the given ranges and budget, optimize the target metric while meeting constraints, and deliver the best configuration measured in this experiment with comparison results.”                                                                                       |
 | **Evolve an operator toward a correct implementation with lower latency** | Prepare the operator source and a test environment, integrate evaluation plugins, and extend the proposal plugin and Policy to invoke [Memory](docs/users/guides/memory.md) and [Reflection](docs/users/guides/reflection.md). | “Use arsi to iterate on this operator: have Memory summarize effective optimizations and lessons from failures, and Reflection refine the proposing Agent's prompts and guidance for later rounds; check correctness and compare latency within budget, then independently re-evaluate against the baseline.” |
+
+<a id="experiment-results"></a>
+
+## 📊 Experiment results
+
+- Harness experiments use Pi with `deepseek-v4.1-flash-1017` for internal agent calls. The Optimization target column identifies the model version evaluated with DeepSeek Harness (DSH). The Method column lists the training, test, and validation task counts for each benchmark subset.
+- Infra experiments use Codex with `GPT-6.1 Sol` for internal agent calls. The inference experiment runs `deepseek-v4-flash-0731` on [vLLM](https://github.com/vllm-project/vllm) and uses [AISBench](https://github.com/AISBench/benchmark) with 4,096 input tokens, 2,048 output tokens, and a concurrency of 330. The representative operator dataset covers `bias-gelu-tanh`, `bias-gelu`, `transpose-copy`, `bias-tanh-gate`, and `transposed-bias-add`. Operator evaluation checks correctness and records mean device execution time. The performance score is `baseline time / optimized time`.<a id="operator-dataset"></a>
+- Scores compare the baseline with the selected configuration. The selected score is the higher of the baseline and candidate scores. Operator and inference scores are normalized to a baseline of 100.0%. Red badges show gains and gray badges show no change. Changes are measured in percentage points (pp).
+
+<table>
+  <thead>
+    <tr>
+      <th>Optimization type</th>
+      <th>Benchmark</th>
+      <th>Optimization target</th>
+      <th>Method</th>
+      <th>Benchmark score</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th rowspan="9" scope="rowgroup">Harness optimization</th>
+      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>Code Subset</th>
+      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
+      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>10 training tasks / 5 validation tasks</sub></td>
+      <td align="center">92.9% → 96.0% <img src="docs/users/assets/score-delta-plus-3-1.svg" alt="+3.1 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>10 validation tasks</sub></td>
+      <td align="center">78.5% → 78.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>10 training tasks / 5 validation tasks</sub></td>
+      <td align="center">94.5% → 94.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>Office Subset</th>
+      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
+      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>16 training tasks / 4 test tasks / 10 validation tasks</sub></td>
+      <td align="center">87.4% → 89.5% <img src="docs/users/assets/score-delta-plus-2-1.svg" alt="+2.1 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>30 validation tasks</sub></td>
+      <td align="center">83.2% → 83.2% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>16 training tasks / 4 test tasks / 10 validation tasks</sub></td>
+      <td align="center">84.2% → 92.6% <img src="docs/users/assets/score-delta-plus-8-4.svg" alt="+8.4 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <th rowspan="3"><a href="https://www.tbench.ai/news/terminal-bench-4-0">Terminal-Bench 4.0</a></th>
+      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
+      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>10 training tasks / 10 test tasks / 5 validation tasks</sub></td>
+      <td align="center">20.0% → 40.0% <img src="docs/users/assets/score-delta-plus-20-0.svg" alt="+20.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>25 validation tasks</sub></td>
+      <td align="center">12.0% → 28.0% <img src="docs/users/assets/score-delta-plus-16-0.svg" alt="+16.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>16 training tasks / 4 test tasks / 10 validation tasks</sub></td>
+      <td align="center">50.0% → 50.0% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <th rowspan="3" scope="rowgroup">Infra optimization</th>
+      <th rowspan="2"><a href="#operator-dataset">Representative operator dataset</a></th>
+      <td rowspan="2" align="center"><a href="https://github.com/triton-lang/triton">Triton kernels</a></td>
+      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>Reflection disabled</sub></td>
+      <td align="center">100.0% → 111.0% <img src="docs/users/assets/score-delta-plus-11-0.svg" alt="+11.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>Reflection enabled</sub></td>
+      <td align="center">100.0% → 113.2% <img src="docs/users/assets/score-delta-plus-13-2.svg" alt="+13.2 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <th><a href="https://github.com/AISBench/benchmark">AISBench</a></th>
+      <td align="center"><a href="https://github.com/vllm-project/vllm">vLLM</a> +<br><code>deepseek-v4-flash-0731</code></td>
+      <td><a href="src/policies/parameter/agent/policy.yaml"><code>parameter-agent</code></a><br><sub>Reflection and Memory enabled</sub></td>
+      <td align="center">100.0% → 171.0% <img src="docs/users/assets/score-delta-plus-71-0.svg" alt="+71.0 pp" width="62" height="20"></td>
+    </tr>
+  </tbody>
+</table>
 
 <a id="overview"></a>
 
@@ -282,90 +366,6 @@ arsi dashboard
         <a href="src/plugins/evaluator-operatorbench"><code>evaluator.operatorbench</code></a><br>
         <a href="src/plugins/selector-metrics"><code>selector.metric</code></a>
       </td>
-    </tr>
-  </tbody>
-</table>
-
-<a id="experiment-results"></a>
-
-## 📊 Experiment results
-
-- Harness experiments use Pi with `deepseek-v4.1-flash-1017` for internal agent calls. The Optimization target column identifies the model version evaluated with DeepSeek Harness (DSH). The Method column lists the training, test, and validation task counts for each benchmark subset.
-- Infra experiments use Codex with `GPT-6.1 Sol` for internal agent calls. The inference experiment runs `deepseek-v4-flash-0731` on [vLLM](https://github.com/vllm-project/vllm) and uses [AISBench](https://github.com/AISBench/benchmark) with 4,096 input tokens, 2,048 output tokens, and a concurrency of 330. The representative operator dataset covers `bias-gelu-tanh`, `bias-gelu`, `transpose-copy`, `bias-tanh-gate`, and `transposed-bias-add`. Operator evaluation checks correctness and records mean device execution time. The performance score is `baseline time / optimized time`.<a id="operator-dataset"></a>
-- Scores compare the baseline with the selected configuration. The selected score is the higher of the baseline and candidate scores. Operator and inference scores are normalized to a baseline of 100.0%. Red badges show gains and gray badges show no change. Changes are measured in percentage points (pp).
-
-<table>
-  <thead>
-    <tr>
-      <th>Optimization type</th>
-      <th>Benchmark</th>
-      <th>Optimization target</th>
-      <th>Method</th>
-      <th>Benchmark score</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th rowspan="9" scope="rowgroup">Harness optimization</th>
-      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>Code Subset</th>
-      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
-      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>10 training tasks / 5 validation tasks</sub></td>
-      <td align="center">92.9% → 96.0% <img src="docs/users/assets/score-delta-plus-3-1.svg" alt="+3.1 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>10 validation tasks</sub></td>
-      <td align="center">78.5% → 78.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>10 training tasks / 5 validation tasks</sub></td>
-      <td align="center">94.5% → 94.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>Office Subset</th>
-      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
-      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>16 training tasks / 4 test tasks / 10 validation tasks</sub></td>
-      <td align="center">87.4% → 89.5% <img src="docs/users/assets/score-delta-plus-2-1.svg" alt="+2.1 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>30 validation tasks</sub></td>
-      <td align="center">83.2% → 83.2% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>16 training tasks / 4 test tasks / 10 validation tasks</sub></td>
-      <td align="center">84.2% → 92.6% <img src="docs/users/assets/score-delta-plus-8-4.svg" alt="+8.4 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <th rowspan="3"><a href="https://www.tbench.ai/news/terminal-bench-4-0">Terminal-Bench 4.0</a></th>
-      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
-      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>10 training tasks / 10 test tasks / 5 validation tasks</sub></td>
-      <td align="center">20.0% → 40.0% <img src="docs/users/assets/score-delta-plus-20-0.svg" alt="+20.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>25 validation tasks</sub></td>
-      <td align="center">12.0% → 28.0% <img src="docs/users/assets/score-delta-plus-16-0.svg" alt="+16.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>16 training tasks / 4 test tasks / 10 validation tasks</sub></td>
-      <td align="center">50.0% → 50.0% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-  </tbody>
-  <tbody>
-    <tr>
-      <th rowspan="3" scope="rowgroup">Infra optimization</th>
-      <th rowspan="2"><a href="#operator-dataset">Representative operator dataset</a></th>
-      <td rowspan="2" align="center"><a href="https://github.com/triton-lang/triton">Triton kernels</a></td>
-      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>Reflection disabled</sub></td>
-      <td align="center">100.0% → 111.0% <img src="docs/users/assets/score-delta-plus-11-0.svg" alt="+11.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>Reflection enabled</sub></td>
-      <td align="center">100.0% → 113.2% <img src="docs/users/assets/score-delta-plus-13-2.svg" alt="+13.2 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <th><a href="https://github.com/AISBench/benchmark">AISBench</a></th>
-      <td align="center"><a href="https://github.com/vllm-project/vllm">vLLM</a> +<br><code>deepseek-v4-flash-0731</code></td>
-      <td><a href="src/policies/parameter/agent/policy.yaml"><code>parameter-agent</code></a><br><sub>Reflection and Memory enabled</sub></td>
-      <td align="center">100.0% → 171.0% <img src="docs/users/assets/score-delta-plus-71-0.svg" alt="+71.0 pp" width="62" height="20"></td>
     </tr>
   </tbody>
 </table>

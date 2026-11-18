@@ -20,13 +20,13 @@
 
 <p align="center">
   <a href="#when-to-use">何时使用</a> ·
+  <a href="#experiment-results">实验效果</a> ·
   <a href="#overview">简介</a> ·
   <a href="#architecture">工作原理</a> ·
   <a href="#extensions">一切皆插件</a> ·
   <a href="#installation">安装与部署</a> ·
   <a href="#usage">使用 arsi</a> ·
   <a href="#built-in-rsi-strategies">内置 RSI 策略</a> ·
-  <a href="#experiment-results">实验效果</a> ·
   <a href="#user-guide">使用指南</a>
 </p>
 
@@ -41,6 +41,90 @@
 | **让 Harness 的 Skill 根据任务反馈自我进化** | 准备可运行的 Harness、任务和评测标准，复用或编写[运行与评测插件](docs/users/guides/writing-plugins_zh.md)。                                                       | “用 arsi 改进这个 Harness 的 Skill，只允许修改 Skill 文件，在我给定的任务和预算内迭代，并用新任务复测效果。”                                                                        |
 | **自动搜索更适合当前需求的配置参数**         | 提供参数范围、优化指标与约束，接入配置应用和效果评测插件。                                                                                                        | “用 arsi 在给定范围和预算内自动调整这份配置，满足约束后优化目标指标，交付本次实验表现最好的配置和对比结果。”                                                                        |
 | **持续演进算子，寻找正确且延迟更低的实现**   | 准备算子源码与测试环境，接入评测插件，并扩展生成插件和 Policy 以调用 [Memory](docs/users/guides/memory_zh.md)、[Reflection](docs/users/guides/reflection_zh.md)。 | “用 arsi 迭代这份算子：用 Memory 总结有效优化和失败经验，用 Reflection 改进算子生成 Agent 的提示词与指导，供后续轮次使用；在预算内检查正确性、比较延迟，最后独立复测并与基线比较。” |
+
+<a id="experiment-results"></a>
+
+## 📊 实验效果
+
+- Harness 优化实验的内部 Agent 调用由 Pi 执行，使用 `deepseek-v4.1-flash-1017`。「优化目标」列标明被测 DeepSeek Harness（DSH）所用的模型版本，「方法」列记录各基准子集的训练、测试与验证任务数。
+- Infra 优化实验的内部 Agent 调用由 Codex 执行，使用 `GPT-6.1 Sol`。推理实验在 [vLLM](https://github.com/vllm-project/vllm) 上运行 `deepseek-v4-flash-0731`，使用 [AISBench](https://github.com/AISBench/benchmark) 评测，输入 4096 个 token，输出 2048 个 token，并发数为 330。算子典型数据集覆盖 `bias-gelu-tanh`、`bias-gelu`、`transpose-copy`、`bias-tanh-gate` 和 `transposed-bias-add`，算子评测检查正确性，并记录设备上的平均执行耗时，性能得分的计算公式为 `基线耗时/ 优化后耗时`。<a id="operator-dataset"></a>
+- 表中分数按「基线 → 选定方案」展示，选定方案得分取基线与候选方案两者中的最高分。算子和推理实验的分数均以基线为 100.0% 进行归一化。红色徽章表示提升，灰色表示持平，变化量以百分点（pp）计。
+
+<table>
+  <thead>
+    <tr>
+      <th>优化类型</th>
+      <th>基准</th>
+      <th>优化目标</th>
+      <th>方法</th>
+      <th>基准分数</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th rowspan="9" scope="rowgroup">Harness 优化</th>
+      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>代码子集</th>
+      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
+      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>训练 10 个任务 / 验证 5 个任务</sub></td>
+      <td align="center">92.9% → 96.0% <img src="docs/users/assets/score-delta-plus-3-1.svg" alt="+3.1 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>验证 10 个任务</sub></td>
+      <td align="center">78.5% → 78.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>训练 10 个任务 / 验证 5 个任务</sub></td>
+      <td align="center">94.5% → 94.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>办公子集</th>
+      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
+      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>训练 16 个任务 / 测试 4 个任务 / 验证 10 个任务</sub></td>
+      <td align="center">87.4% → 89.5% <img src="docs/users/assets/score-delta-plus-2-1.svg" alt="+2.1 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>验证 30 个任务</sub></td>
+      <td align="center">83.2% → 83.2% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>训练 16 个任务 / 测试 4 个任务 / 验证 10 个任务</sub></td>
+      <td align="center">84.2% → 92.6% <img src="docs/users/assets/score-delta-plus-8-4.svg" alt="+8.4 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <th rowspan="3"><a href="https://www.tbench.ai/news/terminal-bench-4-0">Terminal-Bench 4.0</a></th>
+      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
+      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>训练 10 个任务 / 测试 10 个任务 / 验证 5 个任务</sub></td>
+      <td align="center">20.0% → 40.0% <img src="docs/users/assets/score-delta-plus-20-0.svg" alt="+20.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>验证 25 个任务</sub></td>
+      <td align="center">12.0% → 28.0% <img src="docs/users/assets/score-delta-plus-16-0.svg" alt="+16.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>训练 16 个任务 / 测试 4 个任务 / 验证 10 个任务</sub></td>
+      <td align="center">50.0% → 50.0% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <th rowspan="3" scope="rowgroup">Infra 优化</th>
+      <th rowspan="2"><a href="#operator-dataset">算子典型数据集</a></th>
+      <td rowspan="2" align="center"><a href="https://github.com/triton-lang/triton">Triton kernel</a></td>
+      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>关闭 Reflection</sub></td>
+      <td align="center">100.0% → 111.0% <img src="docs/users/assets/score-delta-plus-11-0.svg" alt="+11.0 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>开启 Reflection</sub></td>
+      <td align="center">100.0% → 113.2% <img src="docs/users/assets/score-delta-plus-13-2.svg" alt="+13.2 pp" width="62" height="20"></td>
+    </tr>
+    <tr>
+      <th><a href="https://github.com/AISBench/benchmark">AISBench</a></th>
+      <td align="center"><a href="https://github.com/vllm-project/vllm">vLLM</a> +<br><code>deepseek-v4-flash-0731</code></td>
+      <td><a href="src/policies/parameter/agent/policy.yaml"><code>parameter-agent</code></a><br><sub>开启 Reflection 和 Memory</sub></td>
+      <td align="center">100.0% → 171.0% <img src="docs/users/assets/score-delta-plus-71-0.svg" alt="+71.0 pp" width="62" height="20"></td>
+    </tr>
+  </tbody>
+</table>
 
 <a id="overview"></a>
 
@@ -282,90 +366,6 @@ arsi dashboard
         <a href="src/plugins/evaluator-operatorbench"><code>evaluator.operatorbench</code></a><br>
         <a href="src/plugins/selector-metrics"><code>selector.metric</code></a>
       </td>
-    </tr>
-  </tbody>
-</table>
-
-<a id="experiment-results"></a>
-
-## 📊 实验效果
-
-- Harness 优化实验的内部 Agent 调用由 Pi 执行，使用 `deepseek-v4.1-flash-1017`。「优化目标」列标明被测 DeepSeek Harness（DSH）所用的模型版本，「方法」列记录各基准子集的训练、测试与验证任务数。
-- Infra 优化实验的内部 Agent 调用由 Codex 执行，使用 `GPT-6.1 Sol`。推理实验在 [vLLM](https://github.com/vllm-project/vllm) 上运行 `deepseek-v4-flash-0731`，使用 [AISBench](https://github.com/AISBench/benchmark) 评测，输入 4096 个 token，输出 2048 个 token，并发数为 330。算子典型数据集覆盖 `bias-gelu-tanh`、`bias-gelu`、`transpose-copy`、`bias-tanh-gate` 和 `transposed-bias-add`，算子评测检查正确性，并记录设备上的平均执行耗时，性能得分的计算公式为 `基线耗时/ 优化后耗时`。<a id="operator-dataset"></a>
-- 表中分数按「基线 → 选定方案」展示，选定方案得分取基线与候选方案两者中的最高分。算子和推理实验的分数均以基线为 100.0% 进行归一化。红色徽章表示提升，灰色表示持平，变化量以百分点（pp）计。
-
-<table>
-  <thead>
-    <tr>
-      <th>优化类型</th>
-      <th>基准</th>
-      <th>优化目标</th>
-      <th>方法</th>
-      <th>基准分数</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th rowspan="9" scope="rowgroup">Harness 优化</th>
-      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>代码子集</th>
-      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
-      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>训练 10 个任务 / 验证 5 个任务</sub></td>
-      <td align="center">92.9% → 96.0% <img src="docs/users/assets/score-delta-plus-3-1.svg" alt="+3.1 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>验证 10 个任务</sub></td>
-      <td align="center">78.5% → 78.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>训练 10 个任务 / 验证 5 个任务</sub></td>
-      <td align="center">94.5% → 94.5% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <th rowspan="3"><a href="https://github.com/Tencent/workbuddy-bench#overview">WorkBuddy Bench</a><br>办公子集</th>
-      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
-      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>训练 16 个任务 / 测试 4 个任务 / 验证 10 个任务</sub></td>
-      <td align="center">87.4% → 89.5% <img src="docs/users/assets/score-delta-plus-2-1.svg" alt="+2.1 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>验证 30 个任务</sub></td>
-      <td align="center">83.2% → 83.2% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>训练 16 个任务 / 测试 4 个任务 / 验证 10 个任务</sub></td>
-      <td align="center">84.2% → 92.6% <img src="docs/users/assets/score-delta-plus-8-4.svg" alt="+8.4 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <th rowspan="3"><a href="https://www.tbench.ai/news/terminal-bench-4-0">Terminal-Bench 4.0</a></th>
-      <td rowspan="3" align="center"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH</a> +<br><code>deepseek-v4.1-flash-1017</code></td>
-      <td><a href="https://arxiv.org/abs/2608.27454">WikiSkill</a><br><sub>训练 10 个任务 / 测试 10 个任务 / 验证 5 个任务</sub></td>
-      <td align="center">20.0% → 40.0% <img src="docs/users/assets/score-delta-plus-20-0.svg" alt="+20.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://github.com/google-research/harness2">Harness²</a><br><sub>验证 25 个任务</sub></td>
-      <td align="center">12.0% → 28.0% <img src="docs/users/assets/score-delta-plus-16-0.svg" alt="+16.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="https://arxiv.org/abs/2507.19457">GEPA</a><br><sub>训练 16 个任务 / 测试 4 个任务 / 验证 10 个任务</sub></td>
-      <td align="center">50.0% → 50.0% <img src="docs/users/assets/score-delta-zero.svg" alt="0.0 pp" width="62" height="20"></td>
-    </tr>
-  </tbody>
-  <tbody>
-    <tr>
-      <th rowspan="3" scope="rowgroup">Infra 优化</th>
-      <th rowspan="2"><a href="#operator-dataset">算子典型数据集</a></th>
-      <td rowspan="2" align="center"><a href="https://github.com/triton-lang/triton">Triton kernel</a></td>
-      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>关闭 Reflection</sub></td>
-      <td align="center">100.0% → 111.0% <img src="docs/users/assets/score-delta-plus-11-0.svg" alt="+11.0 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>开启 Reflection</sub></td>
-      <td align="center">100.0% → 113.2% <img src="docs/users/assets/score-delta-plus-13-2.svg" alt="+13.2 pp" width="62" height="20"></td>
-    </tr>
-    <tr>
-      <th><a href="https://github.com/AISBench/benchmark">AISBench</a></th>
-      <td align="center"><a href="https://github.com/vllm-project/vllm">vLLM</a> +<br><code>deepseek-v4-flash-0731</code></td>
-      <td><a href="src/policies/parameter/agent/policy.yaml"><code>parameter-agent</code></a><br><sub>开启 Reflection 和 Memory</sub></td>
-      <td align="center">100.0% → 171.0% <img src="docs/users/assets/score-delta-plus-71-0.svg" alt="+71.0 pp" width="62" height="20"></td>
     </tr>
   </tbody>
 </table>
