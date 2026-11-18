@@ -2,7 +2,6 @@ import {
   mkdir,
   readFile,
   writeFile,
-  rename,
   readdir,
   lstat,
   chmod,
@@ -22,6 +21,7 @@ import type {
 } from '../../contracts/index.js';
 import { parseFileTree } from '../../contracts/index.js';
 import { canonical, digest, object, string, json } from '../../shared/json.js';
+import { renameFileWithRetry } from './rename-file.js';
 
 export const excludedArtifactEntries: readonly string[] = [
   'node_modules',
@@ -47,7 +47,7 @@ export async function atomic(path: string, value: unknown): Promise<void> {
   let published = false;
   try {
     await writeFile(temp, canonical(value), { mode: 0o600, flag: 'wx' });
-    await rename(temp, path);
+    await renameFileWithRetry(temp, path);
     published = true;
   } finally {
     // Rename consumes the temporary path; a confirmed publication needs no cleanup.

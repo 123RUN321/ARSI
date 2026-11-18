@@ -12,14 +12,15 @@ import {
   type JsonObject,
   type OperationDefinition,
 } from '../../src/contracts/index.js';
-import { createRuntime } from '../../src/runtime/context.js';
 import { Recipe } from '../../src/runtime/loaders/recipe.js';
 import { object, string } from '../../src/shared/json.js';
 import {
   prepareOperatorProposerFixture,
   operatorFixtureSource,
 } from '../fixtures/operator-proposer/setup.js';
+import { loadOperatorRuntime } from '../fixtures/operator-proposer/runtime.js';
 
+const { createRuntime } = await loadOperatorRuntime();
 useOperatorSdkTestEnvironment();
 
 async function setup(

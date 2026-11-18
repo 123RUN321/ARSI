@@ -3,6 +3,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+export const sdkProfileArtifactSkip =
+  process.platform === 'win32' &&
+  'The pinned Operator SDK emits absolute Windows profiling paths that its verifier rejects';
+
 /** Keep SDK tests independent of the developer's network configuration. */
 export function useOperatorSdkTestEnvironment(): void {
   let directory: string | undefined;

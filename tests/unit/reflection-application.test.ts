@@ -171,6 +171,36 @@ test('saved versions directly overwrite owned snapshots and the initial revision
   await f.app.apply('revision-empty');
   await assert.rejects(readFile(join(f.guidance, 'original.md')), /ENOENT/);
 });
+test('revision application retries replacing a temporarily busy file', async (t) => {
+  const f = await fixture();
+  t.after(() => rm(f.root, { recursive: true, force: true }));
+  const destination = join(await realpath(f.guidance), 'original.md');
+  await writeFile(destination, 'original');
+  await f.save('revision-r1', [file(f.prefix + '/original.md', 'replacement')]);
+  const originalRename = filesystem.rename;
+  let busy = true;
+  const mocked = t.mock.method(
+    filesystem,
+    'rename',
+    async (...args: Parameters<typeof originalRename>) => {
+      if (args[1] === destination && busy) {
+        busy = false;
+        throw Object.assign(new Error('destination busy'), { code: 'EBUSY' });
+      }
+      await originalRename(...args);
+    },
+  );
+  syncBuiltinESMExports();
+  try {
+    assert.equal((await f.app.apply('revision-r1')).status, 'applied');
+    assert.equal(await readFile(destination, 'utf8'), 'replacement');
+    assert.deepEqual(await readdir(f.guidance), ['original.md']);
+    assert.equal(busy, false);
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
 test('snapshot name collisions follow the destination filesystem before any resource changes', async (t) => {
   const f = await fixture();
   t.after(() => rm(f.root, { recursive: true, force: true }));

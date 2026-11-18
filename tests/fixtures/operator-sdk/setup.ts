@@ -1,9 +1,10 @@
-import { cp, mkdtemp, chmod, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { stringify } from 'yaml';
 import type { JsonObject } from '../../../src/contracts/index.js';
 import type { Registry } from '../../../src/runtime/registry/index.js';
+import { prepareNodeFixture } from './executable.js';
 
 /** Adapter tests register their own small flows instead of adding production Policies. */
 function measurementPolicy(diagnostic: boolean): JsonObject {
@@ -129,7 +130,7 @@ export async function prepareOperatorFixture(): Promise<{
   );
   const worker = join(root, 'worker.mjs');
   await cp(new URL('./worker.mjs', import.meta.url), worker);
-  await chmod(worker, 0o755);
+  const python = await prepareNodeFixture(worker);
   for (const diagnostic of [false, true])
     await writeFile(
       join(root, diagnostic ? 'test-diagnostic.yaml' : 'test-evaluation.yaml'),
@@ -162,7 +163,7 @@ export async function prepareOperatorFixture(): Promise<{
                 repeat: 20,
                 rtol: 0,
                 atol: 0,
-                python: worker,
+                python,
                 device: 0,
                 timeoutSeconds: 15,
                 profiling: { enabled: false, cacheEnabled: false },

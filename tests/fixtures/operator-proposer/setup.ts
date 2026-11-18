@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { parseDocument } from 'yaml';
@@ -58,12 +58,11 @@ export async function prepareOperatorProposerFixture(
       ],
     }),
   );
-  const embeddingPython = join(fixture.root, 'embedding-worker.mjs');
+  const retrievalScript = join(fixture.root, 'embedding-worker.mjs');
   await writeFile(
-    embeddingPython,
-    `#!${process.execPath}\nimport {readFile,writeFile} from 'node:fs/promises';\nconst arg=name=>process.argv[process.argv.indexOf(name)+1];\nconst request=JSON.parse(await readFile(arg('--request'),'utf8'));const identity=JSON.parse(await readFile(request.identityFile,'utf8'));\nawait writeFile(arg('--response'),JSON.stringify({schemaVersion:'rsi.operator-retrieval/v1',embeddingDigest:request.embeddingDigest,resourcesDigest:request.resourcesDigest,matches:[],knowledgeContext:'',omitted:{techniques:[],examples:[]},model:identity.model,runtime:{python:'TEST-FIXTURE',sentenceTransformers:'TEST-FIXTURE',transformers:'TEST-FIXTURE',torch:'TEST-FIXTURE'}}));\n`,
+    retrievalScript,
+    `import {readFile,writeFile} from 'node:fs/promises';\nconst arg=name=>process.argv[process.argv.indexOf(name)+1];\nconst request=JSON.parse(await readFile(arg('--request'),'utf8'));const identity=JSON.parse(await readFile(request.identityFile,'utf8'));\nawait writeFile(arg('--response'),JSON.stringify({schemaVersion:'rsi.operator-retrieval/v1',embeddingDigest:request.embeddingDigest,resourcesDigest:request.resourcesDigest,matches:[],knowledgeContext:'',omitted:{techniques:[],examples:[]},model:identity.model,runtime:{python:'TEST-FIXTURE',sentenceTransformers:'TEST-FIXTURE',transformers:'TEST-FIXTURE',torch:'TEST-FIXTURE'}}));\n`,
   );
-  await chmod(embeddingPython, 0o755);
   const resourcesDirectory = join(fixture.root, 'resources');
   await prepareKnowledgeFixture(resourcesDirectory);
   // Fixture interpreter identity follows the Node executable running this test.
@@ -76,9 +75,9 @@ export async function prepareOperatorProposerFixture(
     ...fixture,
     modelDirectory,
     identityFile,
-    embeddingPython,
+    embeddingPython: process.execPath,
     resourcesDirectory,
-    retrievalScript: embeddingPython,
+    retrievalScript,
     entrySource,
   };
 }
