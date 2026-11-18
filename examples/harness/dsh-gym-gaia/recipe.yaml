@@ -81,8 +81,8 @@ bindings:
         # The GAIA profile's screen tier caps at 16 rollouts; this recipe pins
         # 36 training tasks, so use the full tier to evaluate every sampled row.
         tier: full
-        # A new seed avoids replaying the failed eval-26257179c297408b cache.
-        # Baseline and candidate evaluations all use this same seed.
+        # Pin one seed so baseline, candidate, and holdout comparisons share
+        # the same task order.
         seed: 48
       poll:
         intervalMs: 5000

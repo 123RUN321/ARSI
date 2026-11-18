@@ -14,6 +14,11 @@ RSI never receives holdout task IDs, cannot submit `holdout` through
 `evaluator.gym`, and never writes the holdout result into Wiki memory,
 proposer evidence, or candidate selection.
 
+The checked-in baseline is the bundle promoted by the 2026-11-18 GAIA run:
+candidate holdout 18/26 (0.6923) vs incumbent 17/26 (0.6538) on
+`successRate`. Later runs start from that promoted prompt and use it as the
+next incumbent.
+
 ## End-to-end flow
 
 1. RSI materializes the baseline or proposed AgentBundle and acquires a ready
@@ -115,6 +120,11 @@ evaluates them under `split: train_full`, not `train_probe`.
 Validation intentionally uses text-only tasks; video URL tasks are excluded
 because YouTube retrieval is environment-dependent. Additional network-heavy
 validation tasks are excluded when they can exhaust the DSH timeout.
+
+`GYM_DSH_TIMEOUT_S=600` gives long multi-step GAIA tasks room to finish; a
+shorter cap turns them into Gym-recorded failed rollouts before the agent can
+produce an answer.
+
 The University of Leicester fish-bag task is also excluded from training because
 it requires downloading an external paper and can stall in network-isolated runs.
 
@@ -148,7 +158,7 @@ export GYM_DSH_COMMAND=dsh
 export GYM_DSH_HOST_HOME=$DSH_HOME
 export GYM_DSH_BASE_PATCH=$DSH_HOME/rsi-gym-base.patch.yml
 export GYM_DSH_WORKSPACE_ROOT=$HOME/rsi-runs/gaia-dsh-work
-export GYM_DSH_TIMEOUT_S=300
+export GYM_DSH_TIMEOUT_S=600
 export RUN_ROOT=$HOME/rsi-runs/gaia-train-full
 mkdir -p "$RUN_ROOT"
 ```
@@ -204,8 +214,7 @@ Keep this shell running. `/gym_evaluate` accepts only `train_probe` and
 From the ember-rsi repository root:
 
 ```bash
-ember-rsi validate examples/harness/dsh-gym-gaia/recipe.yaml
-ember-rsi run examples/harness/dsh-gym-gaia/recipe.yaml
+pnpm arsi run examples/harness/dsh-gym-gaia/recipe.yaml
 ```
 
 The run blocks through the final release gate. Search-side calls use
