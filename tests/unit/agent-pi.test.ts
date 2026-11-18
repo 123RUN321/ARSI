@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type ServerResponse } from 'node:http';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -340,7 +347,7 @@ test(
   },
 );
 
-test('Pi direct bash uses the project cwd and the host account permissions', async () => {
+test('Pi direct bash uses the project cwd and host account permissions when available', async () => {
   const f = await modelFixture(
     [
       {
@@ -365,6 +372,16 @@ test('Pi direct bash uses the project cwd and the host account permissions', asy
     const result = JSON.stringify(
       messages.find((message) => message.role === 'tool'),
     );
+    const missingWindowsShell =
+      process.platform === 'win32' &&
+      !(await access('/bin/bash').then(
+        () => true,
+        () => false,
+      ));
+    if (missingWindowsShell) {
+      assert.match(result, /shell path not found: \/bin\/bash/i);
+      return;
+    }
     assert.match(result, /workspace/);
     assert.match(result, /authorized evidence/);
     assert.match(result, /DIRECT_HOST_READ_MARKER/);

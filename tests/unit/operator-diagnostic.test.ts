@@ -1,7 +1,11 @@
-import { useOperatorSdkTestEnvironment } from '../fixtures/operator-sdk/environment.js';
+import {
+  sdkProfileArtifactSkip,
+  useOperatorSdkTestEnvironment,
+} from '../fixtures/operator-sdk/environment.js';
+import { prepareNodeFixture } from '../fixtures/operator-sdk/executable.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, copyFile, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { createRuntime } from '../../src/runtime/context.js';
@@ -33,13 +37,12 @@ async function prepare(
     new URL('../fixtures/operator-sdk/msprof.mjs', import.meta.url),
     msprof,
   );
-  await chmod(msprof, 0o755);
   kernel.profiling = {
     enabled: false,
     cacheEnabled: false,
     warmup: 25,
     collection,
-    msprofBin: msprof,
+    msprofBin: await prepareNodeFixture(msprof),
     maxAttempts: 1,
     attemptTimeoutSeconds: 10,
   };
@@ -60,7 +63,8 @@ for (const [collection, unavailable] of [
   ['Default', false],
   ['Default', true],
 ] as const) {
-  test(`diagnostic precheck evaluates once then profiles once and resumes without calls (${collection}, ${unavailable ? 'unavailable' : 'completed'})`, async (t) => {
+  const description = `diagnostic precheck evaluates once then profiles once and resumes without calls (${collection}, ${unavailable ? 'unavailable' : 'completed'})`;
+  test(description, { skip: sdkProfileArtifactSkip }, async (t) => {
     const fixture = await prepare(unavailable, collection);
     t.after(() => rm(fixture.root, { recursive: true, force: true }));
     const runtime = await createRuntime({ rootDirectory: fixture.root });

@@ -10,8 +10,8 @@ const output = args
 const application = args
   .find((value) => value.startsWith('--application='))
   ?.slice('--application='.length);
-const requestPath = application?.match(/--request ([^ ]+)/u)?.[1];
-const resultPath = application?.match(/--output ([^ ]+)/u)?.[1];
+const [, requestPath, resultPath] =
+  application?.match(/ --request (.+) --output (.+)$/u) ?? [];
 if (!output || !requestPath || !resultPath)
   throw new Error('Missing fixture msprof arguments');
 const request = JSON.parse(await readFile(requestPath, 'utf8'));

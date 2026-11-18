@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   mkdir,
   mkdtemp,
@@ -44,8 +45,22 @@ test('operator resource loading rejects modified knowledge and paths outside the
   await writeFile(path, 'changed');
   await assert.rejects(readKnowledgeResources(f), /resource changed/);
   await writeFile(path, original);
-  await rm(path);
-  await symlink(f.retrievalScript, path);
+
+  const outside = join(f.directory, 'outside');
+  await mkdir(outside);
+  await writeFile(join(outside, 'technique.json'), original);
+  await symlink(
+    outside,
+    join(f.resourcesDirectory, 'linked'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  const manifestPath = join(f.resourcesDirectory, 'knowledge/manifest.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.resources.push({
+    path: 'linked/technique.json',
+    sha256: createHash('sha256').update(original).digest('hex'),
+  });
+  await writeFile(manifestPath, JSON.stringify(manifest));
   await assert.rejects(readKnowledgeResources(f), /escapes/);
 });
 
