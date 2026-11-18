@@ -25,6 +25,7 @@
 | `policy.parameter-grid`                                        | 逐一尝试预设参数组合，选择更好的推理服务配置。       | [README](../../../examples/artifacts/inference/parameter-grid/README.md)    |
 | `policy.parameter-optuna`                                      | 利用评测反馈搜索参数，在有限预算内优化推理服务性能。 | [README](../../../examples/artifacts/inference/parameter-tpe/README.md)     |
 | `policy.operator-search`                                       | 结合正确性检查与性能反馈，优化 Triton-Ascend 算子。  | [README](../../../examples/artifacts/kernel/transpose-copy/README.zh-CN.md) |
+| `policy.gym-rsi`                                               | 在训练和验证任务上运行 Gym-RSI 循环，再用 Gym holdout 对冻结候选做发布门禁。 | [README](../../../examples/harness/dsh-gym-gaia/README.md)                  |
 
 Agent、Grid 和 Optuna 都会在搜索前评测初始配置一次。请提供能正常启动的配置，并为基线预留一次 evaluation run。基线评测失败时，实验停止。
 
@@ -45,6 +46,8 @@ Agent、Grid 和 Optuna 都会在搜索前评测初始配置一次。请提供�
 | Evaluator   | `evaluator.agentbench`                          | 运行 Agent 基准任务并保存得分与执行证据。                             | 检验提示词、Skill 或代码修改的效果。         |
 | Evaluator   | `evaluator.inferencebench`                      | 对推理服务执行基准测试，测量吞吐量、延迟等指标。                      | 比较不同服务配置的性能。                     |
 | Evaluator   | `evaluator.operatorbench`                       | 通过 Evaluator SDK 检查算子正确性、测量耗时，并按需采集性能分析数据。 | 判断算子修改是否正确、是否更快。             |
+| Evaluator   | `evaluator.gym`                                 | 向 Gym 发送已物化候选的目录、摘要和类型，并记录原生指标、身份与证据。 | 在 Gym 管理的训练或验证 split 上测量候选。   |
+| Release     | `release.gym`                                   | 在 Gym 锁定的 holdout 上比较冻结候选与 incumbent，并记录发布决策。    | 在搜索结束后执行严格提升的发布门禁。         |
 | Selector    | `selector.metric`                               | 按指定指标及约束比较候选。                                            | 依据成功率、吞吐量或延迟等数值选择更优版本。 |
 | Selector    | `selector.inference`                            | 先改善约束违反程度，再在目标范围内优化主指标。                        | 优化推理性能，并保留逐步接近延迟目标的有效进展。 |
 | Selector    | `selector.artifact`                             | 让模型按评审标准比较匿名展示的报告等交付内容。                        | 按内容质量选择候选。                         |

@@ -1,0 +1,109 @@
+schemaVersion: rsi.recipe/v1
+id: dsh-gym-gaia-train-full
+description: Evolve a DSH AgentBundle candidate on Gym's train_full split, then
+  run Gym's holdout release gate against the original incumbent. Search never
+  evaluates or receives holdout tasks.
+application:
+  plugin: application.agentbundle
+  config:
+    target: { schema: ./target.yaml }
+    baseline: { directory: ./baseline }
+policy:
+  id: policy.gym-rsi
+  config:
+    maxRounds: 1
+    dataset:
+      # Both lists are pinned subsets of Gym's train_full split. They are
+      # disjoint from each other and from Gym's locked holdout dataset.
+      trainTaskIds:
+        - e1fc63a2-da7a-432f-be78-7c4a95598703
+        - 8e867cd7-cff9-4e6c-867a-ff5ddc2550be
+        - ec09fa32-d03f-4bf8-84b0-1f16922c3ae4
+        - 5d0080cb-90d7-4712-bc33-848150e917d3
+        - 46719c30-f4c3-4cad-be07-d5cb21eee6bb
+        - 4b6bb5f7-f634-410e-815d-e673ab7f8632
+        - b816bfce-3d80-4913-a07d-69b752ce6377
+        - 72e110e7-464c-453c-a309-90a95aed6538
+        - 42576abe-0deb-4869-8c63-225c2d75a95a
+        - b415aba4-4b68-4fc6-9b89-2c812e55a3e1
+        - 935e2cff-ae78-4218-b3f5-115589b19dae
+        - 50ad0280-0819-4bd9-b275-5de32d3b5bcb
+        - 4fc2f1ae-8625-45b5-ab34-ad4433bc21f8
+        - cabe07ed-9eca-40ea-8ead-410ef5e83f91
+        - d0633230-7067-47a9-9dbf-ee11e0a2cdd6
+        - 11af4e1a-5f45-467d-9aeb-46f4bb0bf034
+        - e142056d-56ab-4352-b091-b56054bd1359
+        - c365c1c7-a3db-4d5e-a9a1-66f56eae7865
+        - 7d4a7d1d-cac6-44a8-96e8-ea9584a70825
+        - dc22a632-937f-4e6a-b72f-ba0ff3f5ff97
+        - 3f57289b-8c60-48be-bd80-01f8099ca449
+        - 23dd907f-1261-4488-b21c-e9185af91d5e
+        - a0068077-79f4-461a-adfe-75c1a4148545
+        - bda648d7-d618-4883-88f4-3466eabd860e
+        - 3cef3a44-215e-4aed-8e3b-b1e3f08063b7
+        - 3627a8be-a77f-41bb-b807-7e1bd4c0ebdf
+        - 2a649bb1-795f-4a01-b3be-9a01868dae73
+        - dd3c7503-f62a-4bd0-9f67-1b63b94194cc
+        - f0f46385-fc03-4599-b5d3-f56496c3e69f
+        - 56137764-b4e0-45b8-9c52-1866420c3df5
+        - e8cb5b03-41e0-4086-99e5-f6806cd97211
+        - 16d825ff-1623-4176-a5b5-42e0f5c2b0ac
+        - 544b7f0c-173a-4377-8d56-57b36eb26ddf
+        - 6b078778-0b90-464d-83f6-59511c811b01
+        - 08cae58d-4084-4616-b6dd-dd6534e4825b
+        - 2dfc4c37-fec1-4518-84a7-10095d30ad75
+      # Validation uses text-only tasks; video URL tasks are excluded because
+      # YouTube retrieval is environment-dependent and can exhaust the DSH timeout.
+      validationTaskIds:
+        - 27d5d136-8563-469e-92bf-fd103c28b57c
+        - dc28cf18-6431-458b-83ef-64b3ce566c10
+        - 4b650a35-8529-4695-89ed-8dc7a500a498
+        - c714ab3a-da30-4603-bacd-d008800188b9
+        - 7673d772-ef80-4f0f-a602-1bf4485c9b43
+        - 5188369a-3bbe-43d8-8b94-11558f909a08
+        - 50ec8903-b81f-4257-9450-1085afd2c319
+        - cf106601-ab4f-4af9-b045-5295fe67b37d
+        - 5a0c1adf-205e-4841-a666-7c3ef95def9d
+        - 17b5a6a3-bc87-42e8-b0fb-6ab0781ef2cc
+        - 04a04a9b-226c-43fd-b319-d5e89743676f
+        - 14569e28-c88c-43e4-8c32-097d35b9a67d
+      # Gym owns the real holdout gate. RSI must never receive holdout task IDs.
+      testTaskIds: []
+bindings:
+  evaluator:
+    plugin: evaluator.gym
+    config:
+      baseUrl: ${GYM_BASE_URL}
+      requestDefaults:
+        adapter: dsh_candidate
+        benchmark: gaia_text_validation
+        split: train_full
+        # The GAIA profile's screen tier caps at 16 rollouts; this recipe pins
+        # 36 training tasks, so use the full tier to evaluate every sampled row.
+        tier: full
+        # A new seed avoids replaying the failed eval-26257179c297408b cache.
+        # Baseline and candidate evaluations all use this same seed.
+        seed: 48
+      poll:
+        intervalMs: 5000
+        timeoutMs: 7200000
+      budget:
+        # 36 training task rows; validation uses 12 rows under the same cap.
+        # The profile's full tier has num_repeats 1, so train executes 36 rollouts.
+        maxRollouts: 36
+        timeoutS: 7200
+  release:
+    plugin: release.gym
+    config:
+      baseUrl: ${GYM_BASE_URL}
+      promotionDefaults:
+        adapter: dsh_candidate
+        benchmark: gaia_text_validation
+        seed: 48
+      poll:
+        intervalMs: 5000
+        timeoutMs: 7200000
+      minDelta: 0
+      metric: successRate
+budget:
+  elapsedWallMs: 14400000

@@ -17,6 +17,8 @@ import { paretoEvolutionProposerDefinition } from '../plugins/proposer-pareto-ev
 import { memoryDefinition } from '../plugins/memory-agent/index.js';
 import { reflectionDefinition } from '../plugins/reflection-agent/index.js';
 import { agentbenchDefinition } from '../plugins/evaluator-agentbench/index.js';
+import { gymDefinition } from '../plugins/evaluator-gym/index.js';
+import { gymReleaseDefinition } from '../plugins/release-gym/index.js';
 import { inferencebenchDefinition } from '../plugins/evaluator-inferencebench/index.js';
 import { inferenceSelectorDefinition } from '../plugins/selector-inference/index.js';
 import { metricSelectorDefinition } from '../plugins/selector-metrics/index.js';
@@ -43,6 +45,8 @@ export async function registerBuiltins(registry: Registry): Promise<void> {
     memoryDefinition,
     reflectionDefinition,
     agentbenchDefinition,
+    gymDefinition,
+    gymReleaseDefinition,
     inferencebenchDefinition,
     inferenceSelectorDefinition,
     metricSelectorDefinition,
@@ -54,6 +58,7 @@ export async function registerBuiltins(registry: Registry): Promise<void> {
   for (const path of [
     'harness2/policy.yaml',
     'wikiskill/policy.yaml',
+    'gym-rsi/policy.yaml',
     'operator-search/policy.yaml',
     'parameter/grid/policy.yaml',
     'parameter/optuna/policy.yaml',
