@@ -353,7 +353,7 @@ arsi dashboard
     <tr>
       <th rowspan="3" scope="rowgroup">Infra optimization</th>
       <th rowspan="2"><a href="#operator-dataset">Representative operator dataset</a></th>
-      <td rowspan="2" align="center">Ascend 950PR NPU +<br>CANN operators</td>
+      <td rowspan="2" align="center"><a href="https://gitcode.com/cann">CANN operators</a></td>
       <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>Reflection disabled</sub></td>
       <td align="center">100.0% → 111.0% <img src="docs/users/assets/score-delta-plus-11-0.svg" alt="+11.0 pp" width="62" height="20"></td>
     </tr>
@@ -363,7 +363,7 @@ arsi dashboard
     </tr>
     <tr>
       <th><a href="https://github.com/AISBench/benchmark">AISBench</a></th>
-      <td align="center"><a href="https://github.com/vllm-project/vllm-ascend">Atlas A3 series products +<br><a href="https://github.com/vllm-project/vllm-ascend">vLLM-Ascend</a> +<br><code>deepseek-v4-flash-0731</code></td>
+      <td align="center"><a href="https://github.com/vllm-project/vllm-ascend">vLLM-Ascend</a> +<br><code>deepseek-v4-flash-0731</code></td>
       <td><a href="src/policies/parameter/agent/policy.yaml"><code>parameter-agent</code></a><br><sub>Reflection and Memory enabled</sub></td>
       <td align="center">100.0% → 171.0% <img src="docs/users/assets/score-delta-plus-71-0.svg" alt="+71.0 pp" width="62" height="20"></td>
     </tr>
