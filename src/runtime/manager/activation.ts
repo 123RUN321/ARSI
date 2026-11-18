@@ -68,7 +68,7 @@ export class RevisionActivation {
         this.revisionState[target] = parent;
   }
 
-  async restore(legacyBindingVersions?: JsonObject): Promise<void> {
+  async restore(): Promise<void> {
     let saved: JsonObject;
     try {
       saved = await this.options.facts.read('activations', this.options.id);
@@ -78,18 +78,16 @@ export class RevisionActivation {
       throw error;
     }
     const activation = parseActivation(saved);
-    const savedVersions = object(
-      saved.bindingVersions ?? legacyBindingVersions ?? {},
-    );
+    const savedVersions = object(saved.bindingVersions ?? {});
     for (const [name, binding] of Object.entries(activation.bindings)) {
       if (
-        legacyBindingVersions &&
+        this.options.bindingVersions &&
         savedVersions[name] !== this.options.bindingVersions?.[name]
       )
         continue;
       const ref = activation.revisions[name];
       if (
-        !legacyBindingVersions ||
+        !this.options.bindingVersions ||
         (typeof ref === 'string' &&
           (await this.options.facts.read('revisions', ref)).kind ===
             'generated')

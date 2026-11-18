@@ -60,14 +60,7 @@ export interface StepContext {
   readonly stepPath: string;
   readonly parallel: boolean;
   evaluate(template: Template, locals?: JsonObject): JsonValue;
-  entered(scope: string): boolean;
   decision(key: string, choose: () => JsonValue): Promise<JsonValue>;
-  legacyForeach():
-    | {
-        step: ForEachStep;
-        evaluate(template: Template, locals?: JsonObject): JsonValue;
-      }
-    | undefined;
   invoke(binding: string, input: () => JsonValue): Promise<JsonValue>;
   updateState(patch: JsonObject): JsonObject;
   reflect(): Promise<JsonValue>;
@@ -76,7 +69,6 @@ export interface StepContext {
     options: {
       scope: string;
       locals?: JsonObject;
-      legacyLocals?: JsonObject;
       parallel?: boolean;
       output?: Template;
     },
@@ -277,8 +269,6 @@ export class IfStep implements Step {
   }
   async execute(context: StepContext): Promise<StepResult> {
     const selected = await context.decision('branch', () => {
-      if (context.entered('then')) return 'then';
-      if (context.entered('else')) return 'else';
       return boolean(context.evaluate(this.condition), `${context.stepPath}.if`)
         ? 'then'
         : 'else';
@@ -353,7 +343,6 @@ export class LoopStep implements Step {
       const locals = { loop: { index } };
       const scope = `iteration-${index}`;
       const entered = await context.decision(scope, () => {
-        if (context.entered(scope)) return true;
         return (
           index < maximum &&
           boolean(
@@ -452,16 +441,15 @@ export class ForEachStep implements Step {
     );
     const parallel = context.parallel || concurrency > 1;
     if (parallel) assertParallelSafe(this.steps, context.stepPath);
-    const legacy = context.legacyForeach();
     const saved = await context.decision('items', () => {
-      const evaluate = legacy?.evaluate ?? context.evaluate;
-      const step = legacy?.step ?? this;
-      const items = evaluate(step.items);
+      const items = context.evaluate(this.items);
       if (!Array.isArray(items))
         throw new Error(`${context.stepPath}: foreach requires an array`);
       const seen = new Set<string>();
       return items.map((item) => {
-        const key = canonical(evaluate(step.key, { [step.itemName]: item }));
+        const key = canonical(
+          context.evaluate(this.key, { [this.itemName]: item }),
+        );
         if (seen.has(key))
           throw new Error(`${context.stepPath}: duplicate foreach key`);
         seen.add(key);
@@ -489,9 +477,6 @@ export class ForEachStep implements Step {
           const result = await context.runSteps(this.steps, {
             scope: `key-${digest(entry.key)}`,
             locals: { [this.itemName]: entry.item },
-            legacyLocals: {
-              [legacy?.step.itemName ?? this.itemName]: entry.item,
-            },
             parallel,
             output: this.output,
           });

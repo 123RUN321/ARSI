@@ -30,7 +30,6 @@ import {
   assertDefinitionLock,
   lockDefinition,
   parseLockedReflection,
-  readBindingVersions,
   readResourceOrigins,
 } from './definition-lock.js';
 import { ExperimentFacts } from './facts.js';
@@ -56,7 +55,6 @@ import {
   partialPolicyOutput,
   recoverPolicy,
   type PolicyRecovery,
-  type PolicyOptions,
 } from '../policy/executor.js';
 
 interface RunOptions {
@@ -208,7 +206,6 @@ export class Manager {
     let recovery: PolicyRecovery | undefined;
     let retryCalls: ReadonlyMap<string, JsonObject> | undefined;
     let retryRef: string | undefined;
-    let legacyRouting: NonNullable<PolicyOptions['routing']>['legacy'];
     let restore: JsonObject | undefined;
     const checkpoints = new PolicyCheckpoints(this.facts, id);
     const resources = join(this.directory, 'experiments', id, 'resources');
@@ -262,19 +259,6 @@ export class Manager {
         }
         retryRef = 'retry-' + randomUUID();
         const archiveId = digest({ id, definition: locked.digest });
-        const legacyDefinition = priorRetry.legacyDefinition ?? archiveId;
-        const legacy =
-          legacyDefinition === archiveId
-            ? locked
-            : await this.facts.read(
-                'definition-attempts',
-                string(legacyDefinition),
-              );
-        assertDefinitionLock(legacy);
-        legacyRouting = {
-          policy: readPolicy(legacy),
-          ...oldPolicyInputs(legacy),
-        };
         definition = await lockDefinition(
           recipe,
           this.options.registry,
@@ -283,9 +267,7 @@ export class Manager {
           {
             ref: retryRef,
             previousDefinition: archiveId,
-            legacyDefinition,
             ...(recovery ? { recovery: { ...recovery } } : {}),
-            legacyBindingVersions: readBindingVersions(legacy),
           },
           locked,
         );
@@ -544,7 +526,7 @@ export class Manager {
         cleanup,
         event: events.event,
         diagnose,
-        bindingVersions: definition && readBindingVersions(definition),
+        bindingVersions: definition && object(definition.bindingVersions),
       });
       const experimentFacts = new ExperimentFacts(
         id,
@@ -804,10 +786,7 @@ export class Manager {
           }
         }
       }
-      if (continuing)
-        await activation.restore(
-          object(object(definition?.retry).legacyBindingVersions),
-        );
+      if (continuing) await activation.restore();
       const experimentInfo = {
         experimentId: id,
         recipeId: recipe.id,
@@ -853,15 +832,10 @@ export class Manager {
           restore,
           recovery,
           routing: {
-            enteredCallPaths: [
-              ...(retryCalls?.keys() ?? []),
-              ...priorReflections.keys(),
-            ],
             committedOutput(path) {
               const call = retryCalls?.get(path);
               return call?.status === 'succeeded' ? call.output : undefined;
             },
-            legacy: legacyRouting,
           },
           events: {
             info: {

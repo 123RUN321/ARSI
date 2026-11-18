@@ -12,8 +12,7 @@ import { parseCommand } from '../../src/entries/cli/commands.js';
 import { createServer } from '../../src/entries/web/server.js';
 import { Manager } from '../../src/runtime/manager/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
-import { PolicyCheckpoints } from '../../src/runtime/policy/checkpoint.js';
-import { digest, object } from '../../src/shared/json.js';
+import { object } from '../../src/shared/json.js';
 
 test('CLI exposes one resume option with an experiment id', () => {
   assert.equal(
@@ -75,8 +74,8 @@ test('HTTP exposes the same single resume option and requires an existing experi
   }
 });
 
-for (const legacy of [false, true])
-  test(`retry uses current plugins and data from the failure onward (${legacy ? 'legacy' : 'current'} checkpoint)`, async () => {
+for (const priorStatus of ['unknown', 'running'])
+  test(`retry uses current plugins and data from the failure onward (${priorStatus} receipt)`, async () => {
     const root = await mkdtemp(join(tmpdir(), 'arsi-retry-'));
     const policyPath = join(root, 'policy.yaml');
     const recipePath = join(root, 'recipe.yaml');
@@ -277,33 +276,13 @@ for (const legacy of [false, true])
         /Policy shape/,
       );
       await writePolicy('work', true);
-      const priorCall = { ...work, status: legacy ? 'running' : 'unknown' };
+      const priorCall = { ...work, status: priorStatus };
       await old.manager.facts.write('calls', String(work.callId), priorCall);
       assert.deepEqual(await next.manager.get('retry-test'), failed);
       assert.deepEqual(
         await next.manager.facts.read('definitions', 'retry-test'),
         originalDefinition,
       );
-      if (legacy) {
-        const original = { ...originalDefinition };
-        delete original.contracts;
-        delete original.bindingVersions;
-        delete original.digest;
-        await old.manager.facts.write('definitions', 'retry-test', {
-          ...original,
-          digest: digest(original),
-        });
-        const snapshot = (await new PolicyCheckpoints(
-          old.manager.facts,
-          'retry-test',
-        ).restore())!;
-        snapshot.journal = Object.fromEntries(
-          Object.entries(object(snapshot.journal)).filter(
-            ([path]) => !path.includes('/@'),
-          ),
-        );
-        await old.manager.facts.write('checkpoints', 'retry-test', snapshot);
-      }
       const write = next.manager.facts.write.bind(next.manager.facts);
       await write('cleanup', 'retry-test', {
         experimentId: 'retry-test',
@@ -495,6 +474,35 @@ test('retry reuses committed child calls before repeating the failed parent', as
     assert.deepEqual(result.output, { execution: 1 });
     assert.equal(parentExecutions, 2);
     assert.equal(childExecutions, 1);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test('resume rejects experiments written before routing decisions were persisted', async () => {
+  const { managerFixture } = await import('../helpers/manager-fixture.js');
+  const fixture = await managerFixture(async () => ({}));
+  try {
+    const recorded = await fixture.run();
+    const definition = await fixture.manager.facts.read('definitions', 'test');
+    await fixture.manager.facts.write('definitions', 'test', {
+      ...definition,
+      schemaVersion: 'rsi.definition-lock/v1',
+    });
+    const failed = { ...recorded, status: 'failed' };
+    await fixture.manager.facts.write('experiments', 'test', failed);
+    await assert.rejects(
+      fixture.manager.run(String(recorded.recipePath), {
+        id: 'test',
+        resume: true,
+      }),
+      /predates resumable Policy checkpoints/,
+    );
+    assert.deepEqual(await fixture.manager.get('test'), failed);
+    assert.deepEqual(
+      await fixture.manager.facts.list('definition-attempts'),
+      [],
+    );
   } finally {
     await fixture.dispose();
   }

@@ -132,41 +132,6 @@ function pointerParent(
   return { parent, key };
 }
 
-/** Reconstruct resource-aware binding versions for locks written before retry. */
-export function readBindingVersions(locked: JsonObject): JsonObject {
-  if (locked.bindingVersions !== undefined)
-    return object(locked.bindingVersions);
-  const recipe = object(locked.recipe);
-  const origins = readResourceOrigins(locked);
-  const versions: JsonObject = {};
-  const bindings = {
-    ...object(recipe.bindings),
-    _application: recipe.application!,
-  };
-  if (!Array.isArray(locked.resources))
-    throw new Error('Invalid locked resources');
-  const resources = resourceSnapshots(locked);
-  for (const [owner, entry] of Object.entries(bindings)) {
-    const binding = object(entry);
-    const sourceConfig = structuredClone(object(binding.config));
-    const localResources: JsonObject = {};
-    for (const [pointer, source] of Object.entries(origins[owner] ?? {})) {
-      const { parent, key } = pointerParent(sourceConfig, pointer);
-      if (Array.isArray(parent)) parent[Number(key)] = source;
-      else parent[key] = source;
-      const snapshot = resources.get(digest({ owner, pointer }).slice(0, 32));
-      if (snapshot !== undefined)
-        localResources[pointer] = snapshot.artifactRef;
-    }
-    versions[owner] = digest({
-      id: binding.plugin,
-      sourceConfig,
-      localResources,
-    });
-  }
-  return versions;
-}
-
 export function readResourceOrigins(
   locked: JsonObject,
 ): Record<string, Record<string, string>> {
@@ -303,7 +268,7 @@ export async function lockDefinition(
     );
   }
   const locked: JsonObject = {
-    schemaVersion: 'rsi.definition-lock/v1',
+    schemaVersion: 'rsi.definition-lock/v2',
     recipe: declaration,
     policy: recipe.policy.toJSON(),
     recipeSourcePath: recipe.sourcePath,
@@ -337,8 +302,10 @@ async function restoreResource(
 }
 
 export function assertDefinitionLock(locked: JsonObject): void {
-  if (locked.schemaVersion !== 'rsi.definition-lock/v1')
-    throw new Error('Unsupported experiment definition lock');
+  if (locked.schemaVersion !== 'rsi.definition-lock/v2')
+    throw new Error(
+      'This experiment predates resumable Policy checkpoints. Start a new experiment.',
+    );
   const { digest: expected, ...content } = locked;
   if (expected !== digest(content))
     throw new Error('Experiment definition lock digest mismatch');

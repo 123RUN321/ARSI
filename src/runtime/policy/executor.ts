@@ -16,9 +16,6 @@ import { validate } from '../../shared/schema.js';
 import { readReflectionResult } from '../revisions/records.js';
 import { evaluateTemplate } from './expression.js';
 import {
-  ForEachStep,
-  IfStep,
-  LoopStep,
   type Step,
   type StepContext,
   type StepResult,
@@ -50,9 +47,7 @@ export interface PolicyOptions {
   restore?: JsonObject;
   recovery?: PolicyRecovery;
   routing?: {
-    enteredCallPaths?: Iterable<string>;
     committedOutput?(path: string): JsonValue | undefined;
-    legacy?: PolicyInputs & { policy: Policy };
   };
   events?: {
     info: {
@@ -77,23 +72,8 @@ interface Frame {
 interface Environment {
   frames: readonly Frame[];
   locals: JsonObject;
-  legacyLocals?: JsonObject;
 }
 
-function policyStepAt(policy: Policy, path: string): Step | undefined {
-  const parts = path.split('/');
-  let steps = policy.steps;
-  for (let i = 1; i < parts.length; i += 2) {
-    const step = steps.find((candidate) => candidate.id === parts[i]);
-    if (i === parts.length - 1) return step;
-    if (step instanceof IfStep)
-      steps = (parts[i + 1] === 'then' ? step.thenBranch : step.elseBranch)
-        .steps;
-    else if (step instanceof LoopStep || step instanceof ForEachStep)
-      steps = step.steps;
-    else return undefined;
-  }
-}
 function changedFields(
   before: JsonObject,
   after: JsonObject,
@@ -265,21 +245,6 @@ export async function runPolicy(
     options.restore === undefined
       ? { journal: {}, boundaries: {} }
       : readPolicyCheckpoint(options.restore, identity);
-  const enteredScopes = new Set<string>();
-  for (const path of [
-    ...Object.keys(journal),
-    ...Object.keys(boundaries),
-    ...(options.routing?.enteredCallPaths ?? []),
-  ]) {
-    for (
-      let end = path.lastIndexOf('/');
-      end >= 0;
-      end = path.lastIndexOf('/', end - 1)
-    )
-      enteredScopes.add(path.slice(0, end));
-    enteredScopes.add(path);
-  }
-  let legacyInputs: ReturnType<typeof initializePolicy> | undefined;
   let queue = Promise.resolve();
   if (!options.checkpoint && !options.incrementalCheckpoint)
     throw new Error('Policy execution requires a checkpoint adapter');
@@ -403,9 +368,6 @@ export async function runPolicy(
         evaluate(template, locals) {
           return evaluate(template, scope, locals);
         },
-        entered(childScope) {
-          return enteredScopes.has(`${stepPath}/${childScope}`);
-        },
         async decision(key, choose) {
           const path = `${stepPath}/@${key}`;
           const previous = journal[path];
@@ -424,30 +386,6 @@ export async function runPolicy(
           journal[path] = record;
           await persist({ kind: 'step', path, value: record });
           return value;
-        },
-        legacyForeach() {
-          const legacy = options.routing?.legacy;
-          if (!legacy || !enteredScopes.has(stepPath)) return undefined;
-          const previous = policyStepAt(legacy.policy, stepPath);
-          if (!(previous instanceof ForEachStep)) return undefined;
-          return {
-            step: previous,
-            evaluate(template, locals) {
-              const old = (legacyInputs ??= initializePolicy(
-                legacy.policy,
-                legacy,
-              ));
-              return structuredClone(
-                evaluateTemplate(template, {
-                  ...environment(scope),
-                  ...scope.legacyLocals,
-                  ...locals,
-                  input: old.input,
-                  config: old.config,
-                }),
-              );
-            },
-          };
         },
         async invoke(binding, payload) {
           signal.throwIfAborted();
@@ -490,10 +428,6 @@ export async function runPolicy(
             {
               frames: scope.frames,
               locals: { ...scope.locals, ...settings.locals },
-              legacyLocals: {
-                ...scope.legacyLocals,
-                ...(settings.legacyLocals ?? settings.locals),
-              },
             },
             `${stepPath}/${settings.scope}`,
             parallel || (settings.parallel ?? false),

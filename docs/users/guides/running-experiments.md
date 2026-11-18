@@ -96,6 +96,8 @@ arsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume
 
 Runtime restores budget usage, compatible effective revisions, call receipts, and checkpoints. It checks the supplied Policy shape before executing unfinished steps.
 
+Experiments created before the Runtime saved control-flow decisions require a new experiment ID.
+
 - Completed experiments return their saved result without additional calls or charges.
 - Keep the ordered Policy step IDs, types, nesting, and required plugin contract IDs. New calls use the currently registered input and output schemas.
 - The Runtime reuses completed Policy steps and committed results. It retries unfinished steps using the supplied bindings, configuration, and code. For an in-progress branch, loop iteration, or foreach, it preserves the previously selected branch, iteration, or items. A retried plugin call uses a fresh attempt directory and acquires fresh instances.

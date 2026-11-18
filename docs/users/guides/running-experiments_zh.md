@@ -96,6 +96,8 @@ arsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume
 
 Runtime 恢复预算用量、兼容的生效版本、调用收据和检查点，校验传入的 Policy 形状后执行未完成的步骤。
 
+旧版 Runtime 未保存控制流决策的实验需要用新实验 ID 重新启动。
+
 - 已成功的实验直接返回已保存的结果，不会增加调用或扣费。
 
 - Policy 步骤的顺序、ID、类型、嵌套结构和所需的插件 contract ID 需要一致。新的调用按当前注册的输入和输出 schema 校验。
