@@ -7,7 +7,7 @@ import { seedObservation } from '../fixtures/observation/seed.js';
 import { ObservationQueries } from '../../src/runtime/services/observation.js';
 import { parseMeasurements } from '../../web/api/observation-client.js';
 
-test('a resumed call keeps each saved evaluation diagnostic owned, redacted and bounded', async (t) => {
+test('a successful retry preserves the original evaluation diagnostic with ownership and redaction', async (t) => {
   const directory = await mkdtemp(
     join(tmpdir(), 'rsi-evaluation-diagnostics-'),
   );
@@ -26,9 +26,8 @@ test('a resumed call keeps each saved evaluation diagnostic owned, redacted and 
   await facts.write('measurements', 'measurement-second', saved);
   await facts.write('calls', 'call-second', {
     ...(await facts.read('calls', 'call-second')),
-    status: 'running',
+    status: 'succeeded',
     error: null,
-    resumedAt: '2026-10-29T01:01:00.000Z',
   });
   const queries = new ObservationQueries(facts, artifacts);
   const measurements = parseMeasurements(

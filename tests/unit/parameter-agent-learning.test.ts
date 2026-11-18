@@ -18,7 +18,7 @@ import { object, string } from '../../src/shared/json.js';
 import { measurementFixture } from '../helpers/manager-fixture.js';
 
 for (const customized of [false, true]) {
-  test(`parameter.agent delivers ${customized ? 'scenario' : 'generic'} learning resources and resumes without replay`, async (t) => {
+  test(`policy.parameter-agent delivers ${customized ? 'scenario' : 'generic'} learning resources and resumes without replay`, async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'rsi-parameter-learning-'));
     const runtime = await createRuntime({
       rootDirectory: root,
@@ -272,7 +272,7 @@ implementation:
           },
         },
         policy: {
-          id: 'parameter.agent',
+          id: 'policy.parameter-agent',
           config: {
             maxTrials: 4,
             candidatesPerRound: 1,

@@ -56,35 +56,74 @@ test('facts write only their records and reject unsafe identifiers', async () =>
   }
 });
 
-test('failed fact publication preserves the previous record and removes temporary data', async (t) => {
+test('fact publication retries a temporarily busy destination', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-facts-publication-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = new FileFacts(root);
   await store.write('calls', 'one', { status: 'original' });
   const destination = join(root, 'calls', 'one.json');
   const originalRename = fs.promises.rename;
-  const failure = new Error('publication failed');
+  const transientErrors = ['EPERM', 'EBUSY'];
   const mocked = t.mock.method(
     fs.promises,
     'rename',
     async (...args: Parameters<typeof rename>): Promise<void> => {
-      if (args[1] === destination) throw failure;
+      const code =
+        args[1] === destination ? transientErrors.shift() : undefined;
+      if (code) throw Object.assign(new Error('destination busy'), { code });
       await originalRename(...args);
     },
   );
   syncBuiltinESMExports();
   try {
-    await assert.rejects(
-      store.write('calls', 'one', { status: 'replacement' }),
-      (error) => error === failure,
-    );
-    assert.deepEqual(await store.read('calls', 'one'), { status: 'original' });
+    await store.write('calls', 'one', { status: 'replacement' });
+    assert.deepEqual(await store.read('calls', 'one'), {
+      status: 'replacement',
+    });
     assert.deepEqual(await readdir(join(root, 'calls')), ['one.json']);
   } finally {
     mocked.mock.restore();
     syncBuiltinESMExports();
   }
 });
+
+for (const [code, attempts] of [
+  ['EACCES', 1],
+  ['EPERM', 7],
+] as const) {
+  test(`fact publication after ${code} preserves the previous record and removes temporary data`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'rsi-facts-publication-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const store = new FileFacts(root);
+    await store.write('calls', 'one', { status: 'original' });
+    const destination = join(root, 'calls', 'one.json');
+    const originalRename = fs.promises.rename;
+    const failure = Object.assign(new Error('publication failed'), { code });
+    const mocked = t.mock.method(
+      fs.promises,
+      'rename',
+      async (...args: Parameters<typeof rename>): Promise<void> => {
+        if (args[1] === destination) throw failure;
+        await originalRename(...args);
+      },
+    );
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(
+        store.write('calls', 'one', { status: 'replacement' }),
+        (error) => error === failure,
+      );
+      assert.equal(mocked.mock.callCount(), attempts);
+      assert.deepEqual(await store.read('calls', 'one'), {
+        status: 'original',
+      });
+      assert.deepEqual(await readdir(join(root, 'calls')), ['one.json']);
+    } finally {
+      mocked.mock.restore();
+      syncBuiltinESMExports();
+    }
+  });
+}
 
 test('fact writes preserve input snapshots and reject invalid JSON without replacing facts', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-facts-snapshot-'));

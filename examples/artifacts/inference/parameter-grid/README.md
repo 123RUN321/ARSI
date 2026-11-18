@@ -28,8 +28,8 @@ searchSpace:
 
 The grid Policy defaults `maxCandidates` to 1,000. To cover all 16 points,
 allow at least 16 candidate attempts and budget for the baseline evaluation plus
-any points that need a separate evaluation. Resume with the same ordered
-configuration and cursor.
+any points that need a separate evaluation. Retry preserves the recorded cursor
+and completed results.
 
 For adaptive sampling, see the [TPE recipe](../parameter-tpe/README.md).
 
@@ -78,8 +78,8 @@ string axis and a boolean axis alongside the numeric axes:
 
 Adding those axes to the four-point recipe yields 16 combinations. Review the
 configured `maxCandidates` and evaluation budgets before running the expanded
-grid. Existing range-based recipes must be migrated for new runs; resume requires
-the original locked configuration.
+grid. Existing range-based recipes must be migrated for new runs. Retry restores
+recorded progress and uses the current compatible configuration for unfinished work.
 
 Use a dedicated Linux tuning host. Replace `192.0.2.10` in the recipe with the
 service address reachable from the Evaluator client. Serve the model name from
@@ -107,7 +107,7 @@ corner before the first measurement, then persists and reuses that choice for
 the experiment. Device, software and model identity must remain consistent.
 Changing the search space requires updating the calibration corner as well.
 
-`evaluator.inferencebench` calls the installed ember-evaluator SDK's `agentx` benchmark
+`evaluator.inferencebench` calls the installed arsi-evaluator SDK's `agentx` benchmark
 with `agentx-replay`, using the remote endpoint supplied by the Application.
 The example replays eight traces from the 256K corpus with four concurrent session
 trees and a 7200-second replay bound. Input/output lengths, prefix reuse, turns,
@@ -139,22 +139,22 @@ or quality improvement is established by this example.
 
 ## Run
 
-The project installs [ember-evaluator](https://github.com/evolving-foundry/ember-evaluator)
+The project installs [arsi-evaluator](https://github.com/ARSI-LAB/ARSI-Evaluator)
 from the Git revision recorded in `pnpm-lock.yaml`. From the repository root,
 run `pnpm install --frozen-lockfile` and `pnpm build` before the commands below.
 
 ```sh
-ember-rsi doctor examples/artifacts/inference/parameter-grid/recipe.yaml
-ember-rsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first
-ember-rsi show parameter-grid-first
+arsi doctor examples/artifacts/inference/parameter-grid/recipe.yaml
+arsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first
+arsi show parameter-grid-first
 ```
 
 Validation does not check that the template is implemented, start a remote service,
-or prove that deployment settings are usable. Resume only the same locked configuration and after reconciling any
-unknown remote lifecycle outcome:
+or prove that deployment settings are usable. Resume requires a compatible
+Policy shape. An unconfirmed remote lifecycle operation can execute again.
 
 ```sh
-ember-rsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first --resume
+arsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first --resume
 ```
 
 Cancellation attempts bounded owned cleanup. If deployment connectivity prevents it,

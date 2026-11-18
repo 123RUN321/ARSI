@@ -18,6 +18,20 @@ const applicationModule = pathToFileURL(
   resolve('src/contracts/plugin-types/application.ts'),
 ).href;
 
+async function runCli(root: string, ...args: string[]): Promise<unknown> {
+  const result = await execute(
+    process.execPath,
+    ['--import', tsx, cli, ...args],
+    {
+      cwd: root,
+      env: { ...process.env, USERPROFILE: root, HOME: root },
+      // A cold tsx and runtime load can exceed 30 seconds in parallel on Windows.
+      timeout: 60000,
+    },
+  );
+  return JSON.parse(result.stdout);
+}
+
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'rsi-external-'));
   await mkdir(join(root, 'extension'));
@@ -71,14 +85,8 @@ budget: { operations: 5, elapsedWallMs: 30000 }
 
 test('CLI loads external implementation and Policy for catalog, doctor and execution', async () => {
   const root = await fixture();
-  const run = async (...args: string[]): Promise<Record<string, unknown>> => {
-    const result = await execute(
-      process.execPath,
-      ['--import', tsx, cli, ...args],
-      { timeout: 30000, cwd: root },
-    );
-    return JSON.parse(result.stdout);
-  };
+  const run = async (...args: string[]): Promise<Record<string, unknown>> =>
+    (await runCli(root, ...args)) as Record<string, unknown>;
   try {
     const extension = join(root, 'extension');
     const catalog = await run('catalog', '--plugin-dir', extension);
@@ -202,7 +210,7 @@ test('failed extension registration reports its directory and disposes prior reg
 test('home discovery loads extensions once and CLI describes schemas', async () => {
   const root = await fixture();
   try {
-    const home = join(root, '.ember-rsi');
+    const home = join(root, '.arsi');
     await mkdir(join(home, 'plugins'), { recursive: true });
     const { rename } = await import('node:fs/promises');
     await rename(join(root, 'extension'), join(home, 'plugins', 'demo'));
@@ -217,18 +225,7 @@ test('home discovery loads extensions once and CLI describes schemas', async () 
     } finally {
       await runtime.dispose();
     }
-    const run = async (...args: string[]): Promise<unknown> => {
-      const result = await execute(
-        process.execPath,
-        ['--import', tsx, cli, ...args],
-        {
-          cwd: root,
-          timeout: 30000,
-          env: { ...process.env, USERPROFILE: root, HOME: root },
-        },
-      );
-      return JSON.parse(result.stdout);
-    };
+    const run = (...args: string[]): Promise<unknown> => runCli(root, ...args);
     const plugins = (await run('list', 'plugins')) as {
       id: string;
       contract: string;

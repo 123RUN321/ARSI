@@ -141,7 +141,7 @@ A Recipe resolves a Policy file by its registered ID. Built-in Policies are alre
 
 > When maintaining built-in framework Policies, you can place files in `src/policies/`, add them to the Policy file list in the [built-in registration file](../../../src/runtime/builtins.ts), and run `pnpm build` to build them with the framework.
 
-1. Save the example above as `~/.ember-rsi/plugins/my-extension/policy.yaml`.
+1. Save the example above as `~/.arsi/plugins/my-extension/policy.yaml`.
 
 2. Create `index.mjs` beside it, exporting `register(registry)` to register the Policy ID and file path:
 
@@ -156,7 +156,7 @@ A Recipe resolves a Policy file by its registered ID. Built-in Policies are alre
    }
    ```
 
-3. At startup, the CLI scans the immediate subdirectories of `~/.ember-rsi/plugins/` in directory-name order, loads each directory's `index.mjs`, and calls `register(registry)`, with no extra arguments needed.
+3. At startup, the CLI scans the immediate subdirectories of `~/.arsi/plugins/` in directory-name order, loads each directory's `index.mjs`, and calls `register(registry)`, with no extra arguments needed.
    - The registered ID must match `id` in `policy.yaml`. Runtime reads and validates the Policy when loading a Recipe.
 
    - If the Policy uses a custom contract, register the corresponding plugin or contract before loading it. One entrypoint can register multiple plugins and Policies; if one already exists, add the registration code to its existing `register` function.
@@ -183,18 +183,18 @@ The example Policy's `input` already defaults to the Application's initial candi
 
 #### Step 2: Validate and run
 
-With the extension in `~/.ember-rsi/plugins/my-extension/`, use the installed CLI directly from the working directory containing `my-experiment/`:
+With the extension in `~/.arsi/plugins/my-extension/`, use the installed CLI directly from the working directory containing `my-experiment/`:
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml
-ember-rsi run my-experiment/recipe.yaml --id baseline-01
+arsi doctor my-experiment/recipe.yaml
+arsi run my-experiment/recipe.yaml --id baseline-01
 ```
 
 If the extension is elsewhere, such as `my-extension/` under the working directory, pass the same extension directory when validating, running, and resuming:
 
 ```sh
-ember-rsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
-ember-rsi run my-experiment/recipe.yaml --id baseline-01 --plugin-dir ./my-extension
+arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
+arsi run my-experiment/recipe.yaml --id baseline-01 --plugin-dir ./my-extension
 ```
 
 See [Register the plugin](writing-plugins.md#step-2-register-the-plugin) for more loading details. Before changing a Policy used by an unfinished experiment, check the [recovery requirements](running-experiments.md#cancellation-and-resume).

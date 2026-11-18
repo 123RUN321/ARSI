@@ -1,4 +1,5 @@
 import { useOperatorSdkTestEnvironment } from '../fixtures/operator-sdk/environment.js';
+import { prepareNodeFixture } from '../fixtures/operator-sdk/executable.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -7,7 +8,6 @@ import {
   writeFile,
   rm,
   copyFile,
-  chmod,
   readdir,
   readFile,
 } from 'node:fs/promises';
@@ -20,7 +20,7 @@ import {
   parseKernelContract,
   type EvaluatorRunOptions,
   type EvaluationResult,
-} from 'ember-evaluator';
+} from 'arsi-evaluator';
 import { adaptSdkResult } from '../../src/plugins/evaluator-operatorbench/result.js';
 import { createOperatorbench } from '../../src/plugins/evaluator-operatorbench/service.js';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
@@ -45,7 +45,7 @@ test('operator SDK configuration runs the actual kernel SDK with only the device
     new URL('../fixtures/operator-sdk/worker.mjs', import.meta.url),
     worker,
   );
-  await chmod(worker, 0o755);
+  const python = await prepareNodeFixture(worker);
   const config = {
     task: { directory: taskDirectory },
     benchmark: {
@@ -55,7 +55,7 @@ test('operator SDK configuration runs the actual kernel SDK with only the device
         repeat: 20,
         rtol: 0,
         atol: 0,
-        python: worker,
+        python,
         device: 0,
         timeoutSeconds: 15,
         outputLimitBytes: 8 * 1024 * 1024,
@@ -481,13 +481,19 @@ test('operator SDK configuration runs the actual kernel SDK with only the device
   assert.equal(releases, 5);
   source = '# fixture:latency=8\ndef kernel_function(x): return x\n';
   await writeFile(join(sourceDirectory, sourcePath), source);
-  const msprof = join(directory, 'msprof');
+  const profileWorker = join(directory, 'msprof.mjs');
   const pidFile = join(directory, 'profile-child.pid');
   await writeFile(
-    msprof,
-    `#!/usr/bin/env node\nconst {spawn}=require('node:child_process');const {writeFileSync}=require('node:fs');const c=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setInterval(()=>{},1000);\n`,
+    profileWorker,
+    `#!/usr/bin/env node
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+setInterval(() => {}, 1000);
+`,
   );
-  await chmod(msprof, 0o755);
+  const msprof = await prepareNodeFixture(profileWorker);
   const profileOperation = await createOperatorbench(
     {
       ...config,
@@ -530,7 +536,8 @@ test('operator SDK configuration runs the actual kernel SDK with only the device
     }
   });
   try {
-    for (let count = 0; count < 200; count++) {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
       try {
         profileChild = Number(await readFile(pidFile, 'utf8'));
         break;

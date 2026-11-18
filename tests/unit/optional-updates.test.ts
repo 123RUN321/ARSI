@@ -127,8 +127,6 @@ test('Pi exhausts request retries while Memory and Reflection retain effective s
             api_key: '${RSI_OPTIONAL_UPDATES_TEST_KEY}',
             retries: 3,
             retryBaseDelayMs: 0,
-            timeoutMs: 5000,
-            executionTimeoutMs: 15000,
           },
         },
         memoryUpdater: {

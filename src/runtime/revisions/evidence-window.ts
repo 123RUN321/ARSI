@@ -108,15 +108,28 @@ export async function selectEvidenceWindow(
       },
     };
   }
+  const reflections = await ownedFacts(options, 'reflection');
+  // Evidence from a failed attempt is still available to this Policy step.
+  const sameStepAttempts = new Set(
+    reflections
+      .filter(
+        (record) =>
+          options.stepPath !== undefined &&
+          record.policyScopeId === policyScopeId &&
+          record.stepPath === options.stepPath,
+      )
+      .map((record) => record.reflectionId),
+  );
   const previous = snapshots.filter(
     (record) =>
       record.view === 'reflection-observations/v1' &&
       record.policyScopeId === policyScopeId &&
       record.moduleKey === moduleKey &&
       record.boundaryId !== options.identity &&
+      !sameStepAttempts.has(record.boundaryId) &&
       Date.parse(String(record.capturedAt)) <= cutoff,
   );
-  const triggers = (await ownedFacts(options, 'reflection')).filter(
+  const triggers = reflections.filter(
     (record) =>
       record.policyScopeId === policyScopeId &&
       record.configFile === moduleKey &&

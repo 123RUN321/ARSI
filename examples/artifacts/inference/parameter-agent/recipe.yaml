@@ -19,7 +19,7 @@ application:
     shutdown: { gracePeriodMs: 30000 }
     credentials: { apiKeyEnv: VLLM_API_KEY }
 policy:
-  id: parameter.agent
+  id: policy.parameter-agent
   config:
     parameterFile: tuning.json
     maxTrials: 8
@@ -66,7 +66,7 @@ bindings:
               pythonExecutable: /opt/aisbench/bin/python
               aisbenchWorkPath: /opt/aisbench
               aisbenchVersion: '1.0.0'
-              workRoot: /var/tmp/ember-rsi-aisbench
+              workRoot: /var/tmp/arsi-aisbench
             tokenizerPath: /models/inference-model
       run: { timeoutSeconds: 1800 }
   selector:

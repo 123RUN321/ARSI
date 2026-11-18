@@ -11,7 +11,7 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import { readObservationSource } from '../api/observation-client';
-import emberRsiLogo from '../../docs/users/assets/ember-rsi-logo.png';
+import ARsiLogo from '../../docs/users/assets/arsi-logo.png';
 import { useRoute } from './use-route';
 import { viewRoute } from './view-memory';
 
@@ -129,7 +129,7 @@ export function WorkspaceLayout({
           </button>
         ) : null}
         <a href="#" className="studio-brand">
-          <img src={emberRsiLogo} className="brand-mark" alt="ember-rsi" />
+          <img src={ARsiLogo} className="brand-mark" alt="arsi" />
         </a>
         <nav className="studio-nav" aria-label="Workspace">
           <span className="nav-caption">Workspace</span>
@@ -172,7 +172,7 @@ export function WorkspaceLayout({
         ) : null}
         <div className="studio-sidebar-footer">
           <span className="studio-record-dot" /> Recorded experiment data
-          <p>Ember RSI · Experiment lab</p>
+          <p>ARSI · Experiment lab</p>
         </div>
       </aside>
       {sidebarOpen ? (

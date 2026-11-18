@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bootstrap, loadConfig } from 'ember-evaluator';
+import { bootstrap, loadConfig } from 'arsi-evaluator';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import type { AgentbenchConfig } from '../../src/plugins/evaluator-agentbench/schema.js';
 import type { EvaluatorConfig } from '../../src/plugins/evaluator-inferencebench/schema.js';

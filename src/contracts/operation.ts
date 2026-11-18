@@ -9,14 +9,6 @@ export interface Operation<
   O extends JsonValue = JsonValue,
 > {
   execute(input: I, context: RuntimeContext): Promise<O>;
-  /** Read-only reconciliation for a failed or cancelled receipt. Return true only
-   * when replay cannot duplicate effects. The Runtime archives the prior receipt
-   * and charges the retry normally. */
-  canRetry?(
-    input: I,
-    receipt: JsonObject,
-    context: RuntimeContext,
-  ): Promise<boolean>;
   dispose(): Promise<void>;
 }
 /** C describes supplied configuration; fields with Schema defaults may be optional. */

@@ -6,9 +6,9 @@ This guide explains the roles and combinations of built-in Policies and plugins 
 
 Use these commands to inspect the available components:
 
-- `ember-rsi catalog`: List registered plugin and Policy IDs.
-- `ember-rsi list plugins`: View plugin descriptions, contracts, and input, output, and configuration Schemas.
-- `ember-rsi list policies`: View Policy descriptions, Schemas, required contracts, and plugins that satisfy those contracts.
+- `arsi catalog`: List registered plugin and Policy IDs.
+- `arsi list plugins`: View plugin descriptions, contracts, and input, output, and configuration Schemas.
+- `arsi list policies`: View Policy descriptions, Schemas, required contracts, and plugins that satisfy those contracts.
 
 Built-in registrations are defined in the [built-in registry](../../../src/runtime/builtins.ts). Matching contracts indicate compatible interfaces; check whether a plugin's functionality suits your task before selecting it.
 
@@ -21,14 +21,14 @@ Choose a built-in Policy for your optimization needs; see its README for configu
 | `policy.harness2` ([paper](https://arxiv.org/abs/2610.14224))  | Try different Agent improvements and select results by final deliverable quality.                               | [README](../../../examples/harness/dsh-harness2/README.md)               |
 | `policy.wikiskill` ([paper](https://arxiv.org/abs/2608.27454)) | Improve Agent skills using experience from training tasks.                                                      | [README](../../../examples/harness/dsh-wikiskill/README.md)              |
 | `policy.gepa` | Optimize modular prompts through reflective proposals and population search. | [README](../../../examples/harness/dsh-gepa/README.md) |
-| `parameter.agent` | Establish a measurable baseline and tune inference-engine parameters with Agent proposals. | [README](../../../examples/artifacts/inference/parameter-agent/README.md) |
+| `policy.parameter-agent` | Establish a measurable baseline and tune inference-engine parameters with Agent proposals. | [README](../../../examples/artifacts/inference/parameter-agent/README.md) |
 | `policy.parameter-grid`                                        | Try predefined parameter combinations one by one to select a better inference service configuration.            | [README](../../../examples/artifacts/inference/parameter-grid/README.md) |
 | `policy.parameter-optuna`                                      | Use evaluation feedback to search parameters and improve inference service performance within a limited budget. | [README](../../../examples/artifacts/inference/parameter-tpe/README.md)  |
 | `policy.operator-search`                                       | Optimize Triton-Ascend kernels using correctness checks and performance feedback.                               | [README](../../../examples/artifacts/kernel/transpose-copy/README.md)    |
 
 Agent, Grid, and Optuna each evaluate the initial configuration once before search. Supply a configuration that can start the service and reserve one evaluation run for the baseline. A baseline evaluation failure stops the experiment.
 
-`parameter.agent` invokes `evaluator.inferencebench` directly for each candidate, serially. A confirmed, cleaned startup failure records a failed Measurement and rejects that candidate. SDK measurement failures, cancellation, incomplete collection or unconfirmed cleanup stop the experiment. A failed baseline cannot seed the search. With its default `selector.inference`, the Policy can retain an improved candidate before all performance targets are met. Its output keeps the incumbent `candidateRef` and `measurementRef`; `candidateFeasible` reports whether it satisfies the configured constraints, including when `status` is `no-feasible-configuration`.
+`policy.parameter-agent` invokes `evaluator.inferencebench` directly for each candidate, serially. A confirmed, cleaned startup failure records a failed Measurement and rejects that candidate. SDK measurement failures, cancellation, incomplete collection or unconfirmed cleanup stop the experiment. A failed baseline cannot seed the search. With its default `selector.inference`, the Policy can retain an improved candidate before all performance targets are met. Its output keeps the incumbent `candidateRef` and `measurementRef`; `candidateFeasible` reports whether it satisfies the configured constraints, including when `status` is `no-feasible-configuration`.
 
 ## Loop components
 
@@ -110,7 +110,7 @@ Runtime activates validated changes within the current experiment for later plug
 ### Inference configuration candidates
 
 Remote inference reads one JSON candidate from `remote.parametersFile` (default
-`tuning.json`). `parameter.agent` edits only `config.parameterFile`; the launcher
+`tuning.json`). `policy.parameter-agent` edits only `config.parameterFile`; the launcher
 remains fixed. The Policy accepts a configurable `goal` and `selection` description
 for the proposer. Nested options and environment settings can be interpreted by
 the launcher without uploading engine source or build scripts.

@@ -6,7 +6,7 @@ Reflection 根据执行证据改进目标插件，使后续调用采用改进后
 
 - 内置 Harness² Policy 已配置 Reflection 来改进 Invariant Proposer 和 Domain Proposer，目前允许修改它们的 `guidance`。`improve_guidance` 步骤默认处于注释状态。参见 [Harness² Policy](../../../src/policies/harness2/policy.yaml) 和 [Reflection 配置](../../../src/policies/harness2/reflection.yaml)。
 
-内置 `parameter.agent` Policy 声明了[配置搜索 Reflection
+内置 `policy.parameter-agent` Policy 声明了[配置搜索 Reflection
 模块](../../../src/policies/parameter/agent/reflection.yaml)。设置
 `policy.config.reflection: true` 后，在每轮提案后（包括空提案）且仍有后续轮数和候选次数时调用；默认关闭，
 与 Memory 开关独立。它通过 `training-summary` 读取提案、评测、selector 和已有
@@ -129,7 +129,7 @@ reflection:
 ```
 
 这里的 `reflection.configFile` 相对于 Recipe 文件解析，选择的文件仍按第 1 节编写。它会完整替换 Policy 声明的默认配置，因此 Policy 需要先声明 `defaults.reflection`。调用时机仍由 Policy 决定。
-适配 `parameter.agent` 时，可将
+适配 `policy.parameter-agent` 时，可将
 它的 `reflection.yaml` 和 `reflection.md` 复制到场景目录，修改本地目标，再在此处
 选择该 YAML 文件。通用目标、组件和编排仍留在 RSI，场景维护自己的特化副本。
 
@@ -165,7 +165,7 @@ steps:
 在插件的配置 Schema 中，标明 `prompt` 填文件路径、`guidance` 填目录路径。`x-rsi-path` 是给 Runtime 识别路径用的标记，让它能够读取相应内容：
 
 ```ts
-import type { JsonSchema } from 'ember-rsi/contracts';
+import type { JsonSchema } from 'arsi/contracts';
 
 export const configSchema: JsonSchema = {
   type: 'object',
@@ -237,9 +237,9 @@ targets:
 使用与实验相同的 Runtime 数据目录执行：
 
 ```text
-ember-rsi reflection list [experimentId]
-ember-rsi reflection show <revisionID>
-ember-rsi reflection apply <revisionID>
+arsi reflection list [experimentId]
+arsi reflection show <revisionID>
+arsi reflection apply <revisionID>
 ```
 
 - `list` 列出初始版、生成版和旧版，可按实验筛选。

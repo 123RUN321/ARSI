@@ -152,20 +152,26 @@ bindings:
 | DSH | 模型在原生 headless profile 中配置 |
 | OpenCode | `model`：`provider/model`，可追加 `#variant` |
 
-RSI 保留原生模型和认证配置，但限制任务为只读提案，不接受交互式审批。Claude Code 的 Hooks 和 MCP 在 RSI 调用中禁用。
+RSI 保留原生模型和认证配置，在应用提案前会校验所提交的编辑。Claude Code 的 Hooks 和 MCP 在 RSI 调用中禁用。
+
+RSI 使用 `approval_policy = "never"` 启动 Codex。沙箱拒绝命令时，Codex 会将失败结果返回给 Agent，无需交互式审批。
+
+在 Windows 上，如果 Codex 的生效配置显式将 `windows.sandbox` 设置为 `"elevated"` 或 `"unelevated"`，RSI 会使用 `workspace-write` 模式并开启网络。未显式配置原生沙箱的 Windows，以及 Linux，使用 `danger-full-access`。命令可以访问运行 RSI 的账户可用的文件和资源。其他平台使用只读工作区权限。
+
+在 Windows 上，RSI 会从独立 Codex 子进程的环境中移除桌面应用专用变量 `CODEX_WINDOWS_REGISTERED_CORE`，让工作区命令通过独立 CLI 的沙箱执行。
 
 ### 检查并启动
 
 完成所选后端的配置后，将下面的路径换成你的完整 Recipe 文件路径，在同一个终端运行：
 
 ```sh
-ember-rsi doctor path/to/recipe.yaml
-ember-rsi run path/to/recipe.yaml
+arsi doctor path/to/recipe.yaml
+arsi run path/to/recipe.yaml
 ```
 
 先处理 Doctor 的失败项，再运行实验。`model-access: unchecked` 不代表模型连接成功，实际调用仍可能因权限、模型名称或接口兼容性失败。检查范围见 [Doctor](doctor_zh.md)。
 
-使用源码仓库时，将 `ember-rsi` 换为 `pnpm ember-rsi`。如果找不到原生 CLI，重新打开终端，或在绑定的 `config` 中用 `executable` 指定 CLI 完整路径。
+使用源码仓库时，将 `arsi` 换为 `pnpm arsi`。如果找不到原生 CLI，重新打开终端，或在绑定的 `config` 中用 `executable` 指定 CLI 完整路径。
 
 原生 CLI 后端可加 `timeoutMs: 180000`，将每次 Agent 任务限制为 3 分钟；省略则不设此期限。它们不支持用 `budget.modelCalls` 限制模型请求次数。Agent 返回修改建议，由 RSI 检查并应用；提示词和 Skills 在 Proposer 等调用组件中配置。
 
@@ -173,7 +179,7 @@ ember-rsi run path/to/recipe.yaml
 
 推理优化可用 `evaluator.inferencebench` 的 `benchmark.name: aisbench` 和内置 SSH Solver，也可选择 `agentx` 及其回放 Solver。基线和候选使用相同的评测负载。Runtime 统一执行 Recipe 的 `budget` 所定义的实验级上限。
 
-对于 `parameter.agent`，`policy.config.candidatesPerRound` 默认为 4，可设为 1 至 6。调优 Proposer 基于同一个当前最优版本生成候选，按优先级排序，每批最多返回该数量。Policy 按顺序直接调用 `evaluator.inferencebench`，再用更新后的当前最优版本生成下一批。`maxTrials` 限制所有批次的候选尝试总数。已确认且完成清理的启动失败记为失败 Measurement，并拒绝该候选；SDK 评测失败、取消、收集不完整或清理状态不明会停止实验。失败基线不能启动搜索。
+对于 `policy.parameter-agent`，`policy.config.candidatesPerRound` 默认为 4，可设为 1 至 6。调优 Proposer 基于同一个当前最优版本生成候选，按优先级排序，每批最多返回该数量。Policy 按顺序直接调用 `evaluator.inferencebench`，再用更新后的当前最优版本生成下一批。`maxTrials` 限制所有批次的候选尝试总数。已确认且完成清理的启动失败记为失败 Measurement，并拒绝该候选；SDK 评测失败、取消、收集不完整或清理状态不明会停止实验。失败基线不能启动搜索。
 
 `policy.config.maxTrials` 必须为正整数（默认 8），同时限制提案轮数，避免反复空提案
 形成无限循环。无修改提案的原因会通过 `observations.previousNoChangeReason` 传入
@@ -185,7 +191,7 @@ ember-rsi run path/to/recipe.yaml
 其他情况为 `null`。预算耗尽原因记录在实验顶层，并通过 `partialOutput` 保留最后
 已提交的当前最优结果。
 
-`parameter.agent` 还支持独立的 `policy.config.memory` 和
+`policy.parameter-agent` 还支持独立的 `policy.config.memory` 和
 `policy.config.reflection` 开关，默认均为 `false`。Memory 在每批完成评测后整理经验，
 将保存的 `memoryRef` 传给后续提案；Reflection 在仍可继续试验的批次之间仅修订
 Proposer 的 `guidance`。两者复用配置的 `agent` 绑定和 `training-summary` 证据视图。
@@ -217,7 +223,7 @@ Evaluator 绑定仍要求 `contract.inferencebench`，selector 要求
 
 ## 限制与预算
 
-实验预算耗尽时，Runtime 会记录 `stopReason: budget-exhausted`，并用 `budgetMetric` 标明触及的上限。使用 `ember-rsi show <experiment-id>` 查看记录。如果能用最近一次已保存的检查点计算并验证 Policy 输出，记录还会包含 `partialOutput`。对于 `parameter.agent`，部分结果会保留已有的当前最优候选和测量，即使 `candidateFeasible` 为 false。实际停止原因以实验记录顶层的 `stopReason` 为准。
+实验预算耗尽时，Runtime 会记录 `stopReason: budget-exhausted`，并用 `budgetMetric` 标明触及的上限。使用 `arsi show <experiment-id>` 查看记录。如果能用最近一次已保存的检查点计算并验证 Policy 输出，记录还会包含 `partialOutput`。对于 `policy.parameter-agent`，部分结果会保留已有的当前最优候选和测量，即使 `candidateFeasible` 为 false。实际停止原因以实验记录顶层的 `stopReason` 为准。
 
 Recipe 中省略的绑定配置会先继承 Policy 默认值。下表的“缺省时”指对应配置最终仍未设置该项的情况；其他层的限制仍可能生效。
 

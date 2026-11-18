@@ -16,6 +16,6 @@ test('saved diagnostics are optional and only loaded after opening the evaluatio
   assert.equal(render(null), '');
   const html = render('artifact:' + 'a'.repeat(64));
   assert.match(html, /Recorded evaluation diagnostics/);
-  assert.match(html, /linked call may have resumed/);
+  assert.match(html, /linked call may have been retried/);
   assert.doesNotMatch(html, /text preview|code-content/);
 });

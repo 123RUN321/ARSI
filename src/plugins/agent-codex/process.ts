@@ -15,6 +15,14 @@ export async function runCodexProcess(
 ): Promise<void> {
   signal.throwIfAborted();
   const command = codexCommand(executable);
+  const env = { ...process.env };
+  if (process.platform === 'win32') {
+    // A standalone process cannot use the Desktop app's package identity.
+    for (const name of Object.keys(env)) {
+      if (name.toUpperCase() === 'CODEX_WINDOWS_REGISTERED_CORE')
+        delete env[name];
+    }
+  }
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       command.executable,
@@ -27,7 +35,7 @@ export async function runCodexProcess(
         cwd: directory,
         detached: process.platform !== 'win32',
         // Codex owns local authentication, credential refresh and provider environment references.
-        env: process.env,
+        env,
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );

@@ -43,7 +43,6 @@ function adapterIdentity(): Promise<string> {
     './index',
     './service',
     './finalized-timeout',
-    './preparation-recovery',
     './schema',
     './conditions',
     './measurement',

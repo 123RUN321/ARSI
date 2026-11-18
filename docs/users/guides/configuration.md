@@ -152,20 +152,26 @@ bindings:
 | DSH | Configure the model in the native headless profile |
 | OpenCode | `model`: `provider/model`, optionally followed by `#variant` |
 
-RSI keeps native model and authentication settings while limiting tasks to read-only proposals with no interactive approvals. Claude Code Hooks and MCP are disabled for RSI calls.
+RSI keeps native model and authentication settings and validates proposed edits before applying them. Claude Code Hooks and MCP are disabled for RSI calls.
+
+RSI launches Codex with `approval_policy = "never"`. Sandbox failures are returned to the agent without an approval prompt.
+
+On Windows, if the effective Codex configuration explicitly sets `windows.sandbox` to `"elevated"` or `"unelevated"`, RSI starts the session in `workspace-write` mode with network access. Windows without an explicit sandbox and Linux use `danger-full-access`, so commands can access files and resources available to the account running RSI. Other platforms use a read-only project profile.
+
+On Windows, RSI removes the Desktop-only `CODEX_WINDOWS_REGISTERED_CORE` variable from its standalone Codex child process so workspace commands can use the standalone sandbox.
 
 ### Check and start
 
 After configuring your chosen backend, replace the path below with your complete Recipe file and run these commands in the same terminal:
 
 ```sh
-ember-rsi doctor path/to/recipe.yaml
-ember-rsi run path/to/recipe.yaml
+arsi doctor path/to/recipe.yaml
+arsi run path/to/recipe.yaml
 ```
 
 Resolve Doctor failures before running the experiment. `model-access: unchecked` does not confirm a working model connection: actual calls may still fail due to permissions, model names or API compatibility. See [Doctor](doctor.md) for check coverage.
 
-When running from the source repository, replace `ember-rsi` with `pnpm ember-rsi`. If the native CLI cannot be found, open a new terminal or set `executable` to its full path under the binding's `config`.
+When running from the source repository, replace `arsi` with `pnpm arsi`. If the native CLI cannot be found, open a new terminal or set `executable` to its full path under the binding's `config`.
 
 For native CLI backends, add `timeoutMs: 180000` to limit each Agent task to 3 minutes; omitting it leaves that deadline unset. These backends cannot enforce `budget.modelCalls`. The Agent proposes changes for RSI to check and apply; configure prompts and Skills in the calling component, such as the Proposer.
 
@@ -173,7 +179,7 @@ For native CLI backends, add `timeoutMs: 180000` to limit each Agent task to 3 m
 
 For inference optimization, `evaluator.inferencebench` supports `benchmark.name: aisbench` with the bundled SSH solver, or `agentx` with the replay solver. Use the same benchmark workload for the baseline and candidate trials. The Runtime enforces the experiment-wide limits in the Recipe’s `budget`.
 
-For `parameter.agent`, `policy.config.candidatesPerRound` defaults to 4 and accepts 1 through 6. The tuning Proposer returns that many candidates at most, ordered by priority and based on the same incumbent. The Policy invokes `evaluator.inferencebench` directly and serially, then uses the latest incumbent when requesting the next batch. `maxTrials` caps candidate attempts across all batches. Confirmed, cleaned startup failures reject the candidate; SDK measurement failures, cancellation or uncertain cleanup stop the experiment.
+For `policy.parameter-agent`, `policy.config.candidatesPerRound` defaults to 4 and accepts 1 through 6. The tuning Proposer returns that many candidates at most, ordered by priority and based on the same incumbent. The Policy invokes `evaluator.inferencebench` directly and serially, then uses the latest incumbent when requesting the next batch. `maxTrials` caps candidate attempts across all batches. Confirmed, cleaned startup failures reject the candidate; SDK measurement failures, cancellation or uncertain cleanup stop the experiment.
 
 `policy.config.maxTrials` must be a positive integer (default 8). It also bounds
 proposal rounds so repeated empty responses cannot create an unbounded loop.
@@ -188,7 +194,7 @@ is `max-trials` when the candidate limit is reached, `max-proposal-rounds` when
 the round limit is reached first, otherwise `null`. Budget exhaustion is recorded
 at experiment level and preserves the last committed incumbent in `partialOutput`.
 
-`parameter.agent` also supports independent `policy.config.memory` and
+`policy.parameter-agent` also supports independent `policy.config.memory` and
 `policy.config.reflection` switches, both `false` by default. Memory consolidates
 measured batches and passes the saved `memoryRef` to subsequent proposals;
 Reflection revises only Proposer `guidance` between batches when another trial
@@ -226,7 +232,7 @@ To migrate a custom Proposer prompt, remove `editProtocol` from the binding and 
 
 ## Limits and budgets
 
-When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `ember-rsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `parameter.agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
+When an experiment budget is exhausted, the Runtime records `stopReason: budget-exhausted` and the limit in `budgetMetric`. Use `arsi show <experiment-id>` to inspect the record. If the Policy output can be evaluated and validated from the last committed checkpoint, the record includes it as `partialOutput`. For `policy.parameter-agent`, this retains the incumbent candidate and its measurement when available, even when `candidateFeasible` is false. Use the experiment record’s top-level `stopReason` to determine why the run ended.
 
 Omitted Recipe binding settings first inherit Policy defaults. The “When omitted” column describes settings that remain unset; limits at other layers can still apply.
 

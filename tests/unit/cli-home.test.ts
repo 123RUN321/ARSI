@@ -47,7 +47,7 @@ test('CLI dashboard requires an existing .rsi directory in its working directory
 test('CLI creates its extension home on first launch and preserves existing files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-cli-home-'));
   const home = join(root, 'home');
-  const plugins = join(home, '.ember-rsi', 'plugins');
+  const plugins = join(home, '.arsi', 'plugins');
   const launch = async (...args: string[]): Promise<void> => {
     await execute(
       process.execPath,
@@ -72,7 +72,7 @@ test('CLI creates its extension home on first launch and preserves existing file
 
 test('CLI reports an error when its home path is occupied by a file', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-cli-home-'));
-  const blocked = join(root, '.ember-rsi');
+  const blocked = join(root, '.arsi');
   try {
     await writeFile(blocked, 'preserve me');
     await assert.rejects(

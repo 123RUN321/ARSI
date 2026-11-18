@@ -8,14 +8,14 @@ Memory 保存的是供后续优化参考的经验文档，例如有效的执行�
 
 ## 1. 在内置 Policy 中使用 Memory
 
-Harness²、WikiSkill 和 parameter.agent 已配置 Memory 插件、提示词、Agent 绑定，以及保存和使用其输出的步骤：
+Harness²、WikiSkill 和 policy.parameter-agent 已配置 Memory 插件、提示词、Agent 绑定，以及保存和使用其输出的步骤：
 
 | Policy    | 证据视图           | 使用时机                                                                                                         |
 | --------- | ------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | Harness²  | `execution`        | 每个任务结束后更新经验文档，将 `memoryRef` 传给后续任务的 Proposer。通过 `policy.config.memory` 控制，默认启用。 |
 | WikiSkill | `training-summary` | 每轮训练评测后更新经验文档，并将 `memoryRef` 传给本轮 Proposer。没有 `memory` 配置开关。                         |
 
-`parameter.agent` 通过 `policy.config.memory: true` 启用 Memory，默认关闭。
+`policy.parameter-agent` 通过 `policy.config.memory: true` 启用 Memory，默认关闭。
 每批评测后使用 `training-summary`、候选源码和 selector 结果整理经验，再传给后续提案。
 输出包含 `memoryRef`；普通更新失败时保留上一版本，不自动继承其他实验的经验。
 具体编排见 [参数搜索 Policy](../../../src/policies/parameter/agent/policy.yaml)。
@@ -132,4 +132,4 @@ steps:
 
 使用本地存储时，Runtime 将经验文档的内容和目录信息保存在 `.rsi/artifacts/`，Policy 检查点记录当前 `memoryRef`。**恢复同一个实验时，会继续使用已保存的文档版本。内置 Policy 每次启动新实验时，Memory 的初始值都为空（`memoryRef: null`），不会自动继承之前实验的 Memory。**
 
-普通 Memory 更新失败本身不会取消实验。取消、实验预算耗尽和 Runtime 无法保存关键运行记录等情况仍会停止执行。参见[取消与恢复](running-experiments_zh.md#取消与恢复)和 [Memory 实现](../../../src/plugins/memory-agent/service.ts)。
+普通 Memory 更新失败本身不会取消实验。取消、实验预算耗尽和 Runtime 无法保存关键运行记录等情况仍会停止执行。参见[取消与重试](running-experiments_zh.md#取消与恢复)和 [Memory 实现](../../../src/plugins/memory-agent/service.ts)。

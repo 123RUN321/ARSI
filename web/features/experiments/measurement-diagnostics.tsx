@@ -14,7 +14,8 @@ export function MeasurementDiagnostics({
     <details onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>Recorded evaluation diagnostics</summary>
       <p className="muted">
-        Saved with this evaluation. The linked call may have resumed since then.
+        Saved with this evaluation. The linked call may have been retried since
+        then.
       </p>
       {open ? (
         <ArtifactBrowser id={id} artifact={diagnosticsRef} embedded />

@@ -2,13 +2,13 @@
 
 [English](architecture.md) | 简体中文 · [快速入门](../getting-started_zh.md)
 
-ember-rsi（Recursive Self-Improvement）是面向 Agent 和 AI 基础设施的插件化自演进实验框架。
+arsi（Recursive Self-Improvement）是面向 Agent 和 AI 基础设施的插件化自演进实验框架。
 
 - Configuration（实验配置）指定要优化的对象、执行流程、插件和预算；
 - RSI Core（执行核心）会根据配置运行并管理 Experiment（实验），记录实验状态与结果。
 - 同一套 RSI Core 可以通过不同的 Configuration 运行不同的 Experiment。
 
-![ember-rsi 架构图](../assets/rsi-architecture-handdrawn.png)
+![arsi 架构图](../assets/rsi-architecture-handdrawn.png)
 
 ## 核心概念
 

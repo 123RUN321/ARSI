@@ -24,7 +24,7 @@ export const proposerEditOutputSchema: JsonSchema = {
             additionalProperties: false,
             required: ['op', 'path', 'changes'],
             properties: {
-              op: { const: 'patch' },
+              op: { type: 'string', const: 'patch' },
               path,
               changes: {
                 type: 'array',
@@ -47,7 +47,7 @@ export const proposerEditOutputSchema: JsonSchema = {
             additionalProperties: false,
             required: ['op', 'path', 'content'],
             properties: {
-              op: { const: op },
+              op: { type: 'string', const: op },
               path,
               content: { type: 'string' as const },
             },
@@ -56,7 +56,7 @@ export const proposerEditOutputSchema: JsonSchema = {
             type: 'object',
             additionalProperties: false,
             required: ['op', 'path'],
-            properties: { op: { const: 'delete' }, path },
+            properties: { op: { type: 'string', const: 'delete' }, path },
           },
         ],
       },

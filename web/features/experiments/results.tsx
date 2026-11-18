@@ -1,8 +1,11 @@
 import { HarnessResults } from './harness-results';
 import { useRoundLabels, useCallRecords } from './round-labels';
 import React from 'react';
-import { parseDetails, parseCandidates } from '../../api/observation-client';
-import { EvaluationProgress } from './evaluation-progress';
+import {
+  parseDetails,
+  parseMeasurements,
+  parseCandidates,
+} from '../../api/observation-client';
 import { scoreLabel } from './record-identifiers';
 import { Feedback, Status } from '../../components/observation-feedback';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
@@ -11,8 +14,16 @@ import { comparableBaseline } from './experiment-summary';
 import { useAllObservations, useObservation } from './use-observation';
 import { InferenceReport } from './inference-report';
 import { inferenceSummary } from './inference-summary';
+import { Measurements } from './measurements';
+import { metricValue } from './measurement-score';
 
-export function Results({ id }: { id: string }): React.JSX.Element {
+export function Results({
+  id,
+  status,
+}: {
+  id: string;
+  status: string;
+}): React.JSX.Element {
   const labels = useRoundLabels();
   const records = useCallRecords();
   const candidates = useAllObservations(
@@ -24,18 +35,9 @@ export function Results({ id }: { id: string }): React.JSX.Element {
     parseDetails,
   );
   const references = details.data?.resultReferences ?? [];
-  const measurements = records.measurements;
-  const progress = (
-    <>
-      <Feedback {...measurements} />
-      {measurements.data ? (
-        <EvaluationProgress
-          id={id}
-          measurements={measurements.data.items}
-          evaluationLabel={labels.evaluation}
-        />
-      ) : null}
-    </>
+  const measurements = useAllObservations(
+    `/${encodeURIComponent(id)}/measurements`,
+    parseMeasurements,
   );
   const final = finalResults(references, measurements.data?.items ?? []);
   const metricKey = (metric: { name: string; unit: string }): string =>
@@ -65,7 +67,7 @@ export function Results({ id }: { id: string }): React.JSX.Element {
     return (
       <div className="section-stack">
         <Feedback {...details} />
-        {progress}
+        <Feedback {...measurements} />
         <Feedback {...candidates} />
         <InferenceReport
           id={id}
@@ -79,7 +81,7 @@ export function Results({ id }: { id: string }): React.JSX.Element {
     return (
       <div className="section-stack">
         <Feedback {...details} />
-        {progress}
+        <Feedback {...measurements} />
         {measurements.data && details.data ? (
           <HarnessResults
             id={id}
@@ -98,11 +100,13 @@ export function Results({ id }: { id: string }): React.JSX.Element {
         </div>
       </div>
       <Feedback {...details} />
-      {progress}
       {details.data ? (
         !details.data.result ? (
           <p className="empty-state">
-            No final result was recorded for this experiment.
+            {['succeeded', 'failed', 'cancelled'].includes(status)
+              ? 'No final result was recorded.'
+              : 'No final result is recorded yet.'}{' '}
+            Recorded evaluations are shown below.
           </p>
         ) : (
           <>
@@ -169,10 +173,9 @@ export function Results({ id }: { id: string }): React.JSX.Element {
                         )
                       : null;
                     const baselineValue = baseline?.values.value;
-                    const finalValue =
-                      metric?.status === 'available'
-                        ? metric.values.value
-                        : null;
+                    const finalValue = metric
+                      ? metricValue(measurement, metric)
+                      : null;
                     const delta =
                       typeof finalValue === 'number' &&
                       typeof baselineValue === 'number'
@@ -234,7 +237,8 @@ export function Results({ id }: { id: string }): React.JSX.Element {
                             {metric.reason ?? metric.status}
                           </p>
                         ) : null}
-                        {metric?.status === 'available' &&
+                        {measurement.status === 'succeeded' &&
+                        metric?.status === 'available' &&
                         finalValue == null ? (
                           <p className="muted">
                             {Object.entries(metric.values)
@@ -286,6 +290,7 @@ export function Results({ id }: { id: string }): React.JSX.Element {
           </>
         )
       ) : null}
+      <Measurements id={id} />
     </div>
   );
 }

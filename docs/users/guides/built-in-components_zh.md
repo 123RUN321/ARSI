@@ -6,9 +6,9 @@
 
 可通过以下命令查看当前可用的组件：
 
-- `ember-rsi catalog`：列出已注册的插件和 Policy ID。
-- `ember-rsi list plugins`：查看插件描述、契约及输入、输出和配置 Schema。
-- `ember-rsi list policies`：查看 Policy 描述、Schema、所需契约及符合契约的插件。
+- `arsi catalog`：列出已注册的插件和 Policy ID。
+- `arsi list plugins`：查看插件描述、契约及输入、输出和配置 Schema。
+- `arsi list policies`：查看 Policy 描述、Schema、所需契约及符合契约的插件。
 
 内置注册定义见[内置注册表](../../../src/runtime/builtins.ts)。在使用时需要内置组件时注意：契约匹配表示接口兼容，选择插件时还需确认其功能是否适合当前任务。
 
@@ -21,14 +21,14 @@
 | `policy.harness2`（[论文](https://arxiv.org/abs/2610.14224)）  | 尝试多种 Agent 改进方案，按最终交付质量选择结果。    | [README](../../../examples/harness/dsh-harness2/README.md)                  |
 | `policy.wikiskill`（[论文](https://arxiv.org/abs/2608.27454)） | 根据训练任务的经验持续改进 Agent 的 Skill。          | [README](../../../examples/harness/dsh-wikiskill/README.md)                 |
 | `policy.gepa` | 通过反馈驱动的变异和种群搜索优化模块化提示词。 | [README](../../../examples/harness/dsh-gepa/README.md) |
-| `parameter.agent` | 先建立可测量的基线，再由 Agent 提出并验证推理引擎参数。 | [README](../../../examples/artifacts/inference/parameter-agent/README.md) |
+| `policy.parameter-agent` | 先建立可测量的基线，再由 Agent 提出并验证推理引擎参数。 | [README](../../../examples/artifacts/inference/parameter-agent/README.md) |
 | `policy.parameter-grid`                                        | 逐一尝试预设参数组合，选择更好的推理服务配置。       | [README](../../../examples/artifacts/inference/parameter-grid/README.md)    |
 | `policy.parameter-optuna`                                      | 利用评测反馈搜索参数，在有限预算内优化推理服务性能。 | [README](../../../examples/artifacts/inference/parameter-tpe/README.md)     |
 | `policy.operator-search`                                       | 结合正确性检查与性能反馈，优化 Triton-Ascend 算子。  | [README](../../../examples/artifacts/kernel/transpose-copy/README.zh-CN.md) |
 
 Agent、Grid 和 Optuna 都会在搜索前评测初始配置一次。请提供能正常启动的配置，并为基线预留一次 evaluation run。基线评测失败时，实验停止。
 
-`parameter.agent` 按顺序直接调用 `evaluator.inferencebench` 评测每个候选。已确认且完成清理的启动失败记为失败 Measurement，并拒绝该候选；SDK 评测失败、取消、收集不完整或清理状态不明会停止实验。失败基线不能启动搜索。默认的 `selector.inference` 允许 Policy 在全部性能目标达成前保留有改善的候选。输出始终保留当前最优版本的 `candidateRef` 和 `measurementRef`，由 `candidateFeasible` 表示其是否满足配置的约束；即使 `status` 为 `no-feasible-configuration`，这些引用也会保留。
+`policy.parameter-agent` 按顺序直接调用 `evaluator.inferencebench` 评测每个候选。已确认且完成清理的启动失败记为失败 Measurement，并拒绝该候选；SDK 评测失败、取消、收集不完整或清理状态不明会停止实验。失败基线不能启动搜索。默认的 `selector.inference` 允许 Policy 在全部性能目标达成前保留有改善的候选。输出始终保留当前最优版本的 `candidateRef` 和 `measurementRef`，由 `candidateFeasible` 表示其是否满足配置的约束；即使 `status` 为 `no-feasible-configuration`，这些引用也会保留。
 
 ## Loop 组件
 
@@ -110,7 +110,7 @@ Reflection 只需要 Policy 显式声明执行。在 Reflection配置文件中 �
 ### 推理配置候选
 
 远程推理从 `remote.parametersFile`（默认 `tuning.json`）读取一个 JSON 候选。
-`parameter.agent` 只编辑 `config.parameterFile`，启动器保持固定。Policy 接收可配置
+`policy.parameter-agent` 只编辑 `config.parameterFile`，启动器保持固定。Policy 接收可配置
 的 `goal` 与给提案器的 `selection` 说明。启动器可以解释嵌套选项和环境设置，无需
 上传引擎源码或构建脚本。
 

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { getShellConfig } from '@earendil-works/pi-coding-agent';
 import { createServer, type ServerResponse } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -340,7 +341,20 @@ test(
   },
 );
 
-test('Pi direct bash uses the project cwd and the host account permissions', async () => {
+test('Pi direct bash uses the project cwd and host account permissions when available', async (t) => {
+  if (process.platform === 'win32') {
+    try {
+      getShellConfig();
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !error.message.startsWith('No bash shell found.')
+      )
+        throw error;
+      t.skip('Pi cannot discover Bash on this Windows host');
+      return;
+    }
+  }
   const f = await modelFixture(
     [
       {

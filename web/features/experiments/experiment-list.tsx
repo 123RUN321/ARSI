@@ -22,10 +22,13 @@ import { useObservation } from './use-observation';
 export function Experiments(): React.JSX.Element {
   const location = useRoute();
   const offset = location.offset ?? 0,
-    search = location.search ?? '';
+    search = location.search ?? '',
+    policy = location.policy ?? '';
   const setOffset = (value: number): void =>
     replaceRouteSelection({ offset: value });
-  const result = useObservation(`?offset=${offset}`, parseExperiments);
+  const query = new URLSearchParams({ offset: String(offset) });
+  if (policy) query.set('policy', policy);
+  const result = useObservation(`?${query}`, parseExperiments);
   const visible = result.data?.items.filter((entry) =>
     `${entry.id} ${entry.recipeId ?? ''} ${entry.status}`
       .toLowerCase()
@@ -38,7 +41,27 @@ export function Experiments(): React.JSX.Element {
           <h1>Experiments</h1>
         </div>
       </header>
-      <div className="section-heading">
+      <div className="chart-controls">
+        <label htmlFor="policy-filter">
+          Policy
+          <select
+            id="policy-filter"
+            value={policy}
+            onChange={(event) =>
+              replaceRouteSelection({ policy: event.target.value, offset: 0 })
+            }
+          >
+            <option value="">All policies</option>
+            {policy && !result.data?.policies.includes(policy) ? (
+              <option value={policy}>{policy.replace(/^policy\./, '')}</option>
+            ) : null}
+            {result.data?.policies.map((ref) => (
+              <option key={ref} value={ref}>
+                {ref.replace(/^policy\./, '')}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="search-field">
           <label htmlFor="search">Filter this page</label>
           <Input
@@ -50,7 +73,10 @@ export function Experiments(): React.JSX.Element {
             placeholder="Experiment, recipe, or status"
           />
         </div>
-        <span className="muted">{visible?.length ?? '—'} experiments</span>
+        <span className="muted">
+          {search ? `${visible?.length ?? '—'} matches on this page · ` : ''}
+          {result.data?.total ?? '—'} experiments
+        </span>
       </div>
       <Feedback {...result} />
       {result.data ? (
@@ -63,6 +89,7 @@ export function Experiments(): React.JSX.Element {
                     <TableHead>Experiment</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Recipe</TableHead>
+                    <TableHead>Policy</TableHead>
                     <TableHead>Started</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -79,6 +106,10 @@ export function Experiments(): React.JSX.Element {
                       </TableCell>
                       <TableCell>{entry.recipeId ?? 'Not recorded'}</TableCell>
                       <TableCell>
+                        {entry.policyRef?.replace(/^policy\./, '') ??
+                          'Not recorded'}
+                      </TableCell>
+                      <TableCell>
                         <Timestamp value={entry.startedAt} />
                       </TableCell>
                     </TableRow>
@@ -90,12 +121,16 @@ export function Experiments(): React.JSX.Element {
                 <h2>
                   {search
                     ? 'No matching experiments on this page'
-                    : 'No experiments recorded'}
+                    : policy
+                      ? 'No experiments for this policy'
+                      : 'No experiments recorded'}
                 </h2>
                 <p>
                   {search
                     ? 'Change the filter or browse another page.'
-                    : 'Experiments started through your existing workflow will appear here.'}
+                    : policy
+                      ? 'Select another policy or All policies.'
+                      : 'Experiments started through your existing workflow will appear here.'}
                 </p>
               </div>
             )}

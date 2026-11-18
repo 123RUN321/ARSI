@@ -47,7 +47,9 @@ type Mapping = {
 };
 export interface ReflectionOptions {
   config: ReflectionConfig;
-  invocation: { policyScopeId: string; stepPath: string };
+  invocation: { policyScopeId: string; stepPath: string; attempt?: string };
+  priorAttempts?: readonly JsonObject[];
+  generatorCommitted?(reflectionId: string): boolean;
   generatorBinding: string;
   state: JsonObject;
   bindings: Readonly<Record<string, Binding>>;
@@ -137,13 +139,46 @@ export async function reflect(
   options: ReflectionOptions,
 ): Promise<ReflectionResult> {
   options.context.signal.throwIfAborted();
-  const identity =
-    'reflection-' +
-    digest({
-      experimentId: options.context.experimentId,
-      policyScopeId: options.invocation.policyScopeId,
-      stepPath: options.invocation.stepPath,
-    });
+  for (const raw of options.priorAttempts ?? []) {
+    const prior = readReflectionRecord(raw);
+    if (
+      prior.status === 'validated' &&
+      (await activationIncludes(options, object(prior.revisions)))
+    ) {
+      return readReflectionResult({
+        reflectionId: prior.reflectionId,
+        status: 'activated',
+        revisionRefs: prior.revisions,
+        reason: prior.reason,
+      });
+    }
+    if (isTerminal(prior.status) && prior.status !== 'rejected')
+      return readReflectionResult(prior.result, string(prior.reflectionId));
+  }
+  const preparedAttempt = options.priorAttempts?.find(
+    (prior) =>
+      (prior.status === 'validated' ||
+        (prior.status === 'prepared' &&
+          typeof prior.reflectionId === 'string' &&
+          options.generatorCommitted?.(prior.reflectionId))) &&
+      prior.configFile === options.config.path &&
+      prior.configDigest === options.config.digest &&
+      Object.entries(object(prior.parents)).every(([binding, parent]) => {
+        const current = options.bindings[binding];
+        return current && currentRevision(options, binding, current) === parent;
+      }),
+  );
+  const identity = preparedAttempt
+    ? string(preparedAttempt.reflectionId)
+    : 'reflection-' +
+      digest({
+        experimentId: options.context.experimentId,
+        policyScopeId: options.invocation.policyScopeId,
+        stepPath: options.invocation.stepPath,
+        ...(options.invocation.attempt
+          ? { attempt: options.invocation.attempt }
+          : {}),
+      });
   const rawPrior = await optionalFact(options, 'reflection', identity);
   const prior = rawPrior ? readReflectionRecord(rawPrior) : null;
   const metadata: JsonObject = {

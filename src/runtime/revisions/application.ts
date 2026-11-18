@@ -6,7 +6,6 @@ import {
   writeFile,
   unlink,
   rmdir,
-  rename,
   chmod,
 } from 'node:fs/promises';
 import {
@@ -31,6 +30,7 @@ import { parseFileTree } from '../../contracts/index.js';
 import { canonical, object, string } from '../../shared/json.js';
 import { errorText } from '../../shared/errors.js';
 import { safeId } from '../storage/index.js';
+import { renameFileWithRetry } from '../storage/rename-file.js';
 import {
   pathContains,
   resourcePath,
@@ -565,10 +565,11 @@ export class RevisionApplication {
               });
               if (process.platform !== 'win32')
                 await chmod(temporary, change.mode!);
-              await inspectPath(change.path);
-              gate.assertOwned();
               // Replacing a directory entry never follows an existing file link.
-              await rename(temporary, change.path);
+              await renameFileWithRetry(temporary, change.path, async () => {
+                await inspectPath(change.path);
+                gate.assertOwned();
+              });
             } finally {
               try {
                 await unlink(temporary);

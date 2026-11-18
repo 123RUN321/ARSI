@@ -2,7 +2,7 @@ import {
   parseUserConfig as parseSdkConfig,
   type UserConfig as SdkEvaluatorConfig,
   type ServiceInput,
-} from 'ember-evaluator';
+} from 'arsi-evaluator';
 import type { JsonObject, JsonValue } from '../../../contracts/index.js';
 
 export type { SdkEvaluatorConfig };

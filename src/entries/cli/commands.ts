@@ -28,7 +28,7 @@ interface ParsedCommand {
 export function parseCommand(argv: string[]): ParsedCommand {
   let result: ParsedCommand | undefined;
   let help = '';
-  const program = new Command('ember-rsi')
+  const program = new Command('arsi')
     .description('Make everything rsi-able')
     .option(
       '--plugin-dir <directory>',
@@ -48,7 +48,7 @@ export function parseCommand(argv: string[]): ParsedCommand {
     .showHelpAfterError();
   program.addHelpText(
     'after',
-    '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.ember-rsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
+    '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.arsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
   );
   const capture = (command: string, args: string[], cmd: Command): void => {
     result = {
@@ -57,7 +57,10 @@ export function parseCommand(argv: string[]): ParsedCommand {
       pluginDirectories: program.opts<{ pluginDir: string[] }>().pluginDir,
     };
     if (command === 'run') {
-      const opts = cmd.opts<{ id?: string; resume?: boolean }>();
+      const opts = cmd.opts<{
+        id?: string;
+        resume?: boolean;
+      }>();
       if (opts.resume && !opts.id) cmd.error('--resume requires --id');
       result.id = opts.id;
       result.resume = opts.resume ?? false;
@@ -71,7 +74,7 @@ export function parseCommand(argv: string[]): ParsedCommand {
     .command('run <recipe.yaml>')
     .description('Run or resume an experiment')
     .option('--id <experiment-id>', 'Set the experiment ID')
-    .option('--resume', 'Resume the experiment specified by --id')
+    .option('--resume', 'Resume an experiment using a compatible Recipe')
     .action((file: string, _opts: unknown, cmd: Command) =>
       capture('run', [file], cmd),
     );

@@ -16,6 +16,7 @@ import type {
 import type {
   Page,
   ExperimentSummary,
+  ExperimentPage,
   ExperimentOverview,
   CallSummary,
   CallDetail,
@@ -37,6 +38,7 @@ import { readIterationScopes } from '../../shared/iterations.js';
 import { safeId } from '../storage/index.js';
 import type { PolicyStructure } from '../../shared/observation/policy-structure.js';
 import { queryPolicyStructure } from './policy-structure-query.js';
+import { isExecutionActive } from '../manager/execution-lock.js';
 
 function restrictedFile(path: string): boolean {
   return /(^|\/)(\.env(?:\..*)?|\.npmrc|\.?netrc|credentials(?:\.json|\.ya?ml|\.toml)?|secrets?\.(?:json|ya?ml|toml)|id_(?:rsa|ed25519|ecdsa|dsa)|private[-_]?key(?:\.pem|\.key)?|[^/]+\.(?:p12|pfx))$/i.test(
@@ -68,6 +70,11 @@ function recordedStrings(
 }
 function optionalText(value: JsonValue | undefined): string | null {
   return typeof value === 'string' ? value : null;
+}
+function experimentPolicyRef(record: JsonObject): string | null {
+  const policy = record.recipe ? object(record.recipe).policy : undefined;
+  // Existing experiment snapshots use ref; current Recipes use id.
+  return policy ? optionalText(object(policy).id ?? object(policy).ref) : null;
 }
 function numbers(value: JsonValue | undefined): Record<string, number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -112,7 +119,7 @@ export class ObservationQueries {
     return { directory: this.directory ? resolve(this.directory) : null };
   }
 
-  /** The initial saved declaration only: no source files, artifact reads or resource restoration. */
+  /** The saved declaration only: no source files, artifact reads or resource restoration. */
   async policyStructure(id: string): Promise<PolicyStructure> {
     await this.experiment(id);
     return queryPolicyStructure(id, {
@@ -147,7 +154,24 @@ export class ObservationQueries {
         visit(item);
       }
     };
-    visit(await this.experiment(id));
+    const experiment = await this.experiment(id);
+    visit(experiment);
+    let definition: JsonObject;
+    try {
+      definition = await this.facts.read('definitions', id);
+    } catch (error) {
+      if (missing(error)) return values;
+      throw error;
+    }
+    const visited = new Set<string>();
+    for (;;) {
+      const retry = object(definition.retry ?? {});
+      const ref = retry.previousDefinition;
+      if (typeof ref !== 'string' || visited.has(ref)) break;
+      visited.add(ref);
+      definition = await this.facts.read('definition-attempts', ref);
+      visit(definition);
+    }
     return values;
   }
   private clean(
@@ -476,11 +500,19 @@ export class ObservationQueries {
     };
   }
 
-  private summary(record: JsonObject, secrets: string[]): ExperimentSummary {
+  private async summary(
+    record: JsonObject,
+    secrets: string[],
+  ): Promise<ExperimentSummary> {
     return {
       id: string(record.id),
       recipeId: optionalText(record.recipeId),
-      status: string(record.status),
+      policyRef: experimentPolicyRef(record),
+      status:
+        record.status === 'running' &&
+        !(await isExecutionActive(this.directory, string(record.id)))
+          ? 'unconfirmed'
+          : string(record.status),
       startedAt: optionalText(record.startedAt),
       finishedAt: optionalText(record.finishedAt),
       error:
@@ -489,16 +521,35 @@ export class ObservationQueries {
           : null,
     };
   }
-  async experiments(offset = 0, limit = 50): Promise<Page<ExperimentSummary>> {
+  async experiments(
+    offset = 0,
+    limit = 50,
+    policy?: string,
+  ): Promise<ExperimentPage> {
     const entries = await this.facts.list('experiments');
+    const policies = [
+      ...new Set(
+        entries.flatMap((entry) => {
+          const ref = experimentPolicyRef(entry);
+          return ref ? [ref] : [];
+        }),
+      ),
+    ].sort();
     entries.sort(
       (a, b) =>
         String(b.startedAt ?? '').localeCompare(String(a.startedAt ?? '')) ||
         string(a.id).localeCompare(string(b.id)),
     );
-    const selected = page(entries, offset, limit);
+    const selected = page(
+      policy
+        ? entries.filter((entry) => experimentPolicyRef(entry) === policy)
+        : entries,
+      offset,
+      limit,
+    );
     return {
       ...selected,
+      policies,
       items: await Promise.all(
         selected.items.map(async (entry) =>
           this.summary(entry, await this.secrets(string(entry.id))),
@@ -517,7 +568,7 @@ export class ObservationQueries {
       if (!missing(error)) throw error;
     }
     return {
-      ...this.summary(record, secrets),
+      ...(await this.summary(record, secrets)),
       observedAt: new Date().toISOString(),
       usage,
       limits: numbers(record.recipe ? object(record.recipe).budget : undefined),
@@ -647,6 +698,9 @@ export class ObservationQueries {
           safeId(id),
           'calls',
           safeId(callId),
+          ...(typeof call.attemptId === 'string'
+            ? ['attempts', safeId(call.attemptId)]
+            : []),
           'diagnostics.jsonl',
         ),
         constants.O_RDONLY | constants.O_NOFOLLOW,

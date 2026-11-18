@@ -19,7 +19,7 @@ const endpoint = `/api/observation/experiments/${experimentId}/policy-structure`
 
 function savedDefinition(directory: string): JsonObject {
   const content: JsonObject = {
-    schemaVersion: 'rsi.definition-lock/v1',
+    schemaVersion: 'rsi.definition-lock/v2',
     recipe: {
       schemaVersion: 'rsi.recipe/v1',
       id: 'saved-recipe',

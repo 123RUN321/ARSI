@@ -1,9 +1,9 @@
 import { useOperatorSdkTestEnvironment } from '../fixtures/operator-sdk/environment.js';
+import { prepareNodeFixture } from '../fixtures/operator-sdk/executable.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   appendFile,
-  chmod,
   copyFile,
   cp,
   mkdir,
@@ -209,12 +209,14 @@ test('a rebuilt SDK cannot profile an assessment from the previous build', async
   await writeFile(join(directory, 'package.json'), '{"type":"module"}\n');
   const modules = join(directory, 'node_modules');
   await mkdir(modules);
+  const dependencyLink = process.platform === 'win32' ? 'junction' : 'dir';
   for (const name of await readdir(join(repository, 'node_modules'))) {
+    if (name.startsWith('.')) continue;
     const installed = join(repository, 'node_modules', name);
     const isolated = join(modules, name);
-    if (name === 'ember-evaluator')
+    if (name === 'arsi-evaluator')
       await cp(await realpath(installed), isolated, { recursive: true });
-    else await symlink(installed, isolated, 'dir');
+    else await symlink(installed, isolated, dependencyLink);
   }
   const {
     createOperatorbench,
@@ -262,8 +264,8 @@ test('a rebuilt SDK cannot profile an assessment from the previous build', async
       join(repository, 'tests/fixtures/operator-sdk', name!),
       destination!,
     );
-    await chmod(destination!, 0o755);
   }
+  const python = await prepareNodeFixture(worker);
   const artifacts = new FileArtifacts(join(directory, 'artifacts'));
   const measurements = new Map<string, JsonObject>();
   let evaluationRuns = 0;
@@ -325,12 +327,12 @@ test('a rebuilt SDK cannot profile an assessment from the previous build', async
           repeat: 20,
           rtol: 0,
           atol: 0,
-          python: worker,
+          python,
           device: 0,
           timeoutSeconds: 15,
           profiling: {
             enabled: false,
-            msprofBin: msprof,
+            msprofBin: await prepareNodeFixture(msprof),
             cacheEnabled: false,
             maxAttempts: 1,
             attemptTimeoutSeconds: 5,
@@ -346,7 +348,7 @@ test('a rebuilt SDK cannot profile an assessment from the previous build', async
     { action: 'evaluate', candidateRef: 'candidate', caseIds: ['fixed'] },
     context,
   );
-  const distribution = join(modules, 'ember-evaluator/dist');
+  const distribution = join(modules, 'arsi-evaluator/dist');
   const replay = 'plugins/benchmarks/operator/kernel/runtime/msprof_replay.py';
   await appendFile(
     join(distribution, replay),

@@ -281,7 +281,7 @@ for (const kind of ['agentbench', 'inferencebench'] as const) {
   });
 }
 
-test('agentbench retains finalized verifier timeouts as failed data and reconciles without rerunning', async () => {
+test('agentbench retains finalized verifier timeouts as failed measurement data', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'rsi-verifier-timeout-'));
   try {
     const { services, measurements, stored } = harness(directory);
@@ -344,62 +344,6 @@ test('agentbench retains finalized verifier timeouts as failed data and reconcil
       'unavailable',
     );
     assert.equal(object(object(measurement.metrics).score).value, null);
-    const receipt = {
-      callId: 'call',
-      experimentId: 'exp',
-      status: 'failed',
-      measurementRef: 'measurement:one',
-    };
-    call.readMeasurement = async () => measurement as never;
-    let childStatus = 'succeeded';
-    let instanceStatus = 'released';
-    call.facts = {
-      list: async (): Promise<JsonObject[]> => [
-        {
-          experimentId: 'exp',
-          parentCallId: 'call',
-          status: 'succeeded',
-          bindingId: '_application',
-          input: { action: 'acquire', instanceId: 'owned' },
-          output: { instanceId: 'owned' },
-        },
-        {
-          experimentId: 'exp',
-          parentCallId: 'call',
-          status: childStatus,
-          bindingId: '_application',
-          input: { action: 'release', instanceId: 'owned' },
-          output: { instanceId: 'owned', status: 'released' },
-        },
-      ],
-      read: async () => ({
-        status: instanceStatus,
-        experimentId: 'exp',
-        candidateRef: 'candidate:a',
-      }),
-      write: async () => {
-        throw new Error('Reconciliation must be read-only');
-      },
-    };
-    assert.equal(typeof op.canRetry, 'function');
-    assert.equal(
-      await op.canRetry!(input, { ...receipt, status: 'unknown' }, call),
-      false,
-    );
-    assert.equal(
-      await op.canRetry!({ ...input, candidateRef: 'other' }, receipt, call),
-      false,
-    );
-    childStatus = 'unknown';
-    assert.equal(await op.canRetry!(input, receipt, call), false);
-    childStatus = 'succeeded';
-    instanceStatus = 'ready';
-    assert.equal(await op.canRetry!(input, receipt, call), false);
-    instanceStatus = 'released';
-    assert.equal(await op.canRetry!(input, receipt, call), true);
-    assert.deepEqual(await op.execute(input, call), {
-      measurementRef: 'measurement:one',
-    });
     assert.equal(evaluations, 1);
     assert.equal(acquisitions, 1);
     assert.deepEqual(charges, ['evaluationRuns']);
@@ -411,10 +355,10 @@ test('agentbench retains finalized verifier timeouts as failed data and reconcil
   }
 });
 
-test('agentbench resumes a pre-enumeration preparation failure with a fresh owned instance', async () => {
+test('agentbench repeats preparation through the Runtime instance lifecycle', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'rsi-preparation-retry-'));
   try {
-    const { services, measurements, stored } = harness(directory);
+    const { services, measurements } = harness(directory);
     const call = context(directory).extend(services);
     const failed = snapshot();
     Object.assign(object(failed.run), {
@@ -451,106 +395,17 @@ test('agentbench resumes a pre-enumeration preparation failure with a fresh owne
     );
     const input = { candidateRef: 'candidate:a', taskIds: ['task/a'] };
     await assert.rejects(op.execute(input, call), /Docker connection EOF/);
-    const measurement: JsonObject = {
-      ...measurements[0]!,
-      ref: 'measurement:one',
-    };
-    const receipt = {
-      callId: 'call',
-      experimentId: 'exp',
-      status: 'failed',
-      measurementRef: 'measurement:one',
-    };
-    call.readMeasurement = async () => measurement as never;
-    let released = false;
-    call.facts = {
-      list: async (): Promise<JsonObject[]> => [
-        {
-          parentCallId: 'call',
-          experimentId: 'exp',
-          status: 'succeeded',
-          bindingId: '_application',
-          input: { action: 'acquire' },
-          output: { instanceId: 'old' },
-        },
-        {
-          parentCallId: 'call',
-          experimentId: 'exp',
-          status: 'succeeded',
-          bindingId: '_application',
-          input: { action: 'release', instanceId: 'old' },
-          output: { status: 'released' },
-        },
-      ],
-      read: async () => ({
-        status: released ? 'released' : 'ready',
-        experimentId: 'exp',
-        candidateRef: input.candidateRef,
-      }),
-      write: async () => {
-        throw new Error('read-only recovery');
-      },
-    };
-    assert.equal(await op.canRetry!(input, receipt, call), false);
-    released = true;
-    assert.equal(
-      await op.canRetry!(input, { ...receipt, status: 'unknown' }, call),
-      false,
-    );
-    assert.equal(
-      await op.canRetry!({ ...input, taskIds: ['other'] }, receipt, call),
-      false,
-    );
-    const provenance = object(
-      stored.get(object(measurement.provenance).artifactRef as string),
-    );
-    const saved = object(
-      stored.get(object(provenance.nativeResult).resultRef as string),
-    );
-    const savedSnapshot = object(saved.snapshot);
-    const originalSnapshot = structuredClone(savedSnapshot);
-    for (const patch of [
-      { records: snapshot().records },
-      { pendingTaskIds: [] },
-      { run: { ...object(savedSnapshot.run), status: 'running' } },
-      {
-        run: {
-          ...object(savedSnapshot.run),
-          failure: { code: 'VERIFY_TIMEOUT', phase: 'verify' },
-        },
-      },
-    ]) {
-      Object.assign(savedSnapshot, originalSnapshot, patch);
-      assert.equal(await op.canRetry!(input, receipt, call), false);
-    }
-    Object.assign(savedSnapshot, originalSnapshot);
-    assert.equal(await op.canRetry!(input, receipt, call), true);
-    call.withInstance = async () => {
-      throw new Error('Must not reuse released acquisition');
-    };
-    const actions: string[] = [];
-    let acquired = '';
-    call.application = async (request): Promise<JsonObject> => {
-      actions.push(String(request.action));
-      if (request.action === 'acquire') {
-        acquired = String(request.instanceId);
-        assert.notEqual(acquired, 'old');
-        return {
-          action: 'acquire',
-          instanceId: acquired,
-          execution: {
-            directory: join(directory, 'fresh-bundle'),
-            bundleDigest: 'sha256:bundle',
-            artifactDigest: 'artifact:a',
-          },
-        };
-      }
-      assert.equal(request.action, 'release');
-      assert.equal('instanceId' in request && request.instanceId, acquired);
-      return { action: 'release', instanceId: acquired, status: 'released' };
+    let acquisitions = 0;
+    call.withInstance = async (_candidate, _capability, use) => {
+      acquisitions++;
+      return use({
+        directory: join(directory, 'fresh-bundle'),
+        bundleDigest: 'sha256:bundle',
+        artifactDigest: 'artifact:a',
+      });
     };
     await op.execute(input, call);
-    assert.deepEqual(actions, ['acquire', 'release']);
+    assert.equal(acquisitions, 1);
     assert.deepEqual(charges, ['evaluationRuns', 'evaluationRuns']);
     assert.equal(runs, 2);
     assert.equal(measurements.length, 2);
@@ -941,7 +796,7 @@ test('AISBench uses the final complete workload point for throughput and latency
   };
   const bundleDigest = 'a'.repeat(64);
   const aisbenchVersion = '1.0.0';
-  const { fingerprintConfig } = await import('ember-evaluator');
+  const { fingerprintConfig } = await import('arsi-evaluator');
   const taskId = `aisbench-${fingerprintConfig(workload).slice(-16)}`;
   const snap = snapshot('performance');
   Object.assign(object(snap.run), {
