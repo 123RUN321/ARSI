@@ -333,4 +333,39 @@ test('Manager activates committed revisions before notifying, retains the old ch
   assert.deepEqual(trace, beforeResume);
   assert.equal(executions, 4);
   assert.equal(activations.length, 1);
+
+  proposals = 0;
+  const write = manager.facts.write.bind(manager.facts);
+  manager.facts.write = async (kind, id, value) => {
+    if (
+      (kind === 'activations' && id === 'retry-revision') ||
+      (kind === 'reflection' &&
+        value.experimentId === 'retry-revision' &&
+        value.status === 'rejected')
+    )
+      throw new Error('interrupted before activation');
+    await write(kind, id, value);
+  };
+  await assert.rejects(
+    manager.run(recipePath, { id: 'retry-revision' }),
+    /interrupted before activation/,
+  );
+  manager.facts.write = write;
+  const pending = (await manager.facts.list('reflection')).find(
+    (fact) => fact.experimentId === 'retry-revision',
+  )!;
+  assert.equal(pending.status, 'validated');
+  assert.equal(proposals, 1);
+  const fixed = await manager.run(recipePath, {
+    id: 'retry-revision',
+    resume: true,
+  });
+  assert.equal(fixed.status, 'succeeded');
+  assert.equal(object(fixed.output).prompt, 'revised');
+  const activated = await manager.facts.read(
+    'reflection',
+    string(pending.reflectionId),
+  );
+  assert.equal(activated.status, 'activated');
+  assert.equal(proposals, 2);
 });

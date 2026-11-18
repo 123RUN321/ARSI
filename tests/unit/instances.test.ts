@@ -1,16 +1,20 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   type Binding,
   type EventPipeline,
+  type JsonObject,
   RuntimeContext,
+  agentContract,
   type OperationDefinition,
 } from '../../src/contracts/index.js';
 import { defineContract } from '../../src/contracts/index.js';
 import { createCallExecutor } from '../../src/runtime/manager/calls.js';
+import { readRetryCalls } from '../../src/runtime/manager/retry.js';
+import { prepareAgentProject } from '../../src/plugins/shared/agent-editing/project.js';
 import { Instances } from '../../src/runtime/manager/instances.js';
 import { digest } from '../../src/shared/json.js';
 import { Registry } from '../../src/runtime/registry/index.js';
@@ -31,6 +35,148 @@ const contract = defineContract({
   id: 'contract.instance-test',
   input_schema: { type: 'object' },
   output_schema: { type: 'object' },
+});
+
+test('prepared Agent retries preserve distinct Policy paths', async (t) => {
+  let executions = 0;
+  const definition: OperationDefinition = {
+    id: 'test.prepared-agent',
+    contract: agentContract,
+    configSchema: { type: 'object' },
+    async create() {
+      return {
+        async execute() {
+          if (++executions === 2) throw new Error('second step failed');
+          return { execution: executions };
+        },
+        async dispose() {},
+      };
+    },
+  };
+  const f = await fixture(t, definition);
+  const root = f.context('_root', 'root');
+  const artifacts = new FileArtifacts(join(root.directory, 'artifacts'));
+  const project = await prepareAgentProject(
+    root.extend({ artifacts }),
+    'Read input',
+    {},
+    [],
+    [],
+  );
+  const input = {
+    goal: 'test',
+    cwd: project,
+    outputSchema: { type: 'object' },
+  };
+  const setup = (retryCalls?: ReadonlyMap<string, JsonObject>) =>
+    createCallExecutor({
+      id: root.experimentId,
+      registry: f.registry,
+      facts: f.facts,
+      revisionRefs: {},
+      retryCalls,
+      retryRef: retryCalls ? 'retry-test' : undefined,
+      context: f.context,
+      binding: () => ({ plugin: definition.id, config: {} }),
+      operation: (id, binding) => f.instances.acquire(id, binding),
+      charge: async () => {},
+      diagnose: () => {},
+      onFailure: () => {},
+    });
+  const first = setup();
+  assert.deepEqual(await first.invoke('agent', input, root, 'steps/one'), {
+    execution: 1,
+  });
+  await assert.rejects(
+    first.invoke('agent', input, root, 'steps/two'),
+    /second step failed/,
+  );
+  const next = setup(await readRetryCalls(f.facts, root.experimentId));
+  assert.deepEqual(
+    await next.invoke('agent', { ...input, goal: 'fixed' }, root, 'steps/two'),
+    {
+      execution: 3,
+    },
+  );
+  const restored = await readRetryCalls(f.facts, root.experimentId);
+  assert.equal(restored.get('steps/two')?.status, 'succeeded');
+});
+
+test('prepared Agent active deduplication validates project ownership', async (t) => {
+  let release!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const definition: OperationDefinition = {
+    id: 'test.prepared-agent',
+    contract: agentContract,
+    configSchema: { type: 'object' },
+    async create() {
+      return {
+        async execute() {
+          started();
+          await gate;
+          return {};
+        },
+        async dispose() {},
+      };
+    },
+  };
+  const f = await fixture(t, definition);
+  const root = f.context('_root', 'root');
+  const artifacts = new FileArtifacts(join(root.directory, 'artifacts'));
+  const project = await prepareAgentProject(
+    root.extend({ artifacts }),
+    'Read input',
+    {},
+    [],
+    [],
+  );
+  const input = {
+    goal: 'test',
+    cwd: project,
+    outputSchema: { type: 'object' },
+  };
+  const calls = createCallExecutor({
+    id: root.experimentId,
+    registry: f.registry,
+    facts: f.facts,
+    revisionRefs: {},
+    context: f.context,
+    binding: () => ({ plugin: definition.id, config: {} }),
+    operation: (id, binding) => f.instances.acquire(id, binding),
+    charge: async () => {},
+    diagnose: () => {},
+    onFailure: () => {},
+  });
+  const authorized = calls.invoke('agent', input, root, 'steps/work');
+  try {
+    await ready;
+    const invalid = calls.invoke(
+      'agent',
+      {
+        ...input,
+        cwd: join(
+          root.directory,
+          'outside',
+          basename(dirname(project)),
+          'project',
+        ),
+      },
+      root,
+      'steps/work',
+    );
+    release();
+    await assert.rejects(invalid, /owned by this call/);
+    await authorized;
+  } finally {
+    release();
+    await authorized;
+  }
 });
 
 async function fixture(t: TestContext, definition: OperationDefinition) {
@@ -88,34 +234,18 @@ async function fixture(t: TestContext, definition: OperationDefinition) {
   return { instances, events, registry, facts, context };
 }
 
-test('call recovery retries only explicitly reconciled failures and preserves receipts and charges', async (t) => {
-  for (const scenario of [
-    'failed',
-    'unknown',
-    'cancelled',
-    'cancelled-declined',
-    'running',
-    'declined',
-    'unsupported',
-  ]) {
+test('a new resume attempt retries incomplete calls and preserves receipts and charges', async (t) => {
+  for (const scenario of ['failed', 'unknown', 'cancelled', 'running']) {
     await t.test(scenario, async (t) => {
       let executions = 0;
-      let retries = 0;
       let charges = 0;
+      let retryRef: string | undefined;
       const definition: OperationDefinition = {
         id: 'instance.reconciled',
         contract,
         configSchema: { type: 'object' },
         async create() {
           return {
-            ...(scenario === 'unsupported'
-              ? {}
-              : {
-                  canRetry: async () => {
-                    retries++;
-                    return !scenario.endsWith('declined');
-                  },
-                }),
             async execute() {
               if (++executions === 1) throw new Error('failed before effect');
               return { recovered: true };
@@ -135,6 +265,7 @@ test('call recovery retries only explicitly reconciled failures and preserves re
           registry,
           facts,
           revisionRefs: {},
+          retryRef,
           context,
           binding: () => binding,
           operation: (id, active) => instances.acquire(id, active),
@@ -148,35 +279,20 @@ test('call recovery retries only explicitly reconciled failures and preserves re
         executor().invoke('worker', {}, context('_root', 'root'), 'recover');
       await assert.rejects(invoke(), /failed before effect/);
       const prior = (await facts.list('calls'))[0]!;
-      const status = ['declined', 'unsupported'].includes(scenario)
-        ? 'failed'
-        : scenario === 'cancelled-declined'
-          ? 'cancelled'
-          : scenario;
+      const status = scenario;
       await facts.write('calls', String(prior.callId), { ...prior, status });
-      if (scenario === 'failed' || scenario === 'cancelled') {
-        assert.deepEqual(await invoke(), { recovered: true });
-        assert.deepEqual(await invoke(), { recovered: true });
-        assert.equal(executions, 2);
-        assert.equal(charges, 2);
-        assert.equal(retries, 1);
-        assert.deepEqual(await facts.list('call-attempts'), [
-          { ...prior, status },
-        ]);
-        const current = await facts.read('calls', String(prior.callId));
-        assert.equal(current.status, 'succeeded');
-        assert.equal(typeof current.recoveredFrom, 'string');
-      } else {
-        await assert.rejects(invoke(), /unconfirmed\/failed effects/);
-        assert.equal(executions, 1);
-        assert.equal(charges, 1);
-        assert.equal(retries, scenario.endsWith('declined') ? 1 : 0);
-        assert.deepEqual(await facts.list('call-attempts'), []);
-        assert.equal(
-          (await facts.read('calls', String(prior.callId))).status,
-          status,
-        );
-      }
+      await assert.rejects(invoke(), /requires a new resume attempt/);
+      retryRef = 'retry-attempt';
+      assert.deepEqual(await invoke(), { recovered: true });
+      assert.deepEqual(await invoke(), { recovered: true });
+      assert.equal(executions, 2);
+      assert.equal(charges, 2);
+      assert.deepEqual(await facts.list('call-attempts'), [
+        { ...prior, status },
+      ]);
+      const current = await facts.read('calls', String(prior.callId));
+      assert.equal(current.status, 'succeeded');
+      assert.equal(typeof current.recoveredFrom, 'string');
     });
   }
 });

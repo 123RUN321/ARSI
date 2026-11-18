@@ -74,6 +74,62 @@ test('Manager refuses cleanup reconciliation while disposal has not settled', as
   }
 });
 
+test('resume retries a failed call after its previous disposal settled with an error', async () => {
+  let executions = 0;
+  let disposals = 0;
+  let allowDisposal!: () => void;
+  let startDisposal!: () => void;
+  const disposing = new Promise<void>((resolve) => {
+    startDisposal = resolve;
+  });
+  const disposal = new Promise<void>((resolve) => {
+    allowDisposal = resolve;
+  });
+  const fixture = await managerFixture(
+    async () => {
+      if (++executions === 1) throw new Error('worker failed');
+      return { done: true };
+    },
+    {
+      async disposeDriver() {
+        if (++disposals === 1) {
+          startDisposal();
+          await disposal;
+          throw new Error('disposal failed');
+        }
+      },
+    },
+  );
+  try {
+    const failedRun = assert.rejects(fixture.run(), /worker failed/);
+    await Promise.race([disposing, failedRun]);
+    const failed = await fixture.manager.get('test');
+    const options = { id: 'test', resume: true };
+    await assert.rejects(
+      fixture.manager.run(String(failed.recipePath), options),
+      { code: 'ELOCKED' },
+    );
+    allowDisposal();
+    await failedRun;
+    const cleanup = await fixture.manager.facts.read('cleanup', 'test');
+    assert.equal(cleanup.status, 'failed');
+    const result = await fixture.manager.run(
+      String(failed.recipePath),
+      options,
+    );
+    assert.deepEqual(result.output, { done: true });
+    assert.equal(executions, 2);
+    assert.equal(disposals, 2);
+    assert.deepEqual(await fixture.manager.facts.list('cleanup-attempts'), [
+      cleanup,
+    ]);
+  } finally {
+    allowDisposal();
+    await fixture.manager.reconcileCleanup('test');
+    await fixture.dispose();
+  }
+});
+
 test('another Manager cannot reconcile live cleanup ownership and can reconcile a persisted terminal record', async () => {
   let release!: () => void, started!: () => void;
   const pending = new Promise<void>((resolve) => {
@@ -180,7 +236,7 @@ test('reconciliation persists before releasing ownership and concurrent retries 
 });
 
 for (const status of ['running', 'failed', 'cancelled', 'succeeded']) {
-  test(`fresh Manager refuses ${status} resume with unresolved cleanup until reconciliation`, async () => {
+  test(`fresh Manager handles ${status} with previous unresolved cleanup`, async () => {
     let executions = 0;
     const fixture = await managerFixture(async () => {
       executions++;
@@ -203,18 +259,23 @@ for (const status of ['running', 'failed', 'cancelled', 'succeeded']) {
         error: 'prior process exited during cleanup',
       });
       const recipe = join(fixture.manager.rootDirectory, 'recipe.yaml');
-      await assert.rejects(
-        recovered.run(recipe, { id: 'test', resume: true }),
-        /cleanup is unresolved/,
-      );
-      assert.equal(executions, 1);
-      assert.equal((await fixture.manager.get('test')).status, status);
-      await recovered.reconcileCleanup('test');
+      if (status === 'succeeded') {
+        await assert.rejects(
+          recovered.run(recipe, { id: 'test', resume: true }),
+          /cleanup is unresolved/,
+        );
+        await recovered.reconcileCleanup('test');
+      }
       assert.equal(
         (await recovered.run(recipe, { id: 'test', resume: true })).status,
         'succeeded',
       );
       assert.equal(executions, 1);
+      if (status !== 'succeeded')
+        assert.equal(
+          (await recovered.facts.list('cleanup-attempts'))[0]?.status,
+          'unconfirmed',
+        );
     } finally {
       await recovered.dispose();
       await fixture.dispose();

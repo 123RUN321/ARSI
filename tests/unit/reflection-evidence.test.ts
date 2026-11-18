@@ -998,3 +998,34 @@ test('an observed binding with no new current-version call exposes only its dire
     'not-in-window',
   );
 });
+
+test('Reflection reads the current retry conversation and its payloads', async (t) => {
+  const f = await fixture(t);
+  await f.call('proposal', 'proposer', 2);
+  await f.call('agent', 'agent', 1, {
+    parentCallId: 'proposal',
+    attemptId: 'retry',
+  });
+  const recorder = new FileAgentRecorder(
+    join(f.root, 'experiments/experiment/calls/agent/attempts/retry'),
+  );
+  recorder.record({
+    runId: 'main',
+    event: {
+      type: 'message.completed',
+      messageId: 'result',
+      role: 'assistant',
+      text: 'retry payload '.repeat(1000) + 'CURRENT_RETRY_TAIL',
+    },
+  });
+  recorder.close();
+  const { snapshot } = await f.collect('retried', 3);
+  assert.match(
+    string(
+      object(snapshot.files)[
+        'context/reflection/calls/proposal-trace-agent.jsonl'
+      ],
+    ),
+    /CURRENT_RETRY_TAIL/,
+  );
+});

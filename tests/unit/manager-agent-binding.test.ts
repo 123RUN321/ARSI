@@ -1,3 +1,4 @@
+import { ObservationQueries } from '../../src/runtime/services/observation.js';
 import {
   readAgentRecords,
   readAgentPayload,
@@ -173,7 +174,7 @@ test('Runtime applies a binding deadline to an ordinary Agent with a strict plug
 });
 
 for (const status of ['failed', 'cancelled'] as const) {
-  test(`a framework-admitted ${status} retry preserves the previous conversation and starts a fresh record`, async () => {
+  test(`an explicit resume after ${status} keeps separate conversations and payloads`, async () => {
     let executions = 0;
     const agent: OperationDefinition = {
       id: 'test.retry-agent',
@@ -192,24 +193,20 @@ for (const status of ['failed', 'cancelled'] as const) {
                 text: `attempt ${executions}`,
               },
             });
-            if (executions === 1)
-              context.event.emit('rsi/agent-observation', {
-                runId: 'main',
-                event: {
-                  type: 'tool.completed',
-                  toolCallId: 'large',
-                  status: 'failed',
-                  output: 'archived payload'.repeat(1000),
-                },
-              });
+            context.event.emit('rsi/agent-observation', {
+              runId: 'main',
+              event: {
+                type: 'tool.completed',
+                toolCallId: 'large',
+                status: executions === 1 ? 'failed' : 'succeeded',
+                output: `payload ${executions}`.repeat(1000),
+              },
+            });
             if (executions === 1)
               throw Object.assign(new Error('retryable fixture failure'), {
                 status,
               });
             return { answer: 'ok' };
-          },
-          async canRetry() {
-            return true;
           },
           async dispose() {},
         };
@@ -218,82 +215,11 @@ for (const status of ['failed', 'cancelled'] as const) {
     const fixture = await managerFixture(
       async (context) => {
         const cwd = await prepareAgentProject(context, 'retry', {}, [], []);
-        const request = {
+        return context.invokeAgent('agent', {
           goal: 'retry',
           cwd,
           outputSchema: { type: 'object' },
-        };
-        const scope = context.extend({
-          scope: { id: 'retry', limits: {}, signal: context.signal },
         });
-        await assert.rejects(
-          scope.invokeAgent('agent', request),
-          /retryable fixture failure/,
-        );
-        assert.deepEqual(await scope.invokeAgent('agent', request), {
-          answer: 'ok',
-        });
-        const receipt = (await context.facts.list('calls')).find(
-          (call) => call.pluginId === agent.id,
-        )!;
-        const previous = await context.facts.read(
-          'call-attempts',
-          string(receipt.recoveredFrom),
-        );
-        assert.equal(previous.status, status);
-        const callDirectory = join(
-          context.dataDirectory,
-          'experiments',
-          context.experimentId,
-          'calls',
-          string(receipt.callId),
-        );
-        const current = await readAgentRecords(callDirectory, 0, 100, true);
-        const archived = await readAgentRecords(
-          join(callDirectory, 'agent-attempts', string(receipt.recoveredFrom)),
-          0,
-          100,
-          true,
-        );
-        assert(
-          current.items.some(
-            (item) =>
-              item.event?.type === 'message.completed' &&
-              item.event.text === 'attempt 2',
-          ),
-        );
-        assert(
-          !current.items.some(
-            (item) =>
-              item.event?.type === 'message.completed' &&
-              item.event.text === 'attempt 1',
-          ),
-        );
-        assert(
-          archived.items.some(
-            (item) =>
-              item.event?.type === 'message.completed' &&
-              item.event.text === 'attempt 1',
-          ),
-        );
-        const payload = archived.items.find((item) => item.payload)?.payload;
-        assert(payload);
-        const body = JSON.parse(
-          (
-            await readAgentPayload(
-              join(
-                callDirectory,
-                'agent-attempts',
-                string(receipt.recoveredFrom),
-              ),
-              payload.ref,
-            )
-          ).toString('utf8'),
-        );
-        assert.equal(body.output, 'archived payload'.repeat(1000));
-        assert.equal(current.items[0]?.sequence, 1);
-        assert.equal(archived.items[0]?.sequence, 1);
-        return {};
       },
       {
         plugins: [agent],
@@ -301,7 +227,86 @@ for (const status of ['failed', 'cancelled'] as const) {
       },
     );
     try {
-      assert.equal((await fixture.run()).status, 'succeeded');
+      await assert.rejects(fixture.run(), /retryable fixture failure/);
+      const failed = await fixture.manager.get('test');
+      const result = await fixture.manager.run(string(failed.recipePath), {
+        id: 'test',
+        resume: true,
+      });
+      assert.equal(result.status, 'succeeded');
+      const receipt = (await fixture.manager.facts.list('calls')).find(
+        (call) => call.pluginId === agent.id,
+      )!;
+      const previous = await fixture.manager.facts.read(
+        'call-attempts',
+        string(receipt.recoveredFrom),
+      );
+      assert.equal(previous.status, status);
+      const callDirectory = join(
+        fixture.manager.directory,
+        'experiments',
+        'test',
+        'calls',
+        string(receipt.callId),
+      );
+      const current = await readAgentRecords(
+        join(callDirectory, 'attempts', string(receipt.attemptId)),
+        0,
+        100,
+        true,
+      );
+      const original = await readAgentRecords(callDirectory, 0, 100, true);
+      for (const [records, attempt] of [
+        [original, 1],
+        [current, 2],
+      ] as const) {
+        assert.equal(records.items[0]?.sequence, 1);
+        assert(
+          records.items.some(
+            (item) =>
+              item.event.type === 'message.completed' &&
+              item.event.text === `attempt ${attempt}`,
+          ),
+        );
+      }
+      const originalPayload = original.items.find(
+        (item) => item.payload,
+      )?.payload;
+      assert(originalPayload);
+      assert.equal(
+        JSON.parse(
+          (await readAgentPayload(callDirectory, originalPayload.ref)).toString(
+            'utf8',
+          ),
+        ).output,
+        'payload 1'.repeat(1000),
+      );
+      const queries = new ObservationQueries(
+        fixture.manager.facts,
+        fixture.manager.artifacts,
+        fixture.manager.directory,
+      );
+      const trace = await queries.callTrace('test', string(receipt.callId));
+      assert(
+        trace.items.some(
+          (item) =>
+            object(item.event).type === 'message.completed' &&
+            object(item.event).text === 'attempt 2',
+        ),
+      );
+      const payload = trace.items.find((item) => item.payloadRef)?.payloadRef;
+      assert(payload);
+      const chunks: Buffer[] = [];
+      for await (const chunk of await queries.agentPayload(
+        'test',
+        string(receipt.callId),
+        payload,
+      ))
+        chunks.push(Buffer.from(chunk));
+      assert.equal(
+        JSON.parse(Buffer.concat(chunks).toString('utf8')).output,
+        'payload 2'.repeat(1000),
+      );
       assert.equal(executions, 2);
     } finally {
       await fixture.dispose();
@@ -309,7 +314,7 @@ for (const status of ['failed', 'cancelled'] as const) {
   });
 }
 
-test('an unknown outcome cannot replace its conversation even if the plugin permits retries', async () => {
+test('an unknown outcome cannot replace its conversation without an explicit resume', async () => {
   let executions = 0;
   const agent: OperationDefinition = {
     id: 'test.unknown-agent',
@@ -322,9 +327,6 @@ test('an unknown outcome cannot replace its conversation even if the plugin perm
           throw Object.assign(new Error('unconfirmed fixture'), {
             status: 'unknown',
           });
-        },
-        async canRetry() {
-          return true;
         },
         async dispose() {},
       };
@@ -357,7 +359,7 @@ test('an unknown outcome cannot replace its conversation even if the plugin perm
       const before = await readAgentRecords(directory, 0, 100, true);
       await assert.rejects(
         scope.invokeAgent('agent', request),
-        /unconfirmed\/failed effects/,
+        /requires a new resume attempt/,
       );
       assert.deepEqual(await readAgentRecords(directory, 0, 100, true), before);
       assert.deepEqual(await context.facts.list('call-attempts'), []);

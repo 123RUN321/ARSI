@@ -319,6 +319,9 @@ export async function collectReflectionEvidence(
             safeId(context.experimentId),
             'calls',
             safeId(childId),
+            ...(typeof child.record.attemptId === 'string'
+              ? ['attempts', safeId(child.record.attemptId)]
+              : []),
           ),
         );
         store(

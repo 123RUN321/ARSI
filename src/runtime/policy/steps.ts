@@ -60,7 +60,8 @@ export interface StepContext {
   readonly stepPath: string;
   readonly parallel: boolean;
   evaluate(template: Template, locals?: JsonObject): JsonValue;
-  invoke(binding: string, input: JsonValue): Promise<JsonValue>;
+  decision(key: string, choose: () => JsonValue): Promise<JsonValue>;
+  invoke(binding: string, input: () => JsonValue): Promise<JsonValue>;
   updateState(patch: JsonObject): JsonObject;
   reflect(): Promise<JsonValue>;
   runSteps(
@@ -172,8 +173,7 @@ export class InvokeStep implements Step {
   async execute(context: StepContext): Promise<StepResult> {
     return {
       kind: 'completed',
-      output: await context.invoke(
-        this.bindingName,
+      output: await context.invoke(this.bindingName, () =>
         context.evaluate(this.inputTemplate),
       ),
     };
@@ -268,12 +268,13 @@ export class IfStep implements Step {
     });
   }
   async execute(context: StepContext): Promise<StepResult> {
-    const selected = boolean(
-      context.evaluate(this.condition),
-      `${context.stepPath}.if`,
-    )
-      ? 'then'
-      : 'else';
+    const selected = await context.decision('branch', () => {
+      return boolean(context.evaluate(this.condition), `${context.stepPath}.if`)
+        ? 'then'
+        : 'else';
+    });
+    if (selected !== 'then' && selected !== 'else')
+      throw new Error(`${context.stepPath}: invalid saved branch`);
     const block = selected === 'then' ? this.thenBranch : this.elseBranch;
     return context.runSteps(block.steps, {
       scope: selected,
@@ -337,18 +338,22 @@ export class LoopStep implements Step {
       `${context.stepPath}.maxIterations`,
       Number.MAX_SAFE_INTEGER,
     );
-    for (let index = 0; index < maximum; index++) {
+    for (let index = 0; ; index++) {
       context.signal.throwIfAborted();
       const locals = { loop: { index } };
-      if (
-        !boolean(
-          context.evaluate(this.condition, locals),
-          `${context.stepPath}.while`,
-        )
-      )
-        break;
+      const scope = `iteration-${index}`;
+      const entered = await context.decision(scope, () => {
+        return (
+          index < maximum &&
+          boolean(
+            context.evaluate(this.condition, locals),
+            `${context.stepPath}.while`,
+          )
+        );
+      });
+      if (entered !== true) break;
       const result = await context.runSteps(this.steps, {
-        scope: `iteration-${index}`,
+        scope,
         locals,
       });
       await context.boundary(index);
@@ -428,9 +433,6 @@ export class ForEachStep implements Step {
     });
   }
   async execute(context: StepContext): Promise<StepResult> {
-    const items = context.evaluate(this.items);
-    if (!Array.isArray(items))
-      throw new Error(`${context.stepPath}: foreach requires an array`);
     const concurrency = boundedInteger(
       context.evaluate(this.concurrency),
       `${context.stepPath}.concurrency`,
@@ -439,16 +441,31 @@ export class ForEachStep implements Step {
     );
     const parallel = context.parallel || concurrency > 1;
     if (parallel) assertParallelSafe(this.steps, context.stepPath);
-    const seen = new Set<string>();
-    const entries = items.map((item) => {
-      const locals = { [this.itemName]: item };
-      const key = canonical(context.evaluate(this.key, locals));
-      if (seen.has(key))
-        throw new Error(`${context.stepPath}: duplicate foreach key`);
-      seen.add(key);
-      return { locals, key };
+    const saved = await context.decision('items', () => {
+      const items = context.evaluate(this.items);
+      if (!Array.isArray(items))
+        throw new Error(`${context.stepPath}: foreach requires an array`);
+      const seen = new Set<string>();
+      return items.map((item) => {
+        const key = canonical(
+          context.evaluate(this.key, { [this.itemName]: item }),
+        );
+        if (seen.has(key))
+          throw new Error(`${context.stepPath}: duplicate foreach key`);
+        seen.add(key);
+        return { item, key };
+      });
     });
-    const results: JsonValue[] = Array(items.length).fill(null);
+    if (!Array.isArray(saved))
+      throw new Error(`${context.stepPath}: invalid saved foreach items`);
+    const entries = saved.map((value) => {
+      const entry = object(value);
+      return {
+        item: required(entry.item, 'saved foreach item'),
+        key: string(entry.key),
+      };
+    });
+    const results: JsonValue[] = Array(entries.length).fill(null);
     let next = 0;
     let stopped = false;
     const worker = async (): Promise<void> => {
@@ -459,7 +476,7 @@ export class ForEachStep implements Step {
           const entry = entries[index]!;
           const result = await context.runSteps(this.steps, {
             scope: `key-${digest(entry.key)}`,
-            locals: entry.locals,
+            locals: { [this.itemName]: entry.item },
             parallel,
             output: this.output,
           });

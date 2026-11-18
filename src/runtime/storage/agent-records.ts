@@ -6,8 +6,7 @@ import {
   openSync,
   writeFileSync,
 } from 'node:fs';
-import { mkdir, open, rename } from 'node:fs/promises';
-import { safeId } from './index.js';
+import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { constants } from 'node:fs';
 import type {
@@ -228,21 +227,5 @@ export async function readAgentTrace(callDirectory: string): Promise<string> {
     return output.join('\n') + '\n';
   } finally {
     await file.close();
-  }
-}
-
-/** Only the Manager may archive records after admitting a safe retry. */
-export async function archiveAgentRecords(
-  callDirectory: string,
-  attemptId: string,
-): Promise<void> {
-  const attempts = join(callDirectory, 'agent-attempts', safeId(attemptId));
-  await mkdir(attempts, { recursive: true });
-  try {
-    await rename(join(callDirectory, 'agent'), join(attempts, 'agent'));
-  } catch (error) {
-    // Calls rejected before Agent execution have no conversation directory.
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
-      throw error;
   }
 }

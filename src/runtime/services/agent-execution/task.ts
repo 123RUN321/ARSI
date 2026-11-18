@@ -127,9 +127,6 @@ export function managedAgentOperation(operation: Operation): Operation {
         active.delete(controller);
       }
     },
-    ...(operation.canRetry
-      ? { canRetry: operation.canRetry.bind(operation) }
-      : {}),
     async dispose() {
       for (const controller of active.keys())
         controller.abort(new Error('Agent disposed'));

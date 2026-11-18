@@ -1,7 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { archiveAgentRecords } from '../storage/agent-records.js';
 import { OperationRejectedError } from '../../contracts/runtime/errors.js';
-import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   agentContract,
@@ -23,12 +21,15 @@ import { object, digest, json } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { errorText } from '../../shared/errors.js';
 import type { Registry } from '../registry/index.js';
+import { agentReplayKey } from './retry.js';
 
 interface CallExecutorOptions {
   id: string;
   registry: Registry;
   facts: FactStore;
   revisionRefs: Readonly<JsonObject>;
+  retryCalls?: ReadonlyMap<string, JsonObject>;
+  retryRef?: string;
   context(binding: string, id: string, parent: RuntimeContext): RuntimeContext;
   binding(name: string): Binding | undefined;
   operation(
@@ -75,6 +76,8 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
     if (caller.experimentId !== id)
       throw new Error('Call belongs to another experiment');
     let definition: OperationDefinition;
+    let agentInput: JsonObject | undefined;
+    let project: string | undefined;
     try {
       const selected = options.binding(bindingId);
       if (!selected) throw new Error(`Unknown binding ${bindingId}`);
@@ -82,10 +85,48 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       json(input);
       input = structuredClone(input);
       validate(definition.contract.input_schema, input, `${bindingId} input`);
+      agentInput =
+        definition.contract.id === agentContract.id ? object(input) : undefined;
+      project =
+        typeof agentInput?.cwd === 'string' ? agentInput.cwd : undefined;
+      if (project !== undefined) {
+        if (caller.agentProject === undefined) {
+          const hash = basename(dirname(project));
+          const projects = join(resolve(caller.directory), 'agent-projects');
+          if (
+            !isAbsolute(project) ||
+            project !== join(projects, hash, 'project') ||
+            !/^[a-f0-9]{64}$/.test(hash) ||
+            agentInput?.role !== undefined
+          )
+            throw new Error(
+              'Agent cwd must be a prepared project owned by this call',
+            );
+        } else if (
+          project !== caller.agentProject ||
+          agentInput?.role === undefined
+        )
+          throw new Error(
+            'Agent delegates must use a named role in their parent project',
+          );
+      }
     } catch (error) {
       options.onFailure(error, caller);
       throw error;
     }
+    const preparedAgent =
+      agentInput !== undefined &&
+      project !== undefined &&
+      caller.agentProject === undefined &&
+      agentInput.role === undefined
+        ? agentReplayKey(
+            bindingId,
+            caller.callId,
+            path ?? caller.callId,
+            agentInput,
+            `artifact:${basename(dirname(project))}`,
+          )
+        : undefined;
     const identity = (value: JsonValue): string =>
       'call-' +
       digest({
@@ -93,8 +134,22 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
         bindingId,
         path: path ?? caller.callId,
         input: value,
+        ...(bindingId === '_application' &&
+        ['acquire', 'release'].includes(String(object(input).action)) &&
+        caller.idempotencyKey !== caller.callId
+          ? { attempt: caller.idempotencyKey }
+          : {}),
       }).slice(0, 32);
-    const callId = identity(input);
+    const policyReceipt =
+      caller.callId === 'root' && path !== undefined
+        ? options.retryCalls?.get(path)
+        : preparedAgent
+          ? options.retryCalls?.get(preparedAgent)
+          : undefined;
+    const callId =
+      typeof policyReceipt?.callId === 'string'
+        ? policyReceipt.callId
+        : identity(input);
     const existing = active.get(callId);
     if (existing) return existing;
     const checkedOutput = (value: unknown): JsonValue => {
@@ -112,26 +167,12 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
         throw new Error('Application returned wrong action');
       return output;
     };
-    const agentInput =
-      definition.contract.id === agentContract.id ? object(input) : undefined;
-    const project =
-      typeof agentInput?.cwd === 'string' ? agentInput.cwd : undefined;
     const job = (async (): Promise<JsonValue> => {
       let ctx = context(bindingId, callId, caller);
       let projectArtifactRef: string | undefined;
       if (project !== undefined) {
         if (caller.agentProject === undefined) {
           const hash = basename(dirname(project));
-          const projects = join(resolve(caller.directory), 'agent-projects');
-          if (
-            !isAbsolute(project) ||
-            project !== join(projects, hash, 'project') ||
-            !/^[a-f0-9]{64}$/.test(hash) ||
-            agentInput?.role !== undefined
-          )
-            throw new Error(
-              'Agent cwd must be a prepared project owned by this call',
-            );
           const root = await realpath(caller.directory);
           if (
             (await realpath(project)) !==
@@ -142,13 +183,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
               'Agent cwd does not resolve to its authorized project',
             );
           projectArtifactRef = `artifact:${hash}`;
-        } else if (
-          project !== caller.agentProject ||
-          agentInput?.role === undefined
-        ) {
-          throw new Error(
-            'Agent delegates must use a named role in their parent project',
-          );
         }
         ctx = ctx.extend({ agentProject: project });
       }
@@ -200,36 +234,31 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       }
       const lease = await options.operation(bindingId, binding);
       ctx = ctx.extend({ event: lease.event });
+      const freshAttempt =
+        prior && options.retryRef && options.retryRef !== prior.retryRef;
       try {
         if (
           prior &&
-          ((prior.status !== 'failed' && prior.status !== 'cancelled') ||
-            prior.pluginId !== binding.plugin ||
-            !lease?.operation.canRetry ||
-            (await lease.operation.canRetry(input, prior, ctx)) !== true)
+          (!freshAttempt ||
+            !['failed', 'cancelled', 'unknown', 'running'].includes(
+              String(prior.status),
+            ))
         ) {
-          throw new Error(
-            `Call ${callId} has unconfirmed/failed effects; inspect its receipt before recovery`,
-          );
+          throw new Error(`Call ${callId} requires a new resume attempt`);
         }
         ctx.signal.throwIfAborted();
-        if (
-          prior &&
-          project !== undefined &&
-          projectArtifactRef !== undefined
-        ) {
-          await ctx.artifacts.readJson(projectArtifactRef);
-          await rm(project, { recursive: true, force: true });
-          await ctx.artifacts.materialize(projectArtifactRef, project);
+        const attemptId = prior ? digest(prior).slice(0, 24) : undefined;
+        const recoveredFrom = attemptId ? `${callId}-${attemptId}` : null;
+        if (attemptId && recoveredFrom) {
+          ctx = ctx.extend({
+            idempotencyKey: recoveredFrom,
+            directory: join(ctx.directory, 'attempts', attemptId),
+          });
         }
         await charge('operations', 1, ctx);
         await mkdir(ctx.directory, { recursive: true });
-        const recoveredFrom = prior ? `${callId}-${randomUUID()}` : null;
-        if (prior && recoveredFrom) {
+        if (prior && recoveredFrom)
           await options.facts.write('call-attempts', recoveredFrom, prior);
-          if (definition.contract.id === agentContract.id)
-            await archiveAgentRecords(ctx.directory, recoveredFrom);
-        }
         const receipt: JsonObject = {
           ...info,
           pluginId: binding.plugin,
@@ -241,6 +270,8 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             : { agentProjectArtifactRef: projectArtifactRef }),
           startedAt: new Date().toISOString(),
           ...(recoveredFrom ? { recoveredFrom } : {}),
+          ...(options.retryRef ? { retryRef: options.retryRef } : {}),
+          ...(attemptId ? { attemptId } : {}),
         };
         await options.facts.write('calls', callId, receipt);
         let committed = false;

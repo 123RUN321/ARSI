@@ -1,4 +1,7 @@
-import { useOperatorSdkTestEnvironment } from '../fixtures/operator-sdk/environment.js';
+import {
+  sdkProfileArtifactSkip,
+  useOperatorSdkTestEnvironment,
+} from '../fixtures/operator-sdk/environment.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -15,7 +18,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
-import { createRuntime } from '../../src/runtime/context.js';
 import {
   defineContract,
   agentContract,
@@ -31,7 +33,6 @@ import { parseKernelExecution } from '../../src/plugins/application-kernel/schem
 import { loadOperatorTask } from '../../src/plugins/shared/operator-task.js';
 import { prepareOperatorCase } from '../../src/plugins/evaluator-operatorbench/kernel-input.js';
 import { adaptSdkResult } from '../../src/plugins/evaluator-operatorbench/result.js';
-import { createOperatorProposer } from '../../src/plugins/proposer-operator/service.js';
 import {
   readHistory,
   priorHistory,
@@ -46,7 +47,9 @@ import {
   prepareOperatorProposerFixture,
   operatorFixtureSource,
 } from '../fixtures/operator-proposer/setup.js';
+import { loadOperatorRuntime } from '../fixtures/operator-proposer/runtime.js';
 
+const { createRuntime, createOperatorProposer } = await loadOperatorRuntime();
 useOperatorSdkTestEnvironment();
 
 type OperatorProject = {
@@ -490,35 +493,41 @@ test('helper-only candidates retain comparison conditions and profile the matchi
           /source inventory identity mismatch/,
         );
       });
-      const profiled = object(
-        await context.invoke('evaluator', {
-          action: 'profile',
-          candidateRef,
-          caseIds: ['fixed'],
-          assessmentMeasurementRef: after.ref,
-        }),
-      );
-      assert.equal(profiled.collectionStatus, 'completed');
-      const measurement = await context.readMeasurement(
-        string(profiled.measurementRef),
-      );
-      const details = object(
-        await context.artifacts.readJson(
-          string(object(measurement.profile).artifactRef),
-        ),
-      );
-      assert.equal(details.sourceBundleDigest, changed.sourceBundleDigest);
-      const members = object(
-        object(object(details.profile).metadata).sources,
-      ).candidateFiles;
-      assert.ok(Array.isArray(members));
-      assert.deepEqual(
-        members.map((value) => object(value).path),
-        ['input.py', 'settings.json', 'tiling.py'],
-      );
-      assert.equal(
-        object(members[2]).sha256,
-        createHash('sha256').update('BLOCK = 64\n').digest('hex'),
+      await t.test(
+        'profiles the evaluated source bundle',
+        { skip: sdkProfileArtifactSkip },
+        async () => {
+          const profiled = object(
+            await context.invoke('evaluator', {
+              action: 'profile',
+              candidateRef,
+              caseIds: ['fixed'],
+              assessmentMeasurementRef: after.ref,
+            }),
+          );
+          assert.equal(profiled.collectionStatus, 'completed');
+          const measurement = await context.readMeasurement(
+            string(profiled.measurementRef),
+          );
+          const details = object(
+            await context.artifacts.readJson(
+              string(object(measurement.profile).artifactRef),
+            ),
+          );
+          assert.equal(details.sourceBundleDigest, changed.sourceBundleDigest);
+          const members = object(
+            object(object(details.profile).metadata).sources,
+          ).candidateFiles;
+          assert.ok(Array.isArray(members));
+          assert.deepEqual(
+            members.map((value) => object(value).path),
+            ['input.py', 'settings.json', 'tiling.py'],
+          );
+          assert.equal(
+            object(members[2]).sha256,
+            createHash('sha256').update('BLOCK = 64\n').digest('hex'),
+          );
+        },
       );
       return proposal;
     },
@@ -877,7 +886,7 @@ test('valid empty static diagnosis skips retrieval and candidate generation', as
   assert.equal(object(result.usage).evaluationRuns, 1);
 });
 
-test('operator summary model failure preserves completed effects and blocks replay of the unfinished action', async (t) => {
+test('operator summary model failure preserves completed effects and retries the unfinished summary', async (t) => {
   const fixture = await setup(
     async (context) => {
       const { entry, baselineRef } = await baseline(context);
@@ -943,13 +952,18 @@ test('operator summary model failure preserves completed effects and blocks repl
       id: 'operator-summary-failed',
       resume: true,
     }),
-    /receipt|unconfirmed|failed/i,
+    /summary model failed/,
   );
-  assert.equal(fixture.requests.length, before.requests);
+  assert.equal(fixture.requests.length, before.requests + 1);
   assert.deepEqual(
-    await fixture.runtime.manager.facts.list('calls'),
-    before.calls,
+    await fixture.runtime.manager.facts.list('measurements'),
+    before.measurements,
   );
+  for (const call of before.calls.filter((call) => call.status === 'succeeded'))
+    assert.deepEqual(
+      await fixture.runtime.manager.facts.read('calls', string(call.callId)),
+      call,
+    );
 });
 
 test('metric Proposer executes two rounds with measured diagnostics, current best parents and delivered hardware/history', async (t) => {
@@ -1081,6 +1095,7 @@ test('metric Proposer executes two rounds with measured diagnostics, current bes
 });
 
 test('metric repairs use the failed candidate and deliver the complete user hardware document', async (t) => {
+  if (sdkProfileArtifactSkip) return t.skip(sdkProfileArtifactSkip);
   const hardwareText = '# Hardware\nUser-provided capacity context.\n';
   const fixture = await setup(
     async (context, requests) => {
@@ -1196,6 +1211,7 @@ test('metric repairs use the failed candidate and deliver the complete user hard
 });
 
 test('invalid metric analysis rereads fact history through twelve rounds beyond former ceilings', async (t) => {
+  if (sdkProfileArtifactSkip) return t.skip(sdkProfileArtifactSkip);
   const fixture = await setup(
     async (context, requests) => {
       const { entry, baselineRef } = await baseline(context);
@@ -1683,6 +1699,7 @@ for (const repair of [false, true]) {
       ? 'metric repair rejects an absent hypothesis'
       : 'metric diagnosis can finish without retrieval, generation or candidate commit',
     async (t) => {
+      if (sdkProfileArtifactSkip) return t.skip(sdkProfileArtifactSkip);
       const fixture = await setup(
         async (context, requests) => {
           const { entry, baselineRef } = await baseline(context);

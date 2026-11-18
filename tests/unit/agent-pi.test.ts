@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type ServerResponse } from 'node:http';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -311,6 +311,46 @@ test('Pi uses the workspace instructions, default tools, and on-demand skill con
     assert.match(JSON.stringify(fixture.requests[1]), /WORKSPACE_SKILL_BODY/);
   } finally {
     await fixture.close();
+  }
+});
+
+test('Pi direct bash uses the project cwd and host account permissions when available', async () => {
+  const f = await modelFixture([
+    {
+      tool: {
+        name: 'bash',
+        arguments: JSON.stringify({
+          command: 'pwd; cat sample; cat ../sibling.txt',
+        }),
+      },
+    },
+    { content: '{"ok":true}' },
+  ]);
+  try {
+    await writeFile(
+      join(f.directory, 'sibling.txt'),
+      'DIRECT_HOST_READ_MARKER',
+    );
+    assert.deepEqual(await f.run(), { ok: true });
+    const messages = f.requests[1]!.messages as JsonObject[];
+    const result = JSON.stringify(
+      messages.find((message) => message.role === 'tool'),
+    );
+    const missingWindowsShell =
+      process.platform === 'win32' &&
+      !(await access('/bin/bash').then(
+        () => true,
+        () => false,
+      ));
+    if (missingWindowsShell) {
+      assert.match(result, /shell path not found: \/bin\/bash/i);
+      return;
+    }
+    assert.match(result, /workspace/);
+    assert.match(result, /authorized evidence/);
+    assert.match(result, /DIRECT_HOST_READ_MARKER/);
+  } finally {
+    await f.close();
   }
 });
 

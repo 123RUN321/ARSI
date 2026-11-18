@@ -24,6 +24,9 @@ import type { StaticIssue } from '../../src/plugins/shared/operator-attempt/sche
 
 import { prepareKnowledgeFixture } from '../fixtures/operator-proposer/setup.js';
 
+const processGroupSkip =
+  process.platform === 'win32' && 'Requires POSIX worker process groups';
+
 const issue: StaticIssue = {
   issue_type: 'core_partition',
   issue_summary: 'Independent row work uses a fixed grid',
@@ -84,6 +87,7 @@ async function fixture(mode = 'success', batchSize = 32) {
 }
 
 test('local retrieval owns one CPU worker and preserves a normal empty match with identity evidence', async (t) => {
+  if (processGroupSkip) return t.skip(processGroupSkip);
   const f = await fixture('success', 1);
   t.after(() => rm(f.directory, { recursive: true, force: true }));
   const identity = await readEmbeddingIdentity(f.config);
@@ -108,6 +112,7 @@ test('local retrieval owns one CPU worker and preserves a normal empty match wit
 });
 
 test('metrics retrieval preserves its query, free technique ID, nullable example and persisted identities', async (t) => {
+  if (processGroupSkip) return t.skip(processGroupSkip);
   const f = await fixture();
   t.after(() => rm(f.directory, { recursive: true, force: true }));
   const document = 'Measured vector bottleneck technique';
@@ -172,6 +177,23 @@ await writeFile(argument('--response'), JSON.stringify({
   assert.deepEqual(recorded, result);
 });
 
+test(
+  'Windows retrieval reports the unsupported process-group capability',
+  { skip: process.platform !== 'win32' },
+  async (t) => {
+    const { directory, config, context } = await fixture();
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    await assert.rejects(
+      retrieveStaticKnowledge([issue], config, context),
+      /requires POSIX process-group cleanup/,
+    );
+    await assert.rejects(
+      readFile(join(context.directory, 'retrieval/process.json')),
+      { code: 'ENOENT' },
+    );
+  },
+);
+
 test('embedding identity rejects changed, unlisted or missing model bytes before worker launch', async (t) => {
   for (const change of ['changed', 'unlisted', 'missing']) {
     const f = await fixture();
@@ -225,6 +247,7 @@ test('embedding identity verifies a complete model inventory beyond ten thousand
 });
 
 test('retrieval inherits host thread settings and confirms cleanup after cancellation without a local deadline', async (t) => {
+  if (processGroupSkip) return t.skip(processGroupSkip);
   const f = await fixture();
   t.after(() => rm(f.directory, { recursive: true, force: true }));
   const previousOmp = process.env.OMP_NUM_THREADS;
@@ -303,6 +326,7 @@ setInterval(() => {}, 1000);
 });
 
 test('worker failure, malformed identity and explicitly excessive logs never become retrieval misses', async (t) => {
+  if (processGroupSkip) return t.skip(processGroupSkip);
   for (const mode of ['exit', 'wrong-identity', 'oversize']) {
     const f = await fixture(mode);
     t.after(() => rm(f.directory, { recursive: true, force: true }));
@@ -318,6 +342,7 @@ test('worker failure, malformed identity and explicitly excessive logs never bec
 });
 
 test('retrieval preserves large authorized JSON and worker logs when no byte limits are configured', async (t) => {
+  if (processGroupSkip) return t.skip(processGroupSkip);
   const f = await fixture('large');
   t.after(() => rm(f.directory, { recursive: true, force: true }));
   await writeFile(
@@ -370,6 +395,7 @@ test('retrieval honors an explicit JSON byte ceiling before launching its worker
 });
 
 test('timeout and cancellation close the worker before retrieval rejects', async (t) => {
+  if (processGroupSkip) return t.skip(processGroupSkip);
   for (const cancel of [false, true]) {
     const f = await fixture('hang');
     t.after(() => rm(f.directory, { recursive: true, force: true }));
@@ -404,6 +430,7 @@ for (const [mode, timeoutMs, expectedExitCode] of [
   ['descendant-hang', 3000, null],
 ] as const) {
   test(`retrieval cleans up inherited log pipes and reports ${mode}`, async (t) => {
+    if (processGroupSkip) return t.skip(processGroupSkip);
     const f = await fixture(mode);
     t.after(() => rm(f.directory, { recursive: true, force: true }));
     const promise = retrieveStaticKnowledge(
@@ -438,6 +465,7 @@ for (const [mode, timeoutMs, expectedExitCode] of [
 
 for (const termination of ['cancellation', 'timeout', 'root exit']) {
   test(`${termination} releases pipes held outside the group after the worker exits`, async (t) => {
+    if (processGroupSkip) return t.skip(processGroupSkip);
     const f = await fixture();
     t.after(() => rm(f.directory, { recursive: true, force: true }));
     const pids = join(f.directory, 'pids.json');
@@ -499,6 +527,7 @@ ${termination === 'timeout' ? 'setInterval(() => {}, 1000);' : ''}
 }
 
 test('a large failing worker keeps full stderr on disk and reports its diagnostic tail', async (t) => {
+  if (processGroupSkip) return t.skip(processGroupSkip);
   const f = await fixture();
   t.after(() => rm(f.directory, { recursive: true, force: true }));
   await writeFile(

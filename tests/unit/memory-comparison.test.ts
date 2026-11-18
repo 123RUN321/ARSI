@@ -8,11 +8,11 @@ import {
   type JsonObject,
   type MemoryInput,
 } from '../../src/contracts/index.js';
+import { createMemoryAgent } from '../../src/plugins/memory-agent/service.js';
 import { FileArtifacts } from '../../src/runtime/storage/index.js';
 import { projectEvidenceFiles } from '../../src/runtime/services/facts/evidence-files.js';
 import { buildComparisonContext } from '../../src/plugins/memory-agent/comparison.js';
 import { editResource } from '../../src/plugins/shared/agent-editing/index.js';
-import { createMemoryAgent } from '../../src/plugins/memory-agent/service.js';
 import { string } from '../../src/shared/json.js';
 
 const context: RuntimeContext = new RuntimeContext().extend({
@@ -23,44 +23,6 @@ const context: RuntimeContext = new RuntimeContext().extend({
   directory: '/unused',
   signal: new AbortController().signal,
   cleanup: new AbortController().signal,
-});
-
-test('Memory reconciles only failed calls that never invoked a child operation', async () => {
-  let children: JsonObject[] = [];
-  const runtime = context.extend({
-    facts: {
-      list: async () => children,
-      read: async () => {
-        throw new Error('Unexpected fact read');
-      },
-      write: async () => {
-        throw new Error('Reconciliation must not write facts');
-      },
-    },
-  });
-  const operation = await createMemoryAgent({ prompt: 'unused' }, runtime);
-  assert.equal(typeof operation.canRetry, 'function');
-  const receipt = {
-    callId: 'memory-call',
-    status: 'failed',
-    experimentId: 'exp',
-  };
-  const input: MemoryInput = {
-    goal: 'test',
-    memoryRef: null,
-    evidenceRefs: [],
-  };
-  assert.equal(await operation.canRetry!(input, receipt, runtime), true);
-  children = [{ parentCallId: 'memory-call', status: 'succeeded' }];
-  assert.equal(await operation.canRetry!(input, receipt, runtime), false);
-  children = [{ parentCallId: 'another-call' }];
-  assert.equal(await operation.canRetry!(input, receipt, runtime), true);
-  for (const status of ['unknown', 'running', 'cancelled']) {
-    assert.equal(
-      await operation.canRetry!(input, { ...receipt, status }, runtime),
-      false,
-    );
-  }
 });
 
 test('Memory receives inline diffs and bounded execution packets without duplicate files or private scoring', async () => {

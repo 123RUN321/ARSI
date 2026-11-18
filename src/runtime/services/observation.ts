@@ -40,6 +40,7 @@ import { readIterationScopes } from '../../shared/iterations.js';
 import { safeId } from '../storage/index.js';
 import type { PolicyStructure } from '../../shared/observation/policy-structure.js';
 import { queryPolicyStructure } from './policy-structure-query.js';
+import { isExecutionActive } from '../manager/execution-lock.js';
 
 function restrictedFile(path: string): boolean {
   return /(^|\/)(\.env(?:\..*)?|\.npmrc|\.?netrc|credentials(?:\.json|\.ya?ml|\.toml)?|secrets?\.(?:json|ya?ml|toml)|id_(?:rsa|ed25519|ecdsa|dsa)|private[-_]?key(?:\.pem|\.key)?|[^/]+\.(?:p12|pfx))$/i.test(
@@ -120,7 +121,7 @@ export class ObservationQueries {
     return { directory: this.directory ? resolve(this.directory) : null };
   }
 
-  /** The initial saved declaration only: no source files, artifact reads or resource restoration. */
+  /** The saved declaration only: no source files, artifact reads or resource restoration. */
   async policyStructure(id: string): Promise<PolicyStructure> {
     await this.experiment(id);
     return queryPolicyStructure(id, {
@@ -155,7 +156,24 @@ export class ObservationQueries {
         visit(item);
       }
     };
-    visit(await this.experiment(id));
+    const experiment = await this.experiment(id);
+    visit(experiment);
+    let definition: JsonObject;
+    try {
+      definition = await this.facts.read('definitions', id);
+    } catch (error) {
+      if (missing(error)) return values;
+      throw error;
+    }
+    const visited = new Set<string>();
+    for (;;) {
+      const retry = object(definition.retry ?? {});
+      const ref = retry.previousDefinition;
+      if (typeof ref !== 'string' || visited.has(ref)) break;
+      visited.add(ref);
+      definition = await this.facts.read('definition-attempts', ref);
+      visit(definition);
+    }
     return values;
   }
   private clean(
@@ -484,12 +502,19 @@ export class ObservationQueries {
     };
   }
 
-  private summary(record: JsonObject, secrets: string[]): ExperimentSummary {
+  private async summary(
+    record: JsonObject,
+    secrets: string[],
+  ): Promise<ExperimentSummary> {
     return {
       id: string(record.id),
       recipeId: optionalText(record.recipeId),
       policyRef: experimentPolicyRef(record),
-      status: string(record.status),
+      status:
+        record.status === 'running' &&
+        !(await isExecutionActive(this.directory, string(record.id)))
+          ? 'unconfirmed'
+          : string(record.status),
       startedAt: optionalText(record.startedAt),
       finishedAt: optionalText(record.finishedAt),
       error:
@@ -545,7 +570,7 @@ export class ObservationQueries {
       if (!missing(error)) throw error;
     }
     return {
-      ...this.summary(record, secrets),
+      ...(await this.summary(record, secrets)),
       observedAt: new Date().toISOString(),
       usage,
       limits: numbers(record.recipe ? object(record.recipe).budget : undefined),
@@ -658,10 +683,19 @@ export class ObservationQueries {
     callId: string,
     ref: string,
   ): Promise<import('node:fs').ReadStream> {
-    await this.ownedCall(id, callId);
+    const call = await this.ownedCall(id, callId);
     if (!this.directory) throw new Error('Agent record storage is unavailable');
     return streamAgentPayload(
-      join(this.directory, 'experiments', safeId(id), 'calls', safeId(callId)),
+      join(
+        this.directory,
+        'experiments',
+        safeId(id),
+        'calls',
+        safeId(callId),
+        ...(typeof call.attemptId === 'string'
+          ? ['attempts', safeId(call.attemptId)]
+          : []),
+      ),
       ref,
     );
   }
@@ -686,6 +720,9 @@ export class ObservationQueries {
           safeId(id),
           'calls',
           safeId(callId),
+          ...(typeof call.attemptId === 'string'
+            ? ['attempts', safeId(call.attemptId)]
+            : []),
         ),
         offset,
         limit,

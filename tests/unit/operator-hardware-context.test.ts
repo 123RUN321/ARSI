@@ -59,13 +59,30 @@ test('hardware context rejects missing, blank, unreadable and non-file inputs wi
     reader(directory),
     /hardwareContextFile.*(ordinary|file)/i,
   );
-  const linked = join(root, 'linked.md');
-  await symlink(blank, linked);
-  await assert.rejects(
-    reader(linked),
-    /hardwareContextFile.*(ordinary|symlink|file)/i,
-  );
   const invalid = join(root, 'invalid.md');
   await writeFile(invalid, Buffer.from([0xff]));
   await assert.rejects(reader(invalid), /hardwareContextFile.*UTF-8/i);
+  await t.test('rejects a link to an ordinary file', async (subtest) => {
+    const source = join(root, 'source.md');
+    const linked = join(root, 'linked.md');
+    await writeFile(source, 'valid hardware context');
+    try {
+      await symlink(source, linked, 'file');
+    } catch (error) {
+      if (
+        process.platform === 'win32' &&
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'EPERM'
+      ) {
+        subtest.skip('Windows denied permission to create a file symlink');
+        return;
+      }
+      throw error;
+    }
+    await assert.rejects(
+      reader(linked),
+      /hardwareContextFile.*(ordinary|symlink|file)/i,
+    );
+  });
 });

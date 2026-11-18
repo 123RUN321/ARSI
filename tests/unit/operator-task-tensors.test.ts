@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -113,8 +114,13 @@ test('operator task identity and SDK manifest honor omitted and explicit input l
     { ...fp16, contiguous: true },
     { ...fp16, contiguous: false },
   ]);
-  await writeFile(join(directory, 'outside.py'), source);
-  await rm(join(directory, sourcePath));
-  await symlink(join(directory, 'outside.py'), join(directory, sourcePath));
+  const kernels = join(directory, 'kernels');
+  const relocated = join(directory, 'relocated-kernels');
+  await rename(kernels, relocated);
+  await symlink(
+    relocated,
+    kernels,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   await assert.rejects(prepare(), /symbolic link/);
 });

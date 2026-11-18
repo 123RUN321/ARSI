@@ -17,6 +17,11 @@ export interface ServerRuntime {
   > & { readonly directory?: string };
   registry: Pick<Registry, 'catalog'> & Partial<Pick<Registry, 'get'>>;
 }
+interface RunRequest {
+  recipePath: string;
+  id?: string;
+  resume?: boolean;
+}
 /** HTTP adapts Runtime calls; jobs survive the lifetime of an individual browser request. */
 export async function createServer(
   runtime: ServerRuntime,
@@ -100,7 +105,7 @@ export async function createServer(
       }
     },
   );
-  app.post<{ Body: { recipePath: string; id?: string; resume?: boolean } }>(
+  app.post<{ Body: RunRequest }>(
     '/api/experiments',
     {
       schema: {
@@ -121,9 +126,9 @@ export async function createServer(
       if (jobs.has(id))
         return reply.code(409).send({ error: 'Experiment already running' });
       if (request.body.resume && !request.body.id)
-        return reply
-          .code(400)
-          .send({ error: 'Resume requires an experiment ID' });
+        return reply.code(400).send({
+          error: 'Resume requires an experiment ID',
+        });
       starting.set(id, { id, status: 'starting' });
       const job = runtime.manager.run(request.body.recipePath, {
         id,

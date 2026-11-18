@@ -309,7 +309,6 @@ async function modelFixture(replies: Reply[], modelCalls = 64) {
               model: 'fixture',
               base_url: `http://127.0.0.1:${address.port}/v1`,
               api_key: '${RSI_OPERATOR_BUDGET_KEY}',
-              timeoutMs: 3000,
             },
           },
         },

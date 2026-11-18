@@ -18,7 +18,7 @@ arsi dashboard --port 4317 --plugin-dir .rsi/skill-demo/extension
 
 `arsi list plugins` (alias `list plugin`) returns descriptions, contract IDs, input/output/config Schemas and compatible Policy binding slots. `arsi list policies` (alias `list policy`) returns descriptions, Schemas, required contracts, compatible plugins and defaults. Compatibility is structural, not proof of suitability. Bare `arsi list` lists experiments; `arsi catalog` retains compact ID lists.
 
-These are command shapes, not a sequence to cancel and resume an already successful demo. All commands accept repeatable `--plugin-dir`. `run` takes a Recipe **path**, not catalog ID. `--resume` requires `--id`. Data is `.rsi/` under the current working directory; inspect and resume from that same directory. There are no `--data-dir`, `--json`, `--recipe`, `--request-id`, pause, continue or detach options.
+Choose commands for the current experiment state. All commands accept repeatable `--plugin-dir`. `run` takes a Recipe **path**, not catalog ID. `--resume` requires `--id`. Data is `.rsi/` under the current working directory; inspect and retry from that same directory. There are no `--data-dir`, `--json`, `--recipe`, `--request-id`, pause, continue or detach options.
 
 Output is JSON for ordinary commands, not a versioned CLI envelope. Exit 0 means the command returned normally; inspect the experiment's status separately. Errors return 1 and interruption returns 130. `dashboard` requires a `.rsi` directory in the current working directory, prints its address, and keeps running. For clean machine stdout invoke the supplied binary or `node dist/src/entries/cli/main.js` in a checkout, avoiding package-manager banners.
 
@@ -26,12 +26,12 @@ Output is JSON for ordinary commands, not a versioned CLI envelope. Exit 0 means
 
 The process running the experiment owns execution. Cancellation is a request: observe terminal state and released instances afterward. Do not cancel a terminal experiment; it has no active work, and this supported revision has a known unhandled rejection risk on the HTTP cancel route for terminal IDs.
 
-## Resume without corrupting history
+## Resume an existing experiment
 
-Keep original Recipe, resources, extension implementation and dependency versions. Inspect failed call receipts and owned external resources before resuming. A checkpoint can replay completed calls and continue at a safe boundary; an unconfirmed/failed effect can deliberately block recovery. Do not edit receipts/facts, widen budgets or change configuration to force resume. Reconcile the external effect first; if safe recovery is unsupported, report the blocker and create a new explicitly scoped stage.
+Use `--resume --id <experiment-id>` with the current Recipe from the original working directory. Runtime compares the ordered Policy step IDs, types, nesting, and required contract IDs. A compatible Recipe can replace plugin implementations, model endpoints, configuration, and code. Runtime reuses completed-step outputs and committed calls, then executes unfinished steps with the supplied configuration.
 
-After abrupt process death, the experiment lock may remain temporarily. The current Runtime refreshes it every 10 seconds and considers it stale after 60 seconds. Confirm the previous owner has exited, allow the stale interval to pass with a small margin, then retry resume with the same configuration. Do not delete a lock to bypass a live owner. A lock error before execution may leave the persisted experiment status as `running`; that status alone does not establish that recovery started. Inspect the thrown error and the new execution evidence. Waiting for a stale lock does not resolve uncertain call receipts.
+Failed, cancelled, and interrupted experiments use the same resume entrypoint. A succeeded experiment returns its existing record without executing again, as verified by `run.mjs`. Keep the persisted store and required resources. Resume can retry calls with unknown outcomes and archives unresolved cleanup from the previous attempt. External operations with unknown outcomes may run again.
 
-Elapsed time retains its original start, including downtime. Resuming a succeeded experiment returns its existing record without executing again (covered by `run.mjs`). Changed goals/configuration require a new ID and explicit artifact handoff. A completed result does not independently establish cleanup success.
+After abrupt process death, the experiment lock may remain temporarily. The Runtime refreshes it every 10 seconds and considers it stale after 60 seconds. Confirm the previous owner has exited, allow the stale interval to pass with a small margin, then retry. A lock error before execution may leave the persisted experiment status as `running`. Inspect the error and new execution evidence.
 
-Forced process termination cannot run `finally` or `dispose`. After interruption, inspect actual instance/resource state and receipts before resuming; callback execution alone is not cleanup evidence.
+Retry retains usage and the original start time, including downtime. Increase an exhausted budget in the Recipe when further execution is intended. Forced process termination can prevent `finally` and `dispose` from running.

@@ -24,13 +24,13 @@ try {
 
 Register in this same host, either through pluginDirectories or `runtime.registry.registerOperation(definition)` / `registerPolicy(id, absolutePath)`. `runtime` exposes context, registry, manager and dispose; there are no recipes/definitions/runs/queries service facades. A separate CLI process does not inherit registrations.
 
-`manager.run(path, { id?, resume?, signal? })` is awaited by its owner. For cancellation pass an AbortController signal or await `manager.cancel(id)`, then observe completion/cleanup. `manager.get(id)` returns the record; `manager.list()` returns records. Read [recovery](cli.md#resume-without-corrupting-history) before resuming uncertain effects.
+`manager.run(path, { id?, resume?, signal? })` is awaited by its owner. For cancellation pass an AbortController signal or await `manager.cancel(id)`, then observe completion/cleanup. `manager.get(id)` returns the record; `manager.list()` returns records. Read [recovery](cli.md#resume-an-existing-experiment) before resuming uncertain effects.
 
 Use execution-scoped [services](runtime-services.md) inside plugins. Host context does not grant permission to create arbitrary experiment facts. Public `manager.facts` and `manager.artifacts` support inspection; do not mutate stored facts directly.
 
 ## Stage handoff
 
-Read the selected candidate fact by its returned candidateRef, retain its paired measurementRef, and use `runtime.manager.artifacts.materialize(candidate.artifactRef, destination)` to produce the next baseline. The destination must be a new or empty real directory (not a symlink). Materialization does not merge into or overwrite a previous output; use a fresh directory for repeated inspection. Or use `baseline: { artifactRef }` within the same artifact store. Start a new ID for a changed goal/Recipe and record the prior selection as provenance. The new Application creates a fresh baseline candidate; it does not automatically inherit cross-experiment parentRef.
+Read the selected candidate fact by its returned candidateRef, retain its paired measurementRef, and use `runtime.manager.artifacts.materialize(candidate.artifactRef, destination)` to produce the next baseline. The destination must be a new or empty real directory (not a symlink). Materialization does not merge into or overwrite a previous output; use a fresh directory for repeated inspection. Or use `baseline: { artifactRef }` within the same artifact store. Start a new ID when the next stage changes the Policy shape, and record the prior selection as provenance. The new Application creates a fresh baseline candidate; it does not automatically inherit cross-experiment parentRef.
 
 ## Validation and error boundaries
 

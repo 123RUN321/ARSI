@@ -2,7 +2,7 @@
 
 English | [简体中文](running-experiments_zh.md) · [Getting started](../getting-started.md)
 
-This guide explains how to validate, run, inspect, cancel, and resume experiments and troubleshoot them through the CLI and dashboard.
+This guide explains how to validate, run, inspect, cancel, and retry experiments through the CLI and dashboard.
 
 Run commands from the workspace that should own the experiment's `.rsi/` directory. Recipe resource paths resolve against their declaring files; the default data store follows the process's working directory. Separate CLI and dashboard processes observe the same store when launched from the same workspace.
 
@@ -10,8 +10,8 @@ Run commands from the workspace that should own the experiment's `.rsi/` directo
 
 Use `arsi --help` to list commands and `arsi <command> --help` for a command's syntax. From a source checkout without a global install, use `pnpm arsi`.
 
-| Command                                     | Purpose                                                                                                                                   |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Command                                | Purpose                                                                                                                                   |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `arsi catalog`                         | List registered plugin and Policy IDs.                                                                                                    |
 | `arsi list plugins`                    | Inspect plugin descriptions, contracts, Schemas, and compatible Policy bindings.                                                          |
 | `arsi list policies`                   | Inspect Policy descriptions, Schemas, requirements, and compatible plugins.                                                               |
@@ -40,7 +40,7 @@ These options apply across commands:
 
 | Option                     | Description                                                                                                                                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `-h, --help`               | Display help and exit. `arsi --help` lists commands; `arsi <command> --help` shows that command's parameters.                                                                                                                                            |
+| `-h, --help`               | Display help and exit. `arsi --help` lists commands; `arsi <command> --help` shows that command's parameters.                                                                                                                                                      |
 | `--plugin-dir <directory>` | Load custom plugins and Policies from a directory. Repeat the option for multiple directories; see [plugin registration](writing-plugins.md#step-2-register-the-plugin) and [Policy registration and Recipe configuration](writing-policies.md#register-a-policy). |
 
 ### Command-specific options
@@ -48,7 +48,7 @@ These options apply across commands:
 | Command     | Option                 | Description                                                                           |
 | ----------- | ---------------------- | ------------------------------------------------------------------------------------- |
 | `run`       | `--id <experiment-id>` | Set the experiment ID. New experiments generate one if omitted; resuming requires it. |
-| `run`       | `--resume`             | Resume from saved state; requires `--id`. Omitting it starts a new experiment.        |
+| `run`       | `--resume`             | Continue an existing experiment with the supplied Recipe. Requires `--id`.            |
 | `dashboard` | `--port <port>`        | Set the listening port. Defaults to `4317`; accepts values from `1` to `65535`.       |
 
 ## Validate and start
@@ -75,7 +75,7 @@ arsi show terminal-skills-01
 
 Facts and execution records live in `.rsi/facts/`, immutable artifacts in `.rsi/artifacts/`, and experiment-specific working resources in `.rsi/experiments/<experiment-id>/`.
 
-- Preserve the store and original resource files when resuming.
+- Preserve the store and supply a valid Recipe and its referenced resources when retrying.
 
 ## Cancellation and resume
 
@@ -88,15 +88,21 @@ A cancellation request does not stop all work immediately. Runtime propagates th
 
 - Pressing Ctrl+C in the terminal running the CLI also sends a cancellation signal.
 
-To resume, use the same workspace, original Recipe path, experiment ID, and required extensions:
+To continue a failed, cancelled, or interrupted experiment, use the same workspace, experiment ID, and required extensions. Supply the current Recipe.
 
 ```sh
 arsi run my-experiment/recipe.yaml --id terminal-skills-01 --resume
 ```
 
-Runtime restores locked definitions, budget usage, effective revisions, call receipts, and checkpoints, and rejects incompatible changes.
+Runtime restores budget usage, compatible effective revisions, call receipts, and checkpoints. It checks the supplied Policy shape before executing unfinished steps.
 
-- Resume does not reset counters or the experiment's start time; a configured elapsed-wall budget includes downtime.
+Experiments created before the Runtime saved control-flow decisions require a new experiment ID.
+
+- Completed experiments return their saved result without additional calls or charges.
+- Keep the ordered Policy step IDs, types, nesting, and required plugin contract IDs. New calls use the currently registered input and output schemas.
+- The Runtime reuses completed Policy steps and committed results. It retries unfinished steps using the supplied bindings, configuration, and code. For an in-progress branch, loop iteration, or foreach, it preserves the previously selected branch, iteration, or items. A retried plugin call uses a fresh attempt directory and acquires fresh instances.
+- Retry keeps recorded usage and the original start time. Update the Recipe budget if the experiment exhausted it.
+- Once the previous execution releases the experiment lock or the lock expires after a crash, resume can retry incomplete calls, including receipts marked `unknown` or left as `running`. The Runtime archives the previous receipt and any unresolved cleanup record. A retry can repeat an external operation whose previous outcome is unknown.
 
 ## Dashboard
 

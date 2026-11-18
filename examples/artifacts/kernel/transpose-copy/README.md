@@ -91,9 +91,10 @@ pnpm arsi show transpose-copy-search-001
 
 The run command preloads the [HTTP timeout configuration](./http-timeout.mjs) so the client uses the Recipe’s per-request timeout when waiting for response headers or body data. If the model endpoint uses a buffering proxy, configure its timeout to allow that wait as well. Set `benchmark.config.device` to the device allocated for the run.
 
-To resume, repeat `run` with the same Recipe and ID and add `--resume`. Keep the
-inputs, build, and external resources identical. Completed resumes reuse recorded
-results. Runtime data belongs in `.rsi/`.
+To retry, repeat `run` with the experiment ID and add `--resume`. Policy steps and
+plugin contracts must remain compatible. Unfinished steps use the supplied Recipe
+and current implementations. Completed steps reuse recorded results. Runtime data
+belongs in `.rsi/`.
 
 The Recipe requires correct candidates and more than 2% lower mean latency for
 selection. `finalValidity` records the independent final assessment, and
