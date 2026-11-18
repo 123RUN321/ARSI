@@ -26,7 +26,9 @@ do not fill them from templates or unrelated devices.
 Every evidence item must point to an observed numeric field under
 profile.kernels[*].metrics[block_id]. Use an RFC 6901 JSON pointer starting with
 `/kernels/`, escaping `~` as `~0` and `/` as `~1` in every segment. Copy the numeric
-value exactly. Do not use unavailable hardware-derived fields or invent values
+value exactly. Use the current input’s evidenceGuide as a worked example. End
+each pointer at the numeric field without a trailing slash and resolve it
+against the current profile before submitting. Do not use unavailable hardware-derived fields or invent values
 to satisfy the output Schema.
 
 If authorized network tools are available to the bound Agent, official profiling
