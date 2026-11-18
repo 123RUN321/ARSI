@@ -150,11 +150,11 @@ bindings:
 | DSH | Configure the model in the native headless profile |
 | OpenCode | `model`: `provider/model`, optionally followed by `#variant` |
 
-RSI keeps native model and authentication settings and validates proposed edits before applying them.
+RSI keeps native model and authentication settings and validates proposed edits before applying them. Claude Code Hooks and MCP are disabled for RSI calls.
 
 RSI launches Codex with `approval_policy = "never"`. Sandbox failures are returned to the agent without an approval prompt.
 
-On Windows, if the effective Codex configuration explicitly sets `windows.sandbox` to `"elevated"` or `"unelevated"`, RSI starts the session in `workspace-write` mode with network access. Windows without an explicit sandbox uses `danger-full-access`. Other platforms retain the native Codex execution configuration.
+On Windows, if the effective Codex configuration explicitly sets `windows.sandbox` to `"elevated"` or `"unelevated"`, RSI starts the session in `workspace-write` mode with network access. Windows without an explicit sandbox and Linux use `danger-full-access`, so commands can access files and resources available to the account running RSI. Other platforms use a read-only project profile.
 
 On Windows, RSI removes the Desktop-only `CODEX_WINDOWS_REGISTERED_CORE` variable from its standalone Codex child process so workspace commands can use the standalone sandbox.
 
@@ -244,7 +244,8 @@ Omitted Recipe binding settings first inherit Policy defaults. The “When omitt
 | Pi                                    | `maxTokens`                                        | Maximum output tokens per model request.                                                                                                                              | Omit the output-token limit from the request; the model service decides.                                          |
 | Pi                                    | `contextWindow`                                    | Context-window size in tokens used by Pi for context management; match it to the model's capabilities.                                                                | 262144 tokens.                                                                                                    |
 | Pi                                    | `timeoutMs`                                        | Duration limit per model request, in milliseconds.                                                                                                                    | The underlying HTTP client uses 600000 ms (10 minutes).                                                           |
-| All Agent bindings | `execution.timeoutMs` | Duration limit for the complete Agent call, in milliseconds, outside plugin configuration. | No separate duration limit for the complete call. |
+| Pi                                    | `executionTimeoutMs`                               | Duration limit for a complete Agent call in milliseconds, including requests, tools, compaction, retry waits, and subagents.                                          | No separate duration limit for the complete call.                                                                 |
+| Codex / Claude Code / DSH | `timeoutMs`                                        | Duration limit for the complete Agent call, in milliseconds.                                                                                                          | RSI sets no separate timeout for the call.                                                                        |
 | Operator Proposer                     | `modelRequestTimeoutMs`                            | Shared duration limit for a complete model stage in milliseconds, including tool continuations and delegated Agents.                                                  | 120000 ms (2 minutes).                                                                                            |
 | AgentBench Evaluator                  | `services.<service>.maxTokens`                     | Per-turn output-token limit for the model service used by the evaluated Agent.                                                                                        | Determined by Solver or model-service defaults.                                                                   |
 | AgentBench / InferenceBench Evaluator | `run.timeoutSeconds`                               | Duration limit for one benchmark task attempt, in seconds.                                                                                                            | Use the SDK benchmark profile's value; fall back to 7200 seconds (2 hours) if the profile omits it.               |

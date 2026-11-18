@@ -150,11 +150,11 @@ bindings:
 | DSH | 模型在原生 headless profile 中配置 |
 | OpenCode | `model`：`provider/model`，可追加 `#variant` |
 
-RSI 保留原生模型和认证配置，在应用提案前会校验所提交的编辑。
+RSI 保留原生模型和认证配置，在应用提案前会校验所提交的编辑。Claude Code 的 Hooks 和 MCP 在 RSI 调用中禁用。
 
 RSI 使用 `approval_policy = "never"` 启动 Codex。沙箱拒绝命令时，Codex 会将失败结果返回给 Agent，无需交互式审批。
 
-在 Windows 上，如果 Codex 的生效配置显式将 `windows.sandbox` 设置为 `"elevated"` 或 `"unelevated"`，RSI 会使用 `workspace-write` 模式并开启网络。未显式配置原生沙箱的 Windows 使用 `danger-full-access`。其他平台保留 Codex 原生执行配置。
+在 Windows 上，如果 Codex 的生效配置显式将 `windows.sandbox` 设置为 `"elevated"` 或 `"unelevated"`，RSI 会使用 `workspace-write` 模式并开启网络。未显式配置原生沙箱的 Windows，以及 Linux，使用 `danger-full-access`。命令可以访问运行 RSI 的账户可用的文件和资源。其他平台使用只读工作区权限。
 
 在 Windows 上，RSI 会从独立 Codex 子进程的环境中移除桌面应用专用变量 `CODEX_WINDOWS_REGISTERED_CORE`，让工作区命令通过独立 CLI 的沙箱执行。
 
@@ -235,7 +235,8 @@ Recipe 中省略的绑定配置会先继承 Policy 默认值。下表的“缺�
 | Pi                                    | `maxTokens`                                        | 单次模型请求的最大输出 Token 数。                                                                       | 不发送输出 Token 上限，由模型服务决定。                                           |
 | Pi                                    | `contextWindow`                                    | Pi 用于上下文管理的窗口大小，单位 Token，应与模型能力匹配。                                             | 262144 Token。                                                                    |
 | Pi                                    | `timeoutMs`                                        | 单次模型请求的时长上限，单位毫秒。                                                                      | 底层 HTTP 客户端使用 600000 毫秒（10 分钟）。                                     |
-| 所有 Agent 绑定 | `execution.timeoutMs` | 完整 Agent 调用的时长上限，单位毫秒，放在绑定层而非插件配置中。 | 不额外限制完整调用的时长。 |
+| Pi                                    | `executionTimeoutMs`                               | 完整 Agent 调用的时长上限，单位毫秒，包含请求、工具、压缩、重试等待和子 Agent。                         | 无整次调用的独立时长上限。                                                        |
+| Codex / Claude Code / DSH | `timeoutMs`                                        | 完整 Agent 调用的时长上限，单位毫秒。                                                                   | RSI 不为该调用设置独立超时。                                                      |
 | Operator Proposer                     | `modelRequestTimeoutMs`                            | 一个完整模型阶段的共享时长上限，单位毫秒，包含工具续调与子 Agent。                                      | 120000 毫秒（2 分钟）。                                                           |
 | AgentBench Evaluator                  | `services.<service>.maxTokens`                     | 被测 Agent 所用模型服务的每轮输出 Token 上限。                                                          | 由 Solver 或模型服务的默认设置决定。                                              |
 | AgentBench / InferenceBench Evaluator | `run.timeoutSeconds`                               | 单个基准任务一次执行的时长上限，单位秒。                                                                | 使用 SDK 基准 profile 的值；profile 未指定时为 7200 秒（2 小时）。                |
