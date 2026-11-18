@@ -44,10 +44,6 @@ declare module './context.js' {
       artifactRef: string,
       parentRef: string | null,
     ): Promise<string>;
-    /**
-     * Save a Measurement. The Manager supplies the evaluator's implementation
-     * digest from the registered plugin when the adapter omits it.
-     */
     recordMeasurement(
       this: RuntimeContext,
       measurement: JsonObject,
