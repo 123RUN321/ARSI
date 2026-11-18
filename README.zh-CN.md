@@ -48,7 +48,7 @@
 
 - Harness 优化实验的内部 Agent 调用由 Pi 执行，使用 `deepseek-v4.1-flash-1017`。「优化目标」列标明被测 DeepSeek Harness（DSH）所用的模型版本，「方法」列记录各基准子集的训练、测试与验证任务数。
 - Infra 优化实验的内部 Agent 调用由 Codex 执行，使用 `GPT-6.1 Sol`。推理实验在 [vLLM](https://github.com/vllm-project/vllm) 上运行 `deepseek-v4-flash-0731`，使用 [AISBench](https://github.com/AISBench/benchmark) 评测，输入 4096 个 token，输出 2048 个 token，并发数为 330。算子典型数据集覆盖 `bias-gelu-tanh`、`bias-gelu`、`transpose-copy`、`bias-tanh-gate` 和 `transposed-bias-add`，算子评测检查正确性，并记录设备上的平均执行耗时，性能得分的计算公式为 `基线耗时/ 优化后耗时`。<a id="operator-dataset"></a>
-- 表中分数按「基线 → 选定方案」展示，选定方案得分取基线与候选方案两者中的最高分。算子和推理实验的分数均以基线为 100.0% 进行归一化。红色徽章表示提升，灰色表示持平，变化量以百分点（pp）计。
+- 表中分数按「基线 → 选定方案」展示，选定方案得分取基线与候选方案两者中的最高分。算子和推理实验的分数均以基线为 100.0% 进行归一化。绿色徽章表示提升，灰色表示持平，变化量以百分点（pp）计。
 
 <table>
   <thead>

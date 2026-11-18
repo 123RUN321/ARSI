@@ -48,7 +48,7 @@ When you want AI to help continuously improve agents, models, or AI infrastructu
 
 - Harness experiments use Pi with `deepseek-v4.1-flash-1017` for internal agent calls. The Optimization target column identifies the model version evaluated with DeepSeek Harness (DSH). The Method column lists the training, test, and validation task counts for each benchmark subset.
 - Infra experiments use Codex with `GPT-6.1 Sol` for internal agent calls. The inference experiment runs `deepseek-v4-flash-0731` on [vLLM](https://github.com/vllm-project/vllm) and uses [AISBench](https://github.com/AISBench/benchmark) with 4,096 input tokens, 2,048 output tokens, and a concurrency of 330. The representative operator dataset covers `bias-gelu-tanh`, `bias-gelu`, `transpose-copy`, `bias-tanh-gate`, and `transposed-bias-add`. Operator evaluation checks correctness and records mean device execution time. The performance score is `baseline time / optimized time`.<a id="operator-dataset"></a>
-- Scores compare the baseline with the selected configuration. The selected score is the higher of the baseline and candidate scores. Operator and inference scores are normalized to a baseline of 100.0%. Red badges show gains and gray badges show no change. Changes are measured in percentage points (pp).
+- Scores compare the baseline with the selected configuration. The selected score is the higher of the baseline and candidate scores. Operator and inference scores are normalized to a baseline of 100.0%. Green badges show gains and gray badges show no change. Changes are measured in percentage points (pp).
 
 <table>
   <thead>
