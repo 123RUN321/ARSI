@@ -291,7 +291,7 @@ arsi dashboard
 ## 📊 Experiment results
 
 - Harness experiments use Pi with `deepseek-v4.1-flash-1017` for internal agent calls. The Optimization target column identifies the model version evaluated with DeepSeek Harness (DSH). The Method column lists the training, test, and validation task counts for each benchmark subset.
-- Infra experiments use Codex with `GPT-6.1 Sol` for internal agent calls. The inference experiment runs `deepseek-v4-flash-0731` on [vLLM-Ascend](https://github.com/vllm-project/vllm-ascend) and uses [AISBench](https://github.com/AISBench/benchmark) with 4,096 input tokens, 2,048 output tokens, and a concurrency of 330. The representative operator dataset covers `bias-gelu-tanh`, `bias-gelu`, `transpose-copy`, `bias-tanh-gate`, and `transposed-bias-add`. Operator evaluation checks correctness and records mean device execution time. The performance score is `baseline time / optimized time`.<a id="operator-dataset"></a>
+- Infra experiments use Codex with `GPT-6.1 Sol` for internal agent calls. The inference experiment runs `deepseek-v4-flash-0731` on [vLLM](https://github.com/vllm-project/vllm-ascend) and uses [AISBench](https://github.com/AISBench/benchmark) with 4,096 input tokens, 2,048 output tokens, and a concurrency of 330. The representative operator dataset covers `bias-gelu-tanh`, `bias-gelu`, `transpose-copy`, `bias-tanh-gate`, and `transposed-bias-add`. Operator evaluation checks correctness and records mean device execution time. The performance score is `baseline time / optimized time`.<a id="operator-dataset"></a>
 - Scores compare the baseline with the selected configuration. The selected score is the higher of the baseline and candidate scores. Operator and inference scores are normalized to a baseline of 100.0%. Red badges show gains and gray badges show no change. Changes are measured in percentage points (pp).
 
 <table>
@@ -353,7 +353,7 @@ arsi dashboard
     <tr>
       <th rowspan="3" scope="rowgroup">Infra optimization</th>
       <th rowspan="2"><a href="#operator-dataset">Representative operator dataset</a></th>
-      <td rowspan="2" align="center"><a href="https://gitcode.com/cann">CANN operators</a></td>
+      <td rowspan="2" align="center"><a href="https://github.com/triton-lang/triton-ascend">Triton kernels</a></td>
       <td><a href="src/policies/operator-search/policy.yaml"><code>operator-search</code></a><br><sub>Reflection disabled</sub></td>
       <td align="center">100.0% → 111.0% <img src="docs/users/assets/score-delta-plus-11-0.svg" alt="+11.0 pp" width="62" height="20"></td>
     </tr>
@@ -363,7 +363,7 @@ arsi dashboard
     </tr>
     <tr>
       <th><a href="https://github.com/AISBench/benchmark">AISBench</a></th>
-      <td align="center"><a href="https://github.com/vllm-project/vllm-ascend">vLLM-Ascend</a> +<br><code>deepseek-v4-flash-0731</code></td>
+      <td align="center"><a href="https://github.com/vllm-project/vllm-ascend">vLLM</a> +<br><code>deepseek-v4-flash-0731</code></td>
       <td><a href="src/policies/parameter/agent/policy.yaml"><code>parameter-agent</code></a><br><sub>Reflection and Memory enabled</sub></td>
       <td align="center">100.0% → 171.0% <img src="docs/users/assets/score-delta-plus-71-0.svg" alt="+71.0 pp" width="62" height="20"></td>
     </tr>
