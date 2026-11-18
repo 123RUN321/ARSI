@@ -23,9 +23,6 @@ export interface Workspace {
   parentCandidateRef: string | null;
 }
 export interface WorkspaceService {
-  /** Recreate a released file workspace at its original identity from an
-   * immutable artifact. Existing different or partial data must be refused. */
-  restore?(ref: string, artifactRef: string): Promise<Workspace>;
   create(artifactRef?: string, parentCandidateRef?: string): Promise<Workspace>;
   read(ref: string): Promise<Workspace>;
   release(ref: string): Promise<void>;

@@ -11,7 +11,6 @@ import {
 } from 'node:fs/promises';
 import { join, resolve, relative, dirname, isAbsolute, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
 import type {
   ArtifactStore,
   FactStore,
@@ -182,64 +181,6 @@ export class FileWorkspaces implements WorkspaceService {
     readonly directory: string,
     private readonly artifacts: ArtifactStore,
   ) {}
-  async restore(ref: string, artifactRef: string): Promise<Workspace> {
-    const root = join(this.directory, safeId(ref));
-    const present = await lstat(root).catch((error: unknown) => {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === 'ENOENT'
-      )
-        return null;
-      throw error;
-    });
-    if (present) {
-      if (!present.isDirectory() || present.isSymbolicLink())
-        throw new Error('Workspace recovery refuses linked or partial data');
-      const workspace = await this.read(ref);
-      if ((await this.artifacts.capture(workspace.directory)) !== artifactRef)
-        throw new Error('Existing workspace differs from recovery artifact');
-      return workspace;
-    }
-    const staging = await this.create(artifactRef);
-    try {
-      const workspace = {
-        ref,
-        directory: join(root, 'files'),
-        parentCandidateRef: null,
-      };
-      const from = join(this.directory, staging.ref);
-      if (
-        relative(resolve(this.directory), resolve(root)) !== ref ||
-        relative(resolve(this.directory), resolve(from)) !== staging.ref
-      )
-        throw new Error('Workspace recovery paths escape their owner');
-      await atomic(join(from, 'workspace.json'), workspace);
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await rename(from, root);
-          break;
-        } catch (error) {
-          // Windows scanners/readers can briefly deny moving a directory
-          // containing a newly published file. Keep staged bytes intact.
-          if (
-            process.platform !== 'win32' ||
-            attempt >= 5 ||
-            !error ||
-            typeof error !== 'object' ||
-            !('code' in error) ||
-            !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))
-          )
-            throw error;
-          await delay(50 * (attempt + 1));
-        }
-      }
-      return workspace;
-    } finally {
-      await this.release(staging.ref);
-    }
-  }
   async create(
     artifactRef?: string,
     parentCandidateRef?: string,

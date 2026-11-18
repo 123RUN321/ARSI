@@ -44,7 +44,6 @@ function adapterIdentity(): Promise<string> {
     './service',
     './finalized-timeout',
     './preparation-recovery',
-    './interrupted-run',
     './schema',
     './conditions',
     './measurement',

@@ -393,8 +393,6 @@ export class Manager {
     };
     try {
       if (!options.resume) {
-        // Startup can fail before the first charged call; resume still needs a ledger.
-        await this.facts.write('budgets', id, { scopes: {} });
         const locked = await lockDefinition(
           recipe,
           this.options.registry,
@@ -448,7 +446,6 @@ export class Manager {
       const checkpoints = new PolicyCheckpoints(this.facts, id);
       const calls = createCallExecutor({
         id,
-        resume: options.resume === true,
         registry: this.options.registry,
         facts: this.facts,
         revisionRefs: activation.revisionRefs,

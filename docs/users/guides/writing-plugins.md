@@ -94,7 +94,6 @@ Runtime executes this object's `execute(input, context)` for each plugin call. I
 | `execute(input, context)`           | Perform one business call.                                                                | Required; asynchronously return output matching the public contract. `input` contains the data for this call.                             |
 | `dispose()`                         | Release instance-owned processes, connections, listeners, and other long-lived resources. | Required; complete cleanup asynchronously. May be empty when there are no resources.                                                      |
 | `canRetry(input, receipt, context)` | Confirm whether a failed or cancelled call can be replayed safely.                        | Optional; return `true` only after read-only checks confirm replay cannot duplicate effects. Does not replay calls with unknown outcomes. |
-| `recover(input, receipt, context)` | Continue or reconcile an interrupted operation during explicit experiment resume. | Optional; handles interrupted receipts under the experiment lock without invoking `execute` again. Verified failed/cancelled replay uses `canRetry` first. Reject if safe continuation cannot be verified. Existing reservations stay charged; charge new work normally. |
 
 ## Example: Write and use a minimal Proposer
 
@@ -299,7 +298,6 @@ Runtime passes `context` to `create` and every `execute` call. Plugins use it to
 | Read or save a measurement           | `readMeasurement(ref)`, `recordMeasurement(measurement)` | Read a measurement record, or validate it against the public protocol and save it to obtain a reference.                                 |
 | Save or read content                 | `artifacts.putJson/readJson`, `capture/materialize`      | Save and read JSON, or save directory contents and restore them to a local directory.                                                    |
 | Edit in a temporary directory        | `workspaces.create/read/release`                         | Create or read a workspace, edit files in its `directory`, and release it when finished.                                                 |
-| Restore a released file workspace | `workspaces.restore(ref, artifactRef)` | Optional capability: restore immutable artifact bytes at the original workspace identity; refuse existing different, linked or partial data. The recovering call owns release. |
 | Call the Application                 | `application(input)`, `applicationMetadata()`            | Execute lifecycle actions or read metadata such as the target, capabilities, and initial candidate.                                      |
 | Use a candidate's execution instance | `withInstance(candidateRef, capability, use)`            | Acquire an instance, execute `use(execution)`, and coordinate its release.                                                               |
 | Call another binding                 | `invoke(bindingName, input)`                             | Apply Runtime contract validation, budget checks, call recording, and revision selection.                                                |
