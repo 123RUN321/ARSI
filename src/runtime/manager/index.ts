@@ -772,10 +772,6 @@ export class Manager {
           : await this.facts.list('reflection');
         for await (const fact of reflectionFacts) {
           if (fact.experimentId !== id) continue;
-          if (fact.interface !== 'explicit-reflection/v1')
-            throw new Error(
-              'Legacy Reflection boundary records cannot retry through the explicit Reflection interface',
-            );
           if (
             fact.policyScopeId === 'root' &&
             typeof fact.stepPath === 'string'

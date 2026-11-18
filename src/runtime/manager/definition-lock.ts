@@ -14,6 +14,8 @@ import type { Registry } from '../registry/index.js';
 import type { ReflectionConfig } from '../revisions/validation.js';
 import { inside } from '../storage/index.js';
 
+export const definitionLockVersion = 'rsi.definition-lock/v2';
+
 /** Validate persisted Reflection data without consulting mutable source files. */
 export function parseLockedReflection(value: JsonValue): ReflectionConfig {
   const data = object(value, 'locked Reflection');
@@ -268,7 +270,7 @@ export async function lockDefinition(
     );
   }
   const locked: JsonObject = {
-    schemaVersion: 'rsi.definition-lock/v2',
+    schemaVersion: definitionLockVersion,
     recipe: declaration,
     policy: recipe.policy.toJSON(),
     recipeSourcePath: recipe.sourcePath,
@@ -302,7 +304,7 @@ async function restoreResource(
 }
 
 export function assertDefinitionLock(locked: JsonObject): void {
-  if (locked.schemaVersion !== 'rsi.definition-lock/v2')
+  if (locked.schemaVersion !== definitionLockVersion)
     throw new Error(
       'This experiment predates resumable Policy checkpoints. Start a new experiment.',
     );

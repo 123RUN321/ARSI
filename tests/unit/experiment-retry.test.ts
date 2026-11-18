@@ -400,35 +400,6 @@ test('retry continues cancelled and interrupted experiments using the current Re
   }
 });
 
-test('retry rejection preserves persisted application and usage before execution is initialized', async () => {
-  const { managerFixture } = await import('../helpers/manager-fixture.js');
-  const fixture = await managerFixture(async () => ({}));
-  try {
-    await fixture.run();
-    const completed = await fixture.manager.get('test');
-    await fixture.manager.facts.write('experiments', 'test', {
-      ...completed,
-      status: 'failed',
-    });
-    await fixture.manager.facts.write('reflection', 'old-boundary', {
-      experimentId: 'test',
-      interface: 'legacy',
-    });
-    await assert.rejects(
-      fixture.manager.run(String(completed.recipePath), {
-        id: 'test',
-        resume: true,
-      }),
-      /Legacy Reflection/,
-    );
-    const failed = await fixture.manager.get('test');
-    assert.deepEqual(failed.application, completed.application);
-    assert.deepEqual(failed.usage, completed.usage);
-  } finally {
-    await fixture.dispose();
-  }
-});
-
 test('retry reuses committed child calls before repeating the failed parent', async () => {
   const { managerFixture } = await import('../helpers/manager-fixture.js');
   let childExecutions = 0;

@@ -24,6 +24,7 @@ test('Reflection preserves root overrides and resumes from locked definitions wi
     await registry.dispose();
     await rm(root, { recursive: true, force: true });
   });
+  let generatorInterruption: AbortController | undefined;
   let initializations = 0;
   let interruption: AbortController | undefined;
   const generations: { binding: string; goal: string }[] = [];
@@ -107,6 +108,12 @@ test('Reflection preserves root overrides and resumes from locked definitions wi
             binding: context.bindingId,
             goal: string(object(input).goal),
           });
+          if (generatorInterruption) {
+            const error = new Error('interrupt Reflection generator');
+            generatorInterruption.abort(error);
+            generatorInterruption = undefined;
+            throw error;
+          }
           return {
             status: 'no-change',
             proposal: null,
@@ -241,6 +248,23 @@ test('Reflection preserves root overrides and resumes from locked definitions wi
   const fresh = await manager.run(recipePath, { id: 'fresh' });
   assert.equal(fresh.status, 'succeeded');
   assert.equal(generations.at(-1)?.goal, 'changed root goal');
+
+  generatorInterruption = new AbortController();
+  const beforeGeneratorInterruption = generations.length;
+  await assert.rejects(
+    manager.run(recipePath, {
+      id: 'generator-interrupted',
+      signal: generatorInterruption.signal,
+    }),
+    /interrupt Reflection generator/,
+  );
+  assert.equal(generations.length, beforeGeneratorInterruption + 1);
+  const retried = await manager.run(recipePath, {
+    id: 'generator-interrupted',
+    resume: true,
+  });
+  assert.equal(retried.status, 'succeeded');
+  assert.equal(generations.length, beforeGeneratorInterruption + 2);
 
   policy.steps = [
     {
