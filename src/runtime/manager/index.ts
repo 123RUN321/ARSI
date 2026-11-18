@@ -27,16 +27,19 @@ import { Registry } from '../registry/index.js';
 import { Recipe } from '../loaders/recipe.js';
 import { Policy } from '../policy/index.js';
 import {
+  assertDefinitionLock,
   lockDefinition,
-  restoreDefinition,
   parseLockedReflection,
+  readBindingVersions,
   readResourceOrigins,
 } from './definition-lock.js';
 import { ExperimentFacts } from './facts.js';
 import { readExperimentRecord } from './records.js';
+import { assertRetryShape, readRetryCalls } from './retry.js';
 import { BudgetLedger, ExperimentBudgetExceeded } from './budget.js';
 import {
   CleanupLifecycle,
+  archiveUnresolvedCleanup,
   assertCleanupResolved,
   reconcilePersistedCleanup,
 } from './cleanup.js';
@@ -44,11 +47,24 @@ import { RevisionActivation } from './activation.js';
 import { reflect } from '../revisions/index.js';
 import { acquireResourceGate } from '../revisions/exclusion.js';
 import { RevisionApplication } from '../revisions/application.js';
-import { PolicyCheckpoints } from '../policy/checkpoint.js';
+import {
+  PolicyCheckpoints,
+  readPolicyCheckpoint,
+} from '../policy/checkpoint.js';
 import {
   executeControlledPolicy,
   partialPolicyOutput,
+  recoverPolicy,
+  type PolicyRecovery,
+  type PolicyOptions,
 } from '../policy/executor.js';
+
+interface RunOptions {
+  id?: string;
+  signal?: AbortSignal;
+  resume?: boolean;
+  context?: RuntimeContext;
+}
 
 export interface RuntimeOptions {
   context?: RuntimeContext;
@@ -93,22 +109,15 @@ export class Manager {
   async reconcileCleanup(id: string): Promise<void> {
     safeId(id);
     const cleanup = this.cleanups.get(id);
-    if (cleanup) {
+    if (cleanup && !cleanup.relinquished) {
       await cleanup.reconcile();
       this.cleanups.delete(id);
       return;
     }
     await reconcilePersistedCleanup(id, this.directory, this.facts);
+    if (cleanup && this.cleanups.get(id) === cleanup) this.cleanups.delete(id);
   }
-  run(
-    recipePath: string,
-    options: {
-      id?: string;
-      signal?: AbortSignal;
-      resume?: boolean;
-      context?: RuntimeContext;
-    } = {},
-  ): Promise<JsonObject> {
+  run(recipePath: string, options: RunOptions = {}): Promise<JsonObject> {
     const job = this.execute(recipePath, options);
     this.jobs.add(job);
     void job.finally(() => this.jobs.delete(job)).catch(() => {});
@@ -161,13 +170,9 @@ export class Manager {
   }
   private async execute(
     recipePath: string,
-    options: {
-      id?: string;
-      signal?: AbortSignal;
-      resume?: boolean;
-      context?: RuntimeContext;
-    } = {},
+    options: RunOptions = {},
   ): Promise<JsonObject> {
+    const continuing = options.resume === true;
     const gate = await acquireResourceGate(this.directory);
     let recipe!: Recipe;
     let resourceOrigins: Record<string, Record<string, string>> = {};
@@ -177,7 +182,7 @@ export class Manager {
     let failureCause: unknown;
     let releaseLock: () => Promise<void>;
     try {
-      if (options.resume) {
+      if (continuing) {
         if (!options.id) throw new Error('Resume requires an experiment id');
         id = safeId(options.id);
       } else {
@@ -199,39 +204,111 @@ export class Manager {
     }
     // Validate persisted identity under the lock before changing experiment facts.
     let resumedRecord: JsonObject | undefined;
+    let definition: JsonObject | undefined;
+    let recovery: PolicyRecovery | undefined;
+    let retryCalls: ReadonlyMap<string, JsonObject> | undefined;
+    let retryRef: string | undefined;
+    let legacyRouting: NonNullable<PolicyOptions['routing']>['legacy'];
+    let restore: JsonObject | undefined;
+    const checkpoints = new PolicyCheckpoints(this.facts, id);
+    const resources = join(this.directory, 'experiments', id, 'resources');
     try {
-      await assertCleanupResolved(this.facts, id);
-      if (options.resume) {
+      if (continuing) {
         resumedRecord = readExperimentRecord(await this.get(id));
-        if (resumedRecord.recipePath !== resolve(recipePath))
-          throw new Error(
-            'Experiment recipePath differs from the saved Recipe',
-          );
         const locked = await this.facts.read('definitions', id);
-        if (locked.schemaVersion !== 'rsi.definition-lock/v1')
-          throw new Error('Unsupported experiment definition lock');
-        await restoreDefinition(
-          locked,
+        assertDefinitionLock(locked);
+        if (resumedRecord.status === 'succeeded') {
+          await assertCleanupResolved(this.facts, id);
+          await releaseLock();
+          return resumedRecord;
+        }
+
+        const readPolicy = (source = locked) =>
+          new Policy(source.policy, {
+            sourcePath: string(source.policySourcePath),
+            contracts: this.options.registry,
+          });
+        const priorRetry = object(locked.retry ?? {});
+        const oldPolicyInputs = (source: JsonObject) => {
+          const policy = object(object(source.recipe).policy);
+          return {
+            config: object(policy.config),
+            input: object(policy.input),
+            application: {
+              initialCandidate: object(resumedRecord!.application)
+                .initialCandidateRef,
+            },
+          };
+        };
+        if (priorRetry.recovery !== undefined) {
+          const saved = object(priorRetry.recovery);
+          recovery = {
+            identity: string(saved.identity),
+            initialState: object(saved.initialState),
+          };
+        }
+        recipe = await Recipe.load(recipePath, this.options.registry);
+        assertRetryShape(locked, recipe.policy);
+        retryCalls = await readRetryCalls(this.facts, id);
+        restore = await checkpoints.restore();
+        if (restore) {
+          if (recovery) readPolicyCheckpoint(restore, recovery.identity);
+          else
+            recovery = recoverPolicy(
+              readPolicy(),
+              oldPolicyInputs(locked),
+              restore,
+            );
+        }
+        retryRef = 'retry-' + randomUUID();
+        const archiveId = digest({ id, definition: locked.digest });
+        const legacyDefinition = priorRetry.legacyDefinition ?? archiveId;
+        const legacy =
+          legacyDefinition === archiveId
+            ? locked
+            : await this.facts.read(
+                'definition-attempts',
+                string(legacyDefinition),
+              );
+        assertDefinitionLock(legacy);
+        legacyRouting = {
+          policy: readPolicy(legacy),
+          ...oldPolicyInputs(legacy),
+        };
+        definition = await lockDefinition(
+          recipe,
+          this.options.registry,
           this.artifacts,
-          join(this.directory, 'experiments', id, 'resources'),
+          resources,
+          {
+            ref: retryRef,
+            previousDefinition: archiveId,
+            legacyDefinition,
+            ...(recovery ? { recovery: { ...recovery } } : {}),
+            legacyBindingVersions: readBindingVersions(legacy),
+          },
+          locked,
         );
-        resourceOrigins = readResourceOrigins(locked);
-        const lockedPolicy = new Policy(locked.policy, {
-          sourcePath: string(locked.policySourcePath),
-          contracts: this.options.registry,
-        });
-        const rawReflection = locked.reflection;
-        recipe = await Recipe.fromJSON(locked.recipe, this.options.registry, {
-          sourcePath: string(locked.recipeSourcePath),
-          policy: lockedPolicy,
-          ...(rawReflection
-            ? { reflection: parseLockedReflection(rawReflection) }
-            : {}),
-        });
+        recipe = await Recipe.fromJSON(
+          definition.recipe,
+          this.options.registry,
+          {
+            sourcePath: recipe.sourcePath,
+            policy: recipe.policy,
+            ...(definition.reflection
+              ? { reflection: parseLockedReflection(definition.reflection) }
+              : {}),
+          },
+        );
+        await archiveUnresolvedCleanup(this.facts, id, archiveId);
+        await this.facts.write('definition-attempts', archiveId, locked);
+        await this.facts.write('definitions', id, definition);
+        resourceOrigins = readResourceOrigins(definition);
       } else {
+        await assertCleanupResolved(this.facts, id);
         try {
           await this.get(id);
-          throw new Error('Experiment already exists; use resume');
+          throw new Error('Experiment already exists; use --resume');
         } catch (error) {
           if (
             !(
@@ -246,10 +323,6 @@ export class Manager {
     } catch (error) {
       await releaseLock();
       throw error;
-    }
-    if (resumedRecord?.status === 'succeeded') {
-      await releaseLock();
-      return resumedRecord;
     }
     this.running.set(id, controller);
     const cancellationPoll = setInterval(() => {
@@ -266,7 +339,7 @@ export class Manager {
     let experimentStartedAt = new Date(started).toISOString();
     const elapsedWallMs = recipe.budget.elapsedWallMs;
     let wallDeadline =
-      elapsedWallMs === undefined || options.resume
+      elapsedWallMs === undefined || continuing
         ? undefined
         : AbortSignal.timeout(elapsedWallMs);
     let signal = AbortSignal.any([
@@ -392,13 +465,49 @@ export class Manager {
       activeCalls?.close();
     };
     try {
-      if (!options.resume) {
+      if (continuing) {
+        const previous = resumedRecord!;
+        initial = object(previous.application);
+        experimentStartedAt =
+          typeof previous.startedAt === 'string'
+            ? previous.startedAt
+            : experimentStartedAt;
+        try {
+          budget.restore(await this.facts.read('budgets', id));
+        } catch (error) {
+          if (
+            !(
+              error instanceof Error &&
+              'code' in error &&
+              error.code === 'ENOENT'
+            ) ||
+            Object.keys(object(previous.usage ?? {})).length !== 0
+          )
+            throw error;
+        }
+        if (elapsedWallMs !== undefined) {
+          const elapsed = Date.now() - Date.parse(experimentStartedAt);
+          if (!Number.isFinite(elapsed))
+            throw new Error('Invalid persisted experiment start time');
+          const remaining = elapsedWallMs - Math.max(0, elapsed);
+          if (remaining <= 0)
+            throw new ExperimentBudgetExceeded('elapsedWallMs');
+          wallDeadline = AbortSignal.timeout(remaining);
+          signal = AbortSignal.any([signal, wallDeadline]);
+        }
+        await this.facts.write('controls', id, {
+          cancel: false,
+          clearedAt: new Date().toISOString(),
+        });
+      }
+      if (!continuing) {
         const locked = await lockDefinition(
           recipe,
           this.options.registry,
           this.artifacts,
-          join(this.directory, 'experiments', id, 'resources'),
+          resources,
         );
+        definition = locked;
         await this.facts.write('definitions', id, locked);
         resourceOrigins = readResourceOrigins(locked);
         recipe = await Recipe.fromJSON(locked.recipe, this.options.registry, {
@@ -435,6 +544,7 @@ export class Manager {
         cleanup,
         event: events.event,
         diagnose,
+        bindingVersions: definition && readBindingVersions(definition),
       });
       const experimentFacts = new ExperimentFacts(
         id,
@@ -443,12 +553,13 @@ export class Manager {
         this.options.registry,
         (bindingId) => activation.bindings[bindingId]?.plugin,
       );
-      const checkpoints = new PolicyCheckpoints(this.facts, id);
       const calls = createCallExecutor({
         id,
         registry: this.options.registry,
         facts: this.facts,
         revisionRefs: activation.revisionRefs,
+        retryCalls,
+        retryRef,
         context,
         binding: (name) =>
           name === '_application'
@@ -569,10 +680,11 @@ export class Manager {
           const ctx = this;
           const instanceId =
             'instance-' +
-            digest({ callId: ctx.callId, candidateRef, capability }).slice(
-              0,
-              32,
-            );
+            digest({
+              callId: ctx.idempotencyKey,
+              candidateRef,
+              capability,
+            }).slice(0, 32);
           let error: unknown;
           try {
             const acquire = object(
@@ -611,6 +723,7 @@ export class Manager {
           }
         },
       });
+      const priorReflections = new Map<string, JsonObject[]>();
       const runReflection = async (
         caller: RuntimeContext,
         stepPath: string,
@@ -628,7 +741,12 @@ export class Manager {
           invocation: {
             policyScopeId: 'root',
             stepPath,
+            attempt: retryRef,
           },
+          priorAttempts: priorReflections.get(stepPath),
+          generatorCommitted: (reflectionId) =>
+            retryCalls?.get(`reflection/${reflectionId}`)?.status ===
+            'succeeded',
           generatorBinding: '_reflection',
           sourceResources: resourceOrigins,
           state,
@@ -637,16 +755,23 @@ export class Manager {
           directory: this.directory,
           revisionRefs: activation.revisionRefs,
           getDefinition: (pluginId) => this.options.registry.get(pluginId),
-          invoke: async (binding, value, key, scope) =>
-            calls.invoke(
+          invoke: async (binding, value, key, scope) => {
+            const prior = retryCalls?.get(key);
+            const path =
+              prior?.status === 'succeeded' &&
+              digest(prior.input) !== digest(value)
+                ? `${key}/${retryRef}`
+                : key;
+            return calls.invoke(
               binding,
               value,
               caller.extend({
                 scope,
                 signal: AbortSignal.any([caller.signal, scope.signal]),
               }),
-              key,
-            ),
+              path,
+            );
+          },
           initialize: (parents) => activation.initialize(parents),
           save: (changes, revisions, activationId) =>
             activation.save(changes, revisions, activationId),
@@ -659,86 +784,41 @@ export class Manager {
         if (!registrations.has(b.plugin))
           registrations.set(b.plugin, this.options.registry.retain(b.plugin));
       }
-      const reflectionConfiguration: JsonObject = reflection
-        ? { '': { path: reflection.path, digest: reflection.digest } }
-        : {};
-      let lockedReflection: JsonObject | undefined;
-      try {
-        lockedReflection = await this.facts.read('reflection-configs', id);
-      } catch (error) {
-        if (
-          !(
-            error instanceof Error &&
-            'code' in error &&
-            error.code === 'ENOENT'
-          )
-        )
-          throw error;
-      }
-      if (options.resume && (lockedReflection || reflection)) {
-        if (
-          !lockedReflection ||
-          lockedReflection.interface !== 'explicit-reflection/v1' ||
-          digest(lockedReflection.configuration) !==
-            digest(reflectionConfiguration)
-        )
-          throw new Error(
-            'Reflection configuration source or contents differ from the locked experiment',
-          );
-      } else if (reflection) {
-        await this.facts.write('reflection-configs', id, {
-          interface: 'explicit-reflection/v1',
-          configuration: reflectionConfiguration,
-        });
-      }
-      let restore: JsonObject | undefined;
-      if (options.resume) {
+      if (continuing) {
         const reflectionFacts = this.facts.scan
           ? this.facts.scan('reflection')
           : await this.facts.list('reflection');
-        for await (const fact of reflectionFacts)
-          if (
-            fact.experimentId === id &&
-            fact.interface !== 'explicit-reflection/v1'
-          )
+        for await (const fact of reflectionFacts) {
+          if (fact.experimentId !== id) continue;
+          if (fact.interface !== 'explicit-reflection/v1')
             throw new Error(
-              'Legacy Reflection boundary records cannot resume through the explicit Reflection interface; use the original implementation and configuration',
+              'Legacy Reflection boundary records cannot retry through the explicit Reflection interface',
             );
-        const previous = resumedRecord!;
-        initial = object(previous.application);
-        experimentStartedAt =
-          typeof previous.startedAt === 'string'
-            ? previous.startedAt
-            : experimentStartedAt;
-        budget.restore(await this.facts.read('budgets', id));
-        if (elapsedWallMs !== undefined) {
-          const elapsed = Date.now() - Date.parse(experimentStartedAt);
-          if (!Number.isFinite(elapsed))
-            throw new Error('Invalid persisted experiment start time');
-          const remaining = elapsedWallMs - Math.max(0, elapsed);
-          if (remaining <= 0)
-            throw new ExperimentBudgetExceeded('elapsedWallMs');
-          wallDeadline = AbortSignal.timeout(remaining);
-          signal = AbortSignal.any([signal, wallDeadline]);
+          if (
+            fact.policyScopeId === 'root' &&
+            typeof fact.stepPath === 'string'
+          ) {
+            const attempts = priorReflections.get(fact.stepPath) ?? [];
+            attempts.push(fact);
+            priorReflections.set(fact.stepPath, attempts);
+          }
         }
-        restore = await checkpoints.restore();
-        await this.facts.write('controls', id, {
-          cancel: false,
-          clearedAt: new Date().toISOString(),
-        });
       }
-      if (options.resume) await activation.restore();
+      if (continuing)
+        await activation.restore(
+          object(object(definition?.retry).legacyBindingVersions),
+        );
       const experimentInfo = {
         experimentId: id,
         recipeId: recipe.id,
         policyId: policy.id,
-        resumed: options.resume === true,
+        resumed: continuing,
       };
       await businessWait(
         services.event.serial('rsi/before-experiment', experimentInfo),
       );
       signal.throwIfAborted();
-      if (!options.resume || typeof initial.initialCandidateRef !== 'string')
+      if (!continuing || typeof initial.initialCandidateRef !== 'string')
         initial = object(
           await businessWait(
             calls.invoke(
@@ -752,7 +832,7 @@ export class Manager {
       await this.facts.write('experiments', id, {
         id,
         recipeId: recipe.id,
-        recipePath: resolve(recipePath),
+        recipePath: recipe.sourcePath,
         status: 'running',
         application: initial,
         startedAt: experimentStartedAt,
@@ -771,6 +851,18 @@ export class Manager {
           application: { initialCandidate: initial.initialCandidateRef },
           context: root,
           restore,
+          recovery,
+          routing: {
+            enteredCallPaths: [
+              ...(retryCalls?.keys() ?? []),
+              ...priorReflections.keys(),
+            ],
+            committedOutput(path) {
+              const call = retryCalls?.get(path);
+              return call?.status === 'succeeded' ? call.output : undefined;
+            },
+            legacy: legacyRouting,
+          },
           events: {
             info: {
               experimentId: id,
@@ -826,7 +918,7 @@ export class Manager {
       let previous: JsonObject = {
         id,
         recipeId: recipe.id,
-        recipePath: resolve(recipePath),
+        recipePath: recipe.sourcePath,
         startedAt: experimentStartedAt,
         recipe: recipe.toJSON(),
         application: initial,
@@ -835,7 +927,7 @@ export class Manager {
         previous = await this.get(id);
       } catch {}
       const status =
-        failureCause !== undefined
+        failureCause !== undefined || budgetMetric !== undefined
           ? 'failed'
           : wasCancelled
             ? 'cancelled'
@@ -856,6 +948,7 @@ export class Manager {
                 application: { initialCandidate: initial.initialCandidateRef },
               },
               snapshot,
+              recovery,
             );
         } catch (projectionError) {
           diagnose('rsi/partial-policy-output', projectionError);
@@ -865,6 +958,14 @@ export class Manager {
       terminalSaveAttempted = true;
       await this.facts.write('experiments', id, {
         ...previous,
+        ...(retryRef
+          ? {
+              recipeId: recipe.id,
+              recipePath: recipe.sourcePath,
+              recipe: recipe.toJSON(),
+              application: initial,
+            }
+          : {}),
         status,
         error: errorText(error),
         ...(budgetMetric === undefined
@@ -897,11 +998,16 @@ export class Manager {
       events.stop();
       clearInterval(cancellationPoll);
       this.running.delete(id);
-      const cleanupJob = cleanup.start(drain, finalNotification, () =>
-        Promise.allSettled([...diagnostics]),
+      const cleanupJob = cleanup.start(
+        drain,
+        finalNotification,
+        () => Promise.allSettled([...diagnostics]),
+        terminal !== 'succeeded',
       );
       void cleanupJob.then(
-        () => this.cleanups.delete(id),
+        () => {
+          if (this.cleanups.get(id) === cleanup) this.cleanups.delete(id);
+        },
         () => {},
       );
       try {

@@ -28,8 +28,8 @@ searchSpace:
 
 The grid Policy defaults `maxCandidates` to 1,000. To cover all 16 points,
 allow at least 16 candidate attempts and budget for the baseline evaluation plus
-any points that need a separate evaluation. Resume with the same ordered
-configuration and cursor.
+any points that need a separate evaluation. Retry preserves the recorded cursor
+and completed results.
 
 For adaptive sampling, see the [TPE recipe](../parameter-tpe/README.md).
 
@@ -78,8 +78,8 @@ string axis and a boolean axis alongside the numeric axes:
 
 Adding those axes to the four-point recipe yields 16 combinations. Review the
 configured `maxCandidates` and evaluation budgets before running the expanded
-grid. Existing range-based recipes must be migrated for new runs; resume requires
-the original locked configuration.
+grid. Existing range-based recipes must be migrated for new runs. Retry restores
+recorded progress and uses the current compatible configuration for unfinished work.
 
 Use a dedicated Linux tuning host. Replace `192.0.2.10` in the recipe with the
 service address reachable from the Evaluator client. Serve the model name from
@@ -150,8 +150,8 @@ arsi show parameter-grid-first
 ```
 
 Validation does not check that the template is implemented, start a remote service,
-or prove that deployment settings are usable. Resume only the same locked configuration and after reconciling any
-unknown remote lifecycle outcome:
+or prove that deployment settings are usable. Resume requires a compatible
+Policy shape. An unconfirmed remote lifecycle operation can execute again.
 
 ```sh
 arsi run examples/artifacts/inference/parameter-grid/recipe.yaml --id parameter-grid-first --resume

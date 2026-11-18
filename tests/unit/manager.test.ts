@@ -157,7 +157,7 @@ test('Manager locks startup resources and resumes completed or interrupted runs 
     });
     assert.deepEqual(continued.output, {
       first: 'after',
-      second: 'after',
+      second: 'edited before resume',
     });
     assert.equal(reads, 4);
     assert.equal(

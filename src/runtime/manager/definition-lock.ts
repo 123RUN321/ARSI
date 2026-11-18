@@ -1,5 +1,5 @@
 import { lstat, readFile, mkdir } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type {
   ArtifactStore,
   JsonObject,
@@ -132,6 +132,41 @@ function pointerParent(
   return { parent, key };
 }
 
+/** Reconstruct resource-aware binding versions for locks written before retry. */
+export function readBindingVersions(locked: JsonObject): JsonObject {
+  if (locked.bindingVersions !== undefined)
+    return object(locked.bindingVersions);
+  const recipe = object(locked.recipe);
+  const origins = readResourceOrigins(locked);
+  const versions: JsonObject = {};
+  const bindings = {
+    ...object(recipe.bindings),
+    _application: recipe.application!,
+  };
+  if (!Array.isArray(locked.resources))
+    throw new Error('Invalid locked resources');
+  const resources = resourceSnapshots(locked);
+  for (const [owner, entry] of Object.entries(bindings)) {
+    const binding = object(entry);
+    const sourceConfig = structuredClone(object(binding.config));
+    const localResources: JsonObject = {};
+    for (const [pointer, source] of Object.entries(origins[owner] ?? {})) {
+      const { parent, key } = pointerParent(sourceConfig, pointer);
+      if (Array.isArray(parent)) parent[Number(key)] = source;
+      else parent[key] = source;
+      const snapshot = resources.get(digest({ owner, pointer }).slice(0, 32));
+      if (snapshot !== undefined)
+        localResources[pointer] = snapshot.artifactRef;
+    }
+    versions[owner] = digest({
+      id: binding.plugin,
+      sourceConfig,
+      localResources,
+    });
+  }
+  return versions;
+}
+
 export function readResourceOrigins(
   locked: JsonObject,
 ): Record<string, Record<string, string>> {
@@ -148,17 +183,41 @@ export function readResourceOrigins(
   );
 }
 
+function resourceSnapshots(
+  locked: JsonObject,
+): Map<string, { directory: string; artifactRef: string }> {
+  if (!Array.isArray(locked.resources))
+    throw new Error('Invalid locked resources');
+  return new Map(
+    locked.resources.map((raw) => {
+      const resource = object(raw);
+      const directory = string(resource.directory);
+      return [
+        basename(directory),
+        { directory, artifactRef: string(resource.artifactRef) },
+      ];
+    }),
+  );
+}
+
 /** Lock definitions and owned resource copies before the first business side effect. */
 export async function lockDefinition(
   recipe: Recipe,
   registry: Registry,
   artifacts: ArtifactStore,
   directory: string,
+  retry?: JsonObject,
+  previous?: JsonObject,
 ): Promise<JsonObject> {
   const declaration = recipe.toJSON();
   const resources: JsonObject[] = [];
   const plugins: JsonObject = {};
+  const bindingVersions: JsonObject = {};
   const resourceOrigins: JsonObject = {};
+  const previousResources = previous && resourceSnapshots(previous);
+  const attemptDirectory = retry
+    ? inside(directory, join(directory, string(retry.ref)))
+    : directory;
   const capture = async (
     id: string,
     config: JsonObject,
@@ -166,6 +225,8 @@ export async function lockDefinition(
     schema?: JsonSchema,
   ): Promise<void> => {
     if (id) plugins[id] = registry.identity(id);
+    const sourceConfig = structuredClone(config);
+    const localResources: JsonObject = {};
     for (const field of configPathFields(
       schema ?? registry.get(id).configSchema,
       config,
@@ -184,10 +245,7 @@ export async function lockDefinition(
         (field.kind === 'file' ? !info.isFile() : !info.isDirectory())
       )
         throw new Error(`Invalid locked resource ${owner}${field.pointer}`);
-      const target = join(
-        directory,
-        digest({ owner, pointer: field.pointer }).slice(0, 32),
-      );
+      const slot = digest({ owner, pointer: field.pointer }).slice(0, 32);
       const artifactRef =
         field.kind === 'directory'
           ? await artifacts.capture(source)
@@ -201,14 +259,21 @@ export async function lockDefinition(
                 },
               ],
             });
-      await mkdir(directory, { recursive: true });
-      await artifacts.materialize(artifactRef, target);
+      const saved = previousResources?.get(slot);
+      const target =
+        saved?.artifactRef === artifactRef
+          ? inside(directory, saved.directory)
+          : join(attemptDirectory, slot);
+      await restoreResource(artifacts, target, artifactRef);
       resources.push({ directory: target, artifactRef });
+      localResources[field.pointer] = artifactRef;
       const lockedPath =
         field.kind === 'directory' ? target : join(target, basename(source));
       if (Array.isArray(parent)) parent[Number(key)] = lockedPath;
       else parent[key] = lockedPath;
     }
+    if (id)
+      bindingVersions[owner] = digest({ id, sourceConfig, localResources });
   };
   await capture(
     '',
@@ -244,40 +309,37 @@ export async function lockDefinition(
     recipeSourcePath: recipe.sourcePath,
     policySourcePath: recipe.policy.sourcePath,
     plugins,
+    bindingVersions,
     resources,
     resourceOrigins,
     reflection,
+    ...(retry === undefined ? {} : { retry }),
   };
   return { ...locked, digest: digest(locked) };
 }
 
-/** Restore the experiment's saved resources from immutable artifacts. */
-export async function restoreDefinition(
-  locked: JsonObject,
+async function restoreResource(
   artifacts: ArtifactStore,
-  directory: string,
+  target: string,
+  ref: string,
 ): Promise<void> {
+  try {
+    await lstat(target);
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
+      throw error;
+    await mkdir(dirname(target), { recursive: true });
+    await artifacts.materialize(ref, target);
+    return;
+  }
+  if ((await artifacts.capture(target)) !== ref)
+    throw new Error(`Locked resource contents differ: ${target}`);
+}
+
+export function assertDefinitionLock(locked: JsonObject): void {
+  if (locked.schemaVersion !== 'rsi.definition-lock/v1')
+    throw new Error('Unsupported experiment definition lock');
   const { digest: expected, ...content } = locked;
   if (expected !== digest(content))
     throw new Error('Experiment definition lock digest mismatch');
-  if (!Array.isArray(locked.resources))
-    throw new Error('Invalid locked resources');
-  for (const raw of locked.resources) {
-    const resource = object(raw);
-    const target = inside(directory, string(resource.directory));
-    const ref = string(resource.artifactRef);
-    let exists = true;
-    try {
-      await lstat(target);
-    } catch (error) {
-      if (
-        !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
-      )
-        throw error;
-      exists = false;
-    }
-    if (!exists) await artifacts.materialize(ref, target);
-    else if ((await artifacts.capture(target)) !== ref)
-      throw new Error(`Locked resource contents differ: ${target}`);
-  }
 }

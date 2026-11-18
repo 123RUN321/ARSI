@@ -23,6 +23,7 @@ export class CleanupLifecycle {
   private readonly externalFailures: unknown[] = [];
   private marking: Promise<void> | undefined;
   private settled = false;
+  private lockReleasedAfterFailure = false;
   private retryPreparation: (() => Promise<void>) | undefined;
   private readonly unboundedSignal = new AbortController().signal;
   constructor(
@@ -36,6 +37,10 @@ export class CleanupLifecycle {
 
   get released(): boolean {
     return this.state === 'released';
+  }
+
+  get relinquished(): boolean {
+    return this.lockReleasedAfterFailure;
   }
   get signal(): AbortSignal {
     if (this.reserveMs === undefined) return this.unboundedSignal;
@@ -133,6 +138,7 @@ export class CleanupLifecycle {
     drain: () => Promise<void>,
     notification: Promise<unknown>,
     diagnostics: () => Promise<unknown>,
+    releaseOnFailure = false,
   ): Promise<void> {
     if (this.state !== 'idle') throw new Error('Cleanup already started');
     const work = async (): Promise<void> => {
@@ -158,8 +164,17 @@ export class CleanupLifecycle {
       await diagnostics();
       if (failed) errors.push(disposalError);
       errors.push(...this.externalFailures);
-      if (errors.length)
-        throw new AggregateError(errors, 'Experiment cleanup failed');
+      if (errors.length) {
+        const failure = new AggregateError(errors, 'Experiment cleanup failed');
+        if (releaseOnFailure) {
+          this.state = 'failed';
+          await this.record(failure);
+          await this.events.dispose();
+          await this.releaseResources();
+          this.lockReleasedAfterFailure = true;
+        }
+        throw failure;
+      }
       await this.finish();
     };
     this.retryPreparation = work;
@@ -172,7 +187,7 @@ export class CleanupLifecycle {
     this.job = work()
       .catch(async (error: unknown) => {
         this.state = 'failed';
-        await this.record(error);
+        if (!this.relinquished) await this.record(error);
         throw error;
       })
       .finally(() => {
@@ -232,6 +247,27 @@ export class CleanupLifecycle {
     await this.releaseResources();
     this.state = 'released';
   }
+}
+
+/** Preserve the previous cleanup outcome before the new attempt publishes its own. */
+export async function archiveUnresolvedCleanup(
+  facts: FactStore,
+  id: string,
+  archiveId: string,
+): Promise<void> {
+  let cleanup;
+  try {
+    cleanup = await facts.read('cleanup', id);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return;
+    throw error;
+  }
+  const state = experimentCleanupState(cleanup, id);
+  if (state === 'invalid')
+    throw new Error('Invalid cleanup ownership or unsupported cleanup status');
+  if (state === 'unresolved')
+    await facts.write('cleanup-attempts', archiveId, cleanup);
 }
 
 /** Explicitly confirm external cleanup after establishing exclusive ownership, preserving business status.

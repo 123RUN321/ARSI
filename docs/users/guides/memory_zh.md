@@ -132,4 +132,4 @@ steps:
 
 使用本地存储时，Runtime 将经验文档的内容和目录信息保存在 `.rsi/artifacts/`，Policy 检查点记录当前 `memoryRef`。**恢复同一个实验时，会继续使用已保存的文档版本。内置 Policy 每次启动新实验时，Memory 的初始值都为空（`memoryRef: null`），不会自动继承之前实验的 Memory。**
 
-普通 Memory 更新失败本身不会取消实验。取消、实验预算耗尽和 Runtime 无法保存关键运行记录等情况仍会停止执行。参见[取消与恢复](running-experiments_zh.md#取消与恢复)和 [Memory 实现](../../../src/plugins/memory-agent/service.ts)。
+普通 Memory 更新失败本身不会取消实验。取消、实验预算耗尽和 Runtime 无法保存关键运行记录等情况仍会停止执行。参见[取消与重试](running-experiments_zh.md#取消与恢复)和 [Memory 实现](../../../src/plugins/memory-agent/service.ts)。

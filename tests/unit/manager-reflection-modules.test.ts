@@ -229,7 +229,7 @@ test('Reflection preserves root overrides and resumes from locked definitions wi
     join(root, 'override.yaml'),
     JSON.stringify(config('./changed-goal.md')),
   );
-  await writeFile(policyPath, 'invalid edited source');
+  await writeFile(policyPath, JSON.stringify(policy));
   const continued = await manager.run(recipePath, {
     id: 'changed',
     resume: true,

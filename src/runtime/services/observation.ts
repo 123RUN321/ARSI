@@ -118,7 +118,7 @@ export class ObservationQueries {
     return { directory: this.directory ? resolve(this.directory) : null };
   }
 
-  /** The initial saved declaration only: no source files, artifact reads or resource restoration. */
+  /** The saved declaration only: no source files, artifact reads or resource restoration. */
   async policyStructure(id: string): Promise<PolicyStructure> {
     await this.experiment(id);
     return queryPolicyStructure(id, {
@@ -153,7 +153,24 @@ export class ObservationQueries {
         visit(item);
       }
     };
-    visit(await this.experiment(id));
+    const experiment = await this.experiment(id);
+    visit(experiment);
+    let definition: JsonObject;
+    try {
+      definition = await this.facts.read('definitions', id);
+    } catch (error) {
+      if (missing(error)) return values;
+      throw error;
+    }
+    const visited = new Set<string>();
+    for (;;) {
+      const retry = object(definition.retry ?? {});
+      const ref = retry.previousDefinition;
+      if (typeof ref !== 'string' || visited.has(ref)) break;
+      visited.add(ref);
+      definition = await this.facts.read('definition-attempts', ref);
+      visit(definition);
+    }
     return values;
   }
   private clean(
@@ -673,6 +690,9 @@ export class ObservationQueries {
           safeId(id),
           'calls',
           safeId(callId),
+          ...(typeof call.attemptId === 'string'
+            ? ['attempts', safeId(call.attemptId)]
+            : []),
           'diagnostics.jsonl',
         ),
         constants.O_RDONLY | constants.O_NOFOLLOW,

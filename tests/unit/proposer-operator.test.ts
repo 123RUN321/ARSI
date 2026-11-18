@@ -877,7 +877,7 @@ test('valid empty static diagnosis skips retrieval and candidate generation', as
   assert.equal(object(result.usage).evaluationRuns, 1);
 });
 
-test('operator summary model failure preserves completed effects and blocks replay of the unfinished action', async (t) => {
+test('operator summary model failure preserves completed effects and retries the unfinished summary', async (t) => {
   const fixture = await setup(
     async (context) => {
       const { entry, baselineRef } = await baseline(context);
@@ -943,13 +943,18 @@ test('operator summary model failure preserves completed effects and blocks repl
       id: 'operator-summary-failed',
       resume: true,
     }),
-    /receipt|unconfirmed|failed/i,
+    /summary model failed/,
   );
-  assert.equal(fixture.requests.length, before.requests);
+  assert.equal(fixture.requests.length, before.requests + 1);
   assert.deepEqual(
-    await fixture.runtime.manager.facts.list('calls'),
-    before.calls,
+    await fixture.runtime.manager.facts.list('measurements'),
+    before.measurements,
   );
+  for (const call of before.calls.filter((call) => call.status === 'succeeded'))
+    assert.deepEqual(
+      await fixture.runtime.manager.facts.read('calls', string(call.callId)),
+      call,
+    );
 });
 
 test('metric Proposer executes two rounds with measured diagnostics, current best parents and delivered hardware/history', async (t) => {

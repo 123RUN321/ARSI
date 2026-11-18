@@ -24,7 +24,7 @@ curl -sS -H 'Content-Type: application/json' http://127.0.0.1:4317/api/experimen
 curl -sS http://127.0.0.1:4317/api/experiments/web-demo-01
 ```
 
-Paths resolve on the server filesystem. HTTP 202 is not successful initialization; poll until terminal status and inspect output and cleanup. Keep the server process alive while it owns jobs. Restarting the server preserves stored observations but does not automatically resume work. Resume posts the same recipePath and id with `resume: true` after checking [recovery constraints](cli.md).
+Paths resolve on the server filesystem. HTTP 202 is not successful initialization; poll until terminal status and inspect output and cleanup. Keep the server process alive while it owns jobs. Restarting the server preserves stored observations but does not automatically resume work. Retry posts the current recipePath and existing id with `resume: true` after checking [recovery requirements](cli.md).
 
 There is no `/api/v1` prefix, Recipe CRUD, launch-preview digest or pause/continue route. Cancel only an active experiment: this revision's terminal-ID cancel handler can surface an unhandled rejection. A successful POST response alone is not evidence that cancellation completed. If the server exits, inspect persisted facts before deciding to restart or resume.
 

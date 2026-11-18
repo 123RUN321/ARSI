@@ -9,12 +9,16 @@ import {
   canonical,
   digest,
   object,
+  string,
   freezeSnapshot,
 } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { readReflectionResult } from '../revisions/records.js';
 import { evaluateTemplate } from './expression.js';
 import {
+  ForEachStep,
+  IfStep,
+  LoopStep,
   type Step,
   type StepContext,
   type StepResult,
@@ -44,6 +48,12 @@ export interface PolicyOptions {
   ): Promise<JsonValue>;
   checkpoint(snapshot: JsonObject): Promise<void>;
   restore?: JsonObject;
+  recovery?: PolicyRecovery;
+  routing?: {
+    enteredCallPaths?: Iterable<string>;
+    committedOutput?(path: string): JsonValue | undefined;
+    legacy?: PolicyInputs & { policy: Policy };
+  };
   events?: {
     info: {
       experimentId: string;
@@ -67,6 +77,22 @@ interface Frame {
 interface Environment {
   frames: readonly Frame[];
   locals: JsonObject;
+  legacyLocals?: JsonObject;
+}
+
+function policyStepAt(policy: Policy, path: string): Step | undefined {
+  const parts = path.split('/');
+  let steps = policy.steps;
+  for (let i = 1; i < parts.length; i += 2) {
+    const step = steps.find((candidate) => candidate.id === parts[i]);
+    if (i === parts.length - 1) return step;
+    if (step instanceof IfStep)
+      steps = (parts[i + 1] === 'then' ? step.thenBranch : step.elseBranch)
+        .steps;
+    else if (step instanceof LoopStep || step instanceof ForEachStep)
+      steps = step.steps;
+    else return undefined;
+  }
 }
 function changedFields(
   before: JsonObject,
@@ -113,8 +139,16 @@ function validatedInvocation(
   };
 }
 type PolicyInputs = Pick<PolicyOptions, 'application' | 'input' | 'config'>;
+export interface PolicyRecovery {
+  identity: string;
+  initialState: JsonObject;
+}
 
-function initializePolicy(policy: Policy, options: PolicyInputs) {
+function initializePolicy(
+  policy: Policy,
+  options: PolicyInputs,
+  restoredState?: JsonObject,
+) {
   const application = freezeSnapshot(
     structuredClone(object(options.application, 'application')),
   );
@@ -141,14 +175,35 @@ function initializePolicy(policy: Policy, options: PolicyInputs) {
   validate(policy.inputSchema, input, 'policy.input');
   freezeSnapshot(input);
   const state = structuredClone(
-    object(
-      evaluateTemplate(policy.stateInitial, { ...base, input }),
-      'policy.state',
-    ),
+    restoredState ??
+      object(
+        evaluateTemplate(policy.stateInitial, { ...base, input }),
+        'policy.state',
+      ),
   );
   validate(policy.stateSchema, state, 'policy.state');
   freezeSnapshot(state);
   return { application, config, input, state };
+}
+
+function checkpointIdentity(
+  policy: Policy,
+  { application, input, config }: ReturnType<typeof initializePolicy>,
+): string {
+  return digest({ policy: policy.digest, input, config, application });
+}
+
+/** Keep the committed journal identity after Manager has checked the Policy shape. */
+export function recoverPolicy(
+  policy: Policy,
+  options: PolicyInputs,
+  checkpoint: JsonObject,
+): PolicyRecovery {
+  const initial = initializePolicy(policy, options);
+  return {
+    identity: string(checkpoint.identity, 'checkpoint.identity'),
+    initialState: initial.state,
+  };
 }
 
 /** Projects the declared output from a chronologically ordered, committed journal. */
@@ -156,15 +211,11 @@ export function partialPolicyOutput(
   policy: Policy,
   options: PolicyInputs,
   checkpoint: JsonObject,
+  recovery?: PolicyRecovery,
 ): JsonValue {
-  const initial = initializePolicy(policy, options);
+  const initial = initializePolicy(policy, options, recovery?.initialState);
   const { application, config, input } = initial;
-  const identity = digest({
-    policy: policy.digest,
-    input,
-    config,
-    application,
-  });
+  const identity = recovery?.identity ?? checkpointIdentity(policy, initial);
   const { journal } = readPolicyCheckpoint(checkpoint, identity);
   let state = initial.state;
   const steps: JsonObject = {};
@@ -197,20 +248,16 @@ export async function runPolicy(
 ): Promise<JsonValue> {
   const signal = options.context.signal;
   signal.throwIfAborted();
-  const {
-    application,
-    config,
-    input,
-    state: initialState,
-  } = initializePolicy(policy, options);
+  const initial = initializePolicy(
+    policy,
+    options,
+    options.recovery?.initialState,
+  );
+  const { application, config, input, state: initialState } = initial;
   const base = { application, config };
   let state = initialState;
-  const identity = digest({
-    policy: policy.digest,
-    input,
-    config,
-    application,
-  });
+  const identity =
+    options.recovery?.identity ?? checkpointIdentity(policy, initial);
   const {
     journal,
     boundaries,
@@ -218,6 +265,21 @@ export async function runPolicy(
     options.restore === undefined
       ? { journal: {}, boundaries: {} }
       : readPolicyCheckpoint(options.restore, identity);
+  const enteredScopes = new Set<string>();
+  for (const path of [
+    ...Object.keys(journal),
+    ...Object.keys(boundaries),
+    ...(options.routing?.enteredCallPaths ?? []),
+  ]) {
+    for (
+      let end = path.lastIndexOf('/');
+      end >= 0;
+      end = path.lastIndexOf('/', end - 1)
+    )
+      enteredScopes.add(path.slice(0, end));
+    enteredScopes.add(path);
+  }
+  let legacyInputs: ReturnType<typeof initializePolicy> | undefined;
   let queue = Promise.resolve();
   if (!options.checkpoint && !options.incrementalCheckpoint)
     throw new Error('Policy execution requires a checkpoint adapter');
@@ -341,16 +403,63 @@ export async function runPolicy(
         evaluate(template, locals) {
           return evaluate(template, scope, locals);
         },
+        entered(childScope) {
+          return enteredScopes.has(`${stepPath}/${childScope}`);
+        },
+        async decision(key, choose) {
+          const path = `${stepPath}/@${key}`;
+          const previous = journal[path];
+          if (previous !== undefined) {
+            const saved = stepResult(object(previous).result!);
+            if (saved.kind !== 'completed')
+              throw new Error(`Invalid saved decision ${path}`);
+            return saved.output;
+          }
+          const value = choose();
+          if (!options.routing || value === false) return value;
+          const record = {
+            result: { kind: 'completed', output: value },
+            patch: {},
+          };
+          journal[path] = record;
+          await persist({ kind: 'step', path, value: record });
+          return value;
+        },
+        legacyForeach() {
+          const legacy = options.routing?.legacy;
+          if (!legacy || !enteredScopes.has(stepPath)) return undefined;
+          const previous = policyStepAt(legacy.policy, stepPath);
+          if (!(previous instanceof ForEachStep)) return undefined;
+          return {
+            step: previous,
+            evaluate(template, locals) {
+              const old = (legacyInputs ??= initializePolicy(
+                legacy.policy,
+                legacy,
+              ));
+              return structuredClone(
+                evaluateTemplate(template, {
+                  ...environment(scope),
+                  ...scope.legacyLocals,
+                  ...locals,
+                  input: old.input,
+                  config: old.config,
+                }),
+              );
+            },
+          };
+        },
         async invoke(binding, payload) {
           signal.throwIfAborted();
           const contract = policy.requirements[binding];
           if (!contract)
             throw new Error(`${stepPath}: undeclared dependency ${binding}`);
-          const ownedInput = structuredClone(payload);
+          const committed = options.routing?.committedOutput?.(stepPath);
+          if (committed !== undefined) return structuredClone(committed);
           const value = await invocation(
             contract,
             binding,
-            ownedInput,
+            structuredClone(payload()),
             stepPath,
             parallel,
           );
@@ -381,6 +490,10 @@ export async function runPolicy(
             {
               frames: scope.frames,
               locals: { ...scope.locals, ...settings.locals },
+              legacyLocals: {
+                ...scope.legacyLocals,
+                ...(settings.legacyLocals ?? settings.locals),
+              },
             },
             `${stepPath}/${settings.scope}`,
             parallel || (settings.parallel ?? false),

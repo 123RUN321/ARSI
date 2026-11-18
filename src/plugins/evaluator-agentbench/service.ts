@@ -7,13 +7,7 @@ import type {
   Operation,
   RuntimeContext,
 } from '../../contracts/index.js';
-import {
-  digest,
-  object,
-  string,
-  strings,
-  unknownKeys,
-} from '../../shared/json.js';
+import { object, string, strings, unknownKeys } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { plain, redact } from '../shared/evaluator-adapter/data.js';
 import {
@@ -22,47 +16,19 @@ import {
 } from '../shared/evaluator-adapter/sdk.js';
 import { evaluationStatus } from '../shared/evaluator-adapter/measurement.js';
 import { normalizeEvaluation } from './measurement.js';
-import { canRestartPreparation } from './preparation-recovery.js';
 import { configSchema, type AgentbenchConfig } from './schema.js';
 import {
   parseEvaluatorConfig,
   type SdkEvaluatorConfig,
 } from '../shared/evaluator-adapter/configuration.js';
-import {
-  isFinalizedVerifierTimeout,
-  reconciledVerifierTimeout,
-} from './finalized-timeout.js';
+import { isFinalizedVerifierTimeout } from './finalized-timeout.js';
 export async function createAgentbench(
   config: AgentbenchConfig,
   _context: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<AgentbenchInput, AgentbenchOutput>> {
   validate(configSchema, config, 'evaluator config');
-  const reconciled = new Map<
-    string,
-    { inputDigest: string; measurementRef: string | null; attempt: string }
-  >();
   return {
-    async canRetry(input, receipt, context) {
-      const key = `${context.experimentId}/${context.callId}`;
-      reconciled.delete(key);
-      const measurementRef = await reconciledVerifierTimeout(
-        input,
-        receipt,
-        context,
-      );
-      if (
-        !measurementRef &&
-        !(await canRestartPreparation(input, receipt, context))
-      )
-        return false;
-      reconciled.set(key, {
-        inputDigest: digest(input),
-        measurementRef,
-        attempt: digest(receipt),
-      });
-      return true;
-    },
     async execute(input, context): Promise<AgentbenchOutput> {
       object(input);
       unknownKeys(input, ['candidateRef', 'taskIds'], 'evaluator input');
@@ -71,46 +37,7 @@ export async function createAgentbench(
       if (!taskIds.length || new Set(taskIds).size !== taskIds.length)
         throw new Error('taskIds must be nonempty and unique');
       context.signal.throwIfAborted();
-      const key = `${context.experimentId}/${context.callId}`;
-      const recovered = reconciled.get(key);
-      if (recovered) {
-        reconciled.delete(key);
-        if (recovered.inputDigest !== digest(input))
-          throw new Error('Reconciled evaluator input changed');
-        if (recovered.measurementRef)
-          return { measurementRef: recovered.measurementRef };
-      }
-      // A released acquisition receipt must never supply the new workspace.
-      const withInstance = async <T>(
-        candidateRef: string,
-        capability: string,
-        use: (execution: JsonObject) => Promise<T>,
-      ): Promise<T> => {
-        if (!recovered)
-          return context.withInstance(candidateRef, capability, use);
-        const instanceId =
-          'instance-' +
-          digest({
-            callId: context.callId,
-            attempt: recovered.attempt,
-            candidateRef,
-            capability,
-          }).slice(0, 32);
-        try {
-          const acquired = await context.application({
-            action: 'acquire',
-            candidateRef,
-            capability,
-            instanceId,
-          });
-          return await use(object(acquired.execution));
-        } finally {
-          await context
-            .extend({ signal: context.cleanup })
-            .application({ action: 'release', instanceId });
-        }
-      };
-      return withInstance(
+      return context.withInstance(
         string(input.candidateRef),
         'agentbundle',
         async (execution) => {

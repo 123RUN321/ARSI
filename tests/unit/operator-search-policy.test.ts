@@ -349,7 +349,7 @@ test('configured static attempts and repairs exceed former ceilings and resume r
   assert.deepEqual(await f.manager.facts.list('calls'), calls);
 });
 
-test('summary failure prevents adoption and resume cannot replay the unfinished action', async (t) => {
+test('summary failure prevents adoption and retry repeats the unfinished summary', async (t) => {
   const f = await setup(t, {
     markers: ['fixture:latency=8'],
     failSummary: true,
@@ -364,10 +364,15 @@ test('summary failure prevents adoption and resume cannot replay the unfinished 
   };
   await assert.rejects(
     f.manager.run(f.recipePath, { id: 'failed-summary', resume: true }),
-    /receipt|unconfirmed|failed/i,
+    /Fixture summary failure/,
   );
-  assert.equal(f.requests.length, before.count);
-  assert.deepEqual(await f.manager.facts.list('calls'), before.calls);
+  assert.equal(f.requests.length, before.count + 1);
+  for (const call of before.calls.filter((call) => call.status === 'succeeded'))
+    assert.deepEqual(
+      await f.manager.facts.read('calls', string(call.callId)),
+      call,
+    );
+  assert.ok((await f.manager.facts.list('call-attempts')).length > 0);
 });
 
 test('independent timing instability retains the generated candidate and completed search; recovery adds no effects', async (t) => {
