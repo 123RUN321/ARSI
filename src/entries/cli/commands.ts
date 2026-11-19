@@ -1,9 +1,8 @@
-import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { aborted } from 'node:util';
 import { Argument, Command, InvalidArgumentError } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
+import { startDashboard } from './dashboard.js';
 import { checkRecipe } from './doctor.js';
 import {
   ensurePluginHome,
@@ -124,7 +123,7 @@ export async function runCommand(
       },
       4317,
     )
-    .action(startDashboard);
+    .action(runDashboard);
 
   function runExperiment(
     file: string,
@@ -198,22 +197,8 @@ export async function runCommand(
       .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
   }
 
-  async function startDashboard({ port }: { port: number }): Promise<void> {
-    await ensurePluginHome();
-    if (!statSync('.rsi', { throwIfNoEntry: false })?.isDirectory())
-      throw new Error(
-        'Dashboard requires a .rsi directory in the current working directory. Run it from your experiment workspace.',
-      );
-    const runtime = await context.openRuntime(pluginDirectories());
-    const { createServer } = await import('../web/server.js');
-    const server = await createServer(runtime);
-    const address = await server.listen({ host: '127.0.0.1', port });
-    process.stdout.write(`Dashboard open at ${address}\n`);
-    try {
-      await aborted(context.signal, server);
-    } finally {
-      await server.close();
-    }
+  async function runDashboard({ port }: { port: number }): Promise<void> {
+    await startDashboard(port, pluginDirectories(), context);
     result = { exitCode: 0 };
   }
 
