@@ -41,8 +41,9 @@ jobs:
           GITCODE_SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'apply' }}
           GITCODE_SYNC_CONFIG_JSON: ${{ secrets.GITCODE_SYNC_CONFIG_JSON }}
           GITCODE_ROBOT_TOKEN: ${{ secrets.GITCODE_ROBOT_TOKEN }}
-          GITCODE_MEMBER_1_TOKEN: ${{ secrets.GITCODE_MEMBER_1_TOKEN }}
-          GITCODE_MEMBER_2_TOKEN: ${{ secrets.GITCODE_MEMBER_2_TOKEN }}
+          GITCODE_MEMBER_GIDEON_TOKEN: ${{ secrets.GITCODE_MEMBER_GIDEON_TOKEN }}
+          GITCODE_MEMBER_FANGCHENG_TOKEN: ${{ secrets.GITCODE_MEMBER_FANGCHENG_TOKEN }}
+          GITCODE_MEMBER_CHESTNUT_TOKEN: ${{ secrets.GITCODE_MEMBER_CHESTNUT_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -eu

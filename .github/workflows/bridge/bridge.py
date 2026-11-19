@@ -16,7 +16,7 @@ from review_comments import CommentDelivery, first_comments
 from state_store import GitStore, checkpoint
 
 
-MEMBER_SECRET_NAME = re.compile(r'GITCODE_MEMBER_[1-9][0-9]*_TOKEN')
+MEMBER_SECRET_NAME = re.compile(r'GITCODE_MEMBER_[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_TOKEN')
 DEFAULT_MEMBERS_FILE = Path(__file__).resolve().parents[2] / 'gitcode-members.json'
 EMAIL = re.compile(r'[^@<>\x00-\x20\x7f]+@[^@<>\x00-\x20\x7f]+')
 ZERO_SHA = '0' * 40
@@ -62,7 +62,8 @@ def config_read(filename, members_file=DEFAULT_MEMBERS_FILE):
         if (not isinstance(secret, str) or not MEMBER_SECRET_NAME.fullmatch(secret)
                 or secret_owners.setdefault(secret, member_id) != member_id
                 or member_secrets.setdefault(member_id, secret) != secret):
-            raise BridgeError('Use one distinct numbered gitcode_pr_token_secret per mapped GitCode account')
+            raise BridgeError('Each GitCode account needs a distinct gitcode_pr_token_secret '
+                              'named GITCODE_MEMBER_<NAME>_TOKEN')
         if member_id == gitcode['bot']['id']:
             raise BridgeError('The bot is the fallback and must not be a member mapping')
     return {'gitcode': gitcode, 'members': members}
