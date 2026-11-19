@@ -38,6 +38,7 @@ import {
   MetricsRetrievalUnavailable,
   retrieveMetricsKnowledge,
 } from './resources.js';
+import { metricEvidenceGuide } from '../shared/operator-attempt/metric-evidence.js';
 import { operatorSnapshot } from './source-snapshot.js';
 
 export async function prepareMetrics(
@@ -136,6 +137,7 @@ export async function prepareMetrics(
         ...(await operatorSnapshot(parent, config, baseline, context)),
         input: {
           stage: 'diagnose-metrics',
+          evidenceGuide: metricEvidenceGuide(diagnostic),
           profile: diagnostic,
           history: metricContext.history,
           staticHistory: metricContext.staticHistory,
