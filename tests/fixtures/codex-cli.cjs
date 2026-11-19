@@ -4,6 +4,16 @@ const readline = require('node:readline');
 const config = JSON.parse(
   fs.readFileSync(path.join(process.env.CODEX_HOME, 'fixture.json'), 'utf8'),
 );
+function exitDuring(phase) {
+  if (config.exitPhase !== phase || !config.remainingExits) return;
+  config.remainingExits--;
+  fs.writeFileSync(
+    path.join(process.env.CODEX_HOME, 'fixture.json'),
+    JSON.stringify(config),
+  );
+  process.exit(-1073741502);
+}
+exitDuring('startup');
 const args = process.argv.slice(2);
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 const history = [];
@@ -151,6 +161,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
           turn: request.params,
         }),
       );
+      exitDuring('turn');
       history.push(...request.params.input);
       send({ id: request.id, result: {} });
       await generate();

@@ -131,6 +131,8 @@ async function fixture(
     thinkingLevel?: string;
     timeoutMs?: number;
     retries?: number;
+    exitPhase?: 'startup' | 'turn';
+    remainingExits?: number;
     approvalRequired?: boolean;
     rpcError?: boolean;
     turnFailure?: boolean;
@@ -208,6 +210,8 @@ async function fixture(
     model: 'configured-model',
     model_provider: 'local',
     model_reasoning_effort: 'low',
+    exitPhase: options.exitPhase,
+    remainingExits: options.remainingExits,
     requestMaxRetries: options.retries ?? 0,
     approvalRequired: options.approvalRequired ?? false,
     rpcError: options.rpcError ?? false,
@@ -681,3 +685,40 @@ test('Codex keeps calls without roles ephemeral and inherits native search setti
     await f.close();
   }
 });
+
+test(
+  'Codex retries a Windows DLL initialization exit before submitting a turn',
+  { skip: process.platform !== 'win32' },
+  async () => {
+    const f = await fixture(['{"answer":"ok"}'], {
+      exitPhase: 'startup',
+      remainingExits: 2,
+    });
+    try {
+      assert.deepEqual(await f.run(), { answer: 'ok' });
+      assert.equal(f.requests.length, 1);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
+  'Codex does not retry a Windows DLL exit after submitting a turn',
+  { skip: process.platform !== 'win32' },
+  async () => {
+    const f = await fixture(['{"answer":"ok"}'], {
+      exitPhase: 'turn',
+      remainingExits: 1,
+    });
+    try {
+      await assert.rejects(
+        f.run(),
+        /Codex process exited with code (3221225794|-1073741502)/,
+      );
+      assert.equal(f.requests.length, 0);
+    } finally {
+      await f.close();
+    }
+  },
+);
