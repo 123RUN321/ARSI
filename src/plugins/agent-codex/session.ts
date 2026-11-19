@@ -12,7 +12,6 @@ import { validate } from '../../shared/schema.js';
 import { CodexProcessExitError, runCodexProcess } from './process.js';
 
 const startupBackoffMs = [250, 500];
-const dllInitializationFailed = 0xc0000142;
 
 function nativeError(value: unknown): string {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
@@ -48,18 +47,12 @@ export async function runSession(options: SessionOptions): Promise<JsonObject> {
     } catch (error) {
       signal.throwIfAborted();
       const wait = startupBackoffMs[attempt];
-      if (
-        turnSubmitted ||
-        wait === undefined ||
-        !(error instanceof CodexProcessExitError) ||
-        error.exitCode === null ||
-        error.exitCode >>> 0 !== dllInitializationFailed
-      )
-        throw error;
+      if (turnSubmitted || wait === undefined) throw error;
       options.record('startup_retry', {
         attempt: attempt + 1,
         delayMs: wait,
-        exitCode: error.exitCode,
+        exitCode:
+          error instanceof CodexProcessExitError ? error.exitCode : null,
       });
       await delay(wait, undefined, { signal });
     }

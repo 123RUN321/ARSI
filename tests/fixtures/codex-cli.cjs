@@ -11,7 +11,7 @@ function exitDuring(phase) {
     path.join(process.env.CODEX_HOME, 'fixture.json'),
     JSON.stringify(config),
   );
-  process.exit(-1073741502);
+  process.exit(42);
 }
 exitDuring('startup');
 const args = process.argv.slice(2);

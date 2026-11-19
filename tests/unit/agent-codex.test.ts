@@ -686,39 +686,28 @@ test('Codex keeps calls without roles ephemeral and inherits native search setti
   }
 });
 
-test(
-  'Codex retries a Windows DLL initialization exit before submitting a turn',
-  { skip: process.platform !== 'win32' },
-  async () => {
-    const f = await fixture(['{"answer":"ok"}'], {
-      exitPhase: 'startup',
-      remainingExits: 2,
-    });
-    try {
-      assert.deepEqual(await f.run(), { answer: 'ok' });
-      assert.equal(f.requests.length, 1);
-    } finally {
-      await f.close();
-    }
-  },
-);
+test('Codex retries a CLI startup exit before submitting a turn', async () => {
+  const f = await fixture(['{"answer":"ok"}'], {
+    exitPhase: 'startup',
+    remainingExits: 2,
+  });
+  try {
+    assert.deepEqual(await f.run(), { answer: 'ok' });
+    assert.equal(f.requests.length, 1);
+  } finally {
+    await f.close();
+  }
+});
 
-test(
-  'Codex does not retry a Windows DLL exit after submitting a turn',
-  { skip: process.platform !== 'win32' },
-  async () => {
-    const f = await fixture(['{"answer":"ok"}'], {
-      exitPhase: 'turn',
-      remainingExits: 1,
-    });
-    try {
-      await assert.rejects(
-        f.run(),
-        /Codex process exited with code (3221225794|-1073741502)/,
-      );
-      assert.equal(f.requests.length, 0);
-    } finally {
-      await f.close();
-    }
-  },
-);
+test('Codex does not retry a CLI exit after submitting a turn', async () => {
+  const f = await fixture(['{"answer":"ok"}'], {
+    exitPhase: 'turn',
+    remainingExits: 1,
+  });
+  try {
+    await assert.rejects(f.run(), /Codex process exited with code 42/);
+    assert.equal(f.requests.length, 0);
+  } finally {
+    await f.close();
+  }
+});
