@@ -17,7 +17,7 @@ from state_store import GitStore, checkpoint
 
 
 MEMBER_SECRET_NAME = re.compile(r'GITCODE_MEMBER_[1-9][0-9]*_TOKEN')
-DEFAULT_MEMBERS_FILE = Path(__file__).resolve().parents[1] / '.github' / 'gitcode-members.json'
+DEFAULT_MEMBERS_FILE = Path(__file__).resolve().parents[2] / 'gitcode-members.json'
 EMAIL = re.compile(r'[^@<>\x00-\x20\x7f]+@[^@<>\x00-\x20\x7f]+')
 ZERO_SHA = '0' * 40
 

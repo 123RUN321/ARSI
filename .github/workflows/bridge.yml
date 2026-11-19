@@ -55,4 +55,5 @@ jobs:
             check|apply) ;;
             *) echo 'GITCODE_SYNC_MODE must be check or apply' >&2; exit 1 ;;
           esac
-          python3 -u controller/bridge.py --config "$config" --members .github/gitcode-members.json "--$GITCODE_SYNC_MODE"
+          python3 -u .github/workflows/bridge/bridge.py \
+            --config "$config" --members .github/gitcode-members.json "--$GITCODE_SYNC_MODE"
