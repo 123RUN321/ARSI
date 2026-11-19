@@ -100,11 +100,30 @@ export async function runCommand(
     .command('cancel <experiment-id>')
     .description('Cancel an experiment')
     .action(cancelExperiment);
-  registerReflectionCommands(
-    program
-      .command('reflection')
-      .description('Inspect and apply reflection revisions'),
-  );
+  program
+    .command('reflection')
+    .description('Inspect and apply reflection revisions')
+    .addCommand(
+      new Command('list')
+        .copyInheritedSettings(program)
+        .argument('[experiment-id]')
+        .description('List reflection revisions')
+        .action(forRevision((revisions, id) => revisions.list(id))),
+    )
+    .addCommand(
+      new Command('show')
+        .copyInheritedSettings(program)
+        .argument('<revisionID>')
+        .description('Show reflection revisions')
+        .action(forRevision((revisions, id) => revisions.show(requireId(id)))),
+    )
+    .addCommand(
+      new Command('apply')
+        .copyInheritedSettings(program)
+        .argument('<revisionID>')
+        .description('Apply reflection revisions')
+        .action(forRevision((revisions, id) => revisions.apply(requireId(id)))),
+    );
   program
     .command('catalog')
     .description('Show registered contracts, plugins, and policies')
@@ -170,34 +189,16 @@ export async function runCommand(
     });
   }
 
-  function registerReflectionCommands(command: Command): void {
-    function forRevision(
-      execute: (
-        revisions: RevisionApplication,
-        id?: string,
-      ) => Promise<unknown>,
-    ): (id?: string) => Promise<void> {
-      return (id) =>
-        runJson(({ manager }) => execute(manager.reflection(), id));
-    }
+  function forRevision(
+    execute: (revisions: RevisionApplication, id?: string) => Promise<unknown>,
+  ): (id?: string) => Promise<void> {
+    return (id) =>
+      runJson(({ manager }) => execute(manager.reflection(), id || undefined));
+  }
 
-    function requireId(id?: string): string {
-      if (!id) throw new Error('Revision ID is required');
-      return id;
-    }
-
-    command
-      .command('list [experiment-id]')
-      .description('List reflection revisions')
-      .action(forRevision((revisions, id) => revisions.list(id || undefined)));
-    command
-      .command('show <revisionID>')
-      .description('Show reflection revisions')
-      .action(forRevision((revisions, id) => revisions.show(requireId(id))));
-    command
-      .command('apply <revisionID>')
-      .description('Apply reflection revisions')
-      .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
+  function requireId(id?: string): string {
+    if (!id) throw new Error('Revision ID is required');
+    return id;
   }
 
   async function startDashboard({ port }: { port: number }): Promise<void> {
