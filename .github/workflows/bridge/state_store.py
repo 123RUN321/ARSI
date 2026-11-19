@@ -19,6 +19,14 @@ def checkpoint(cursor, master, pending=None):
             raise StateError('Checkpoint contains an incomplete pending import')
         sha(pending['source'])
         sha(pending['head'])
+        if 'topic_parents' in pending or 'native_merge' in pending:
+            boundaries = pending.get('topic_parents')
+            if type(pending.get('native_merge')) is not bool or not isinstance(boundaries, dict) or not boundaries:
+                raise StateError('Checkpoint contains an incomplete PR merge plan')
+            sha(pending['base'])
+            for source, target in boundaries.items():
+                sha(source)
+                sha(target)
     return {'cursor': sha(cursor) if cursor is not None else None, 'master': sha(master), 'pending': pending}
 
 
@@ -87,6 +95,8 @@ class GitStore:
         if len(tips) > 1:
             raise StateError('Multiple state branches exist. Reconcile their histories before syncing.')
         self.read_ref, self.tip = next(iter(tips.items()), (STATE_REF, None))
+        self.confirmed_masters = {}
+        self.has_history = False
         self.progress, self.old_events, self.review_comments = None, None, {}
         if self.tip is None:
             return
@@ -116,6 +126,31 @@ class GitStore:
             except (KeyError, TypeError, ValueError) as error:
                 raise StateError('Could not migrate bridge event receipts') from error
         return self.progress
+
+    def confirmed_master(self, source):
+        """Find a previous cursor's actual landing, even when several commits have its tree."""
+        if source in self.confirmed_masters:
+            return self.confirmed_masters[source]
+        if self.tip is None:
+            return None
+        if not self.has_history:
+            if self.git.run('rev-parse', '--is-shallow-repository').stdout.strip() == 'true':
+                self.git.run('fetch', '--quiet', '--no-tags', '--unshallow', self.remote.url,
+                             self.read_ref, remote=self.remote)
+            self.has_history = True
+        # Only read snapshots mentioning this cursor. Use our pinned checkpoint tip
+        # and ignore in-flight imports, which have not confirmed their landing yet.
+        pattern = '"cursor"[[:space:]]*:[[:space:]]*"' + sha(source) + '"'
+        commits = self.git.run('log', '--first-parent', '--format=%H', '-G', pattern,
+                               self.tip, '--', STATE_FILE).stdout.splitlines()
+        for commit in commits:
+            record = json.loads(self.git.run('cat-file', 'blob', f'{commit}:{STATE_FILE}', binary=True).stdout)
+            saved = record.get('progress') or {}
+            if (record.get('repositories') == self.binding and saved.get('cursor') == source
+                    and saved['pending'] is None):
+                self.confirmed_masters[source] = sha(saved['master'])
+                break
+        return self.confirmed_masters.setdefault(source, None)
 
     def migrate_legacy_branch(self):
         if self.read_ref != STATE_REF:

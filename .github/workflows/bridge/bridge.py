@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 
 from api import Api, ApiError, BridgeError, same_account
 from git_ops import CommitIdentityMismatch, Git, MASTER_BRANCH, MASTER_REF, Remote, repository, sha
+from import_plan import plan_import
 from review_comments import CommentDelivery, first_comments
 from state_store import GitStore, checkpoint
 
@@ -362,14 +363,20 @@ class Bridge:
 
     def verify_landed_merge(self, pending, master, path):
         # Both callers have confirmed that master contains the exact head staged by the bridge.
+        native = pending.get('native_merge', False)
+        pull = self.target_api.call('GET', path) if native and path is not None else {}
+        if native and not (pull_is_merged(pull) and (pull.get('base') or {}).get('ref') == MASTER_BRANCH
+                           and same_account(pull.get('user') or {}, pending['creator'])):
+            raise BridgeError('Could not confirm the prepared native GitCode PR was merged into master')
         try:
-            self.git.verify_merge_identity(pending['head'], master, self.bot)
+            self.git.verify_merge_identity(pending['head'], master, self.bot,
+                                           native_source=pending['source'] if native else None)
         except CommitIdentityMismatch as error:
             if self.git.tree(master) != self.git.tree(pending['source']):
                 raise BridgeError('Current master has a different tree from GitHub after a non-robot merge') from error
             if path is None:
                 raise BridgeError('Could not identify the GitCode PR for the non-robot merge') from error
-            pull = self.target_api.call('GET', path)
+            pull = pull or self.target_api.call('GET', path)
             if (not pull_is_merged(pull) or (pull.get('base') or {}).get('ref') != MASTER_BRANCH
                     or not same_account(pull.get('user') or {}, pending.get('creator', self.bot))):
                 raise BridgeError('Could not confirm the prepared GitCode PR was merged into master') from error
@@ -377,8 +384,8 @@ class Bridge:
                   f'The prepared commits are in master and its tree matches GitHub {pending["source"]}.')
 
     def finish_pull(self, store, progress, original, number=None):
-        pending = progress['pending']
         path, merged = self.prepare_pull(store, progress, number, original)
+        pending = store.progress['pending']  # PR creation may have fallen back to the robot.
         if not merged:
             if original is not None:
                 CommentDelivery(self, store, path).run(original)
@@ -397,42 +404,6 @@ class Bridge:
             raise BridgeError('Destination master changed during the merge. Rerun to align it to GitHub.')
         return master
 
-    def rebuild(self, commits, master, *, preview=False, alignment=False, pinned=None, legacy_emails=None):
-        if alignment:
-            source = commits[-1]
-            message = f'Align master to GitHub {source}\n'
-            return self.git.rebuild(source, [master], self.bot, maintenance_message=message), 0, {}
-
-        # Each push follows the first-parent chain. Commits introduced by a merge
-        # also include its topic branches. Translate those parents before the merge.
-        base, graph = self.git.introduced_commits(commits[0], commits[-1])
-        translated = {base: master} if base else {}
-        existing_trees = None
-        authors = {}
-        for commit, *parents in graph:
-            for parent in parents:
-                if parent in translated:
-                    continue
-                # A topic may have branched before this batch. Preserve the true
-                # parent tree so its first author's diff excludes unrelated changes.
-                if existing_trees is None:
-                    existing_trees = self.git.history_by_tree(master)
-                tree = self.git.tree(parent)
-                if tree not in existing_trees:
-                    message = f'Anchor imported branch at GitHub {parent}\n'
-                    existing_trees[tree] = self.git.rebuild(parent, [master], self.bot, maintenance_message=message)
-                translated[parent] = existing_trees[tree]
-            destination_parents = [translated[parent] for parent in parents]
-            if not parents and commit == commits[0]:
-                destination_parents = [master]
-            author = pinned.get(commit, self.bot) if pinned is not None else self.author(commit, legacy_emails or {})
-            if pinned is None and author['id'] != self.bot['id']:
-                authors[commit] = author
-            translated[commit] = self.git.rebuild(commit, destination_parents, author)
-            if preview:
-                print(f'{commit} | {"bot" if author["username"] == self.bot["username"] else "mapped"}')
-        return translated[commits[-1]], len(graph), authors
-
     def import_batch(self, store, progress, batch, master, github_pull, *, previous, check, alignment=False):
         source = batch[-1]
         original = self.source_pr(github_pull)
@@ -440,21 +411,25 @@ class Bridge:
         if original is not None:
             kind = 'bot' if creator['id'] == self.bot['id'] else 'mapped'
             print(f'GitHub PR #{github_pull} | PR creator {kind}')
-        head, count, authors = self.rebuild(batch, master, preview=check, alignment=alignment)
+        plan = plan_import(self, store, batch, master, original=original, preview=check, alignment=alignment)
         if check:
             if original is not None:
                 roots, skipped, replies = first_comments(self.github_api, github_pull)
                 print(f'REVIEW preview | {len(roots)} candidate roots, {skipped} without a supported line, '
                       f'{replies} replies ignored')
-            return head, count
+            return plan.preview_master(self, master, source), plan.count
+        head = plan.head
         branch = f'bridge/github-{source[:12]}-{head[:20]}'
         pending = {'source': source, 'previous': previous, 'head': head, 'branch': branch, 'github_pull': github_pull,
                    'creator': creator, 'alignment': alignment, 'base': master}
-        pending['authors'] = authors
+        pending['authors'] = plan.authors
+        if plan.topic_parents is not None:
+            pending['topic_parents'] = plan.topic_parents
+            pending['native_merge'] = plan.native_merge
         progress = {**progress, 'pending': pending}
         store.save(progress)
         self.git.stage(self.target, branch, head)
-        return self.finish_pull(store, progress, original), count
+        return self.finish_pull(store, progress, original), plan.count
 
     def resume(self, store, progress, master, *, check):
         pending = progress['pending']
@@ -478,9 +453,12 @@ class Bridge:
             # Rebuild with the historic signatures and compare the entire DAG hash.
             self.git.ensure_commit(self.target, pending['head'])
             pinned = self.git.staged_authors(batch[0], source, pending['head'])
-        expected, count, _ = self.rebuild(batch, master, preview=check, alignment=alignment,
-                                          pinned=pinned, legacy_emails=pending.get('member_emails'))
-        if expected != pending['head']:
+        native = pending.get('native_merge', False)
+        plan = plan_import(self, store, batch, master, topic_parents=pending.get('topic_parents'), try_native=native,
+                           preview=check, alignment=alignment, pinned=pinned, legacy_emails=pending.get('member_emails'))
+        base_changed = 'topic_parents' in pending and pending['base'] != master
+        if (plan.head != pending['head'] or plan.native_merge != native
+                or (base_changed and not native and self.git.merge_tree(master, plan.head) != self.git.tree(source))):
             if number is not None:
                 pull = self.target_api.call('GET', f'/pulls/{number}')
                 if pull.get('state') != 'closed' or pull.get('merged_at'):
@@ -489,12 +467,17 @@ class Bridge:
                                      previous=progress['cursor'], check=check, alignment=alignment)
         if check:
             ref = self.git.tip(self.target, self.git.branch_ref(pending['branch']))
-            if ref != expected and (ref is not None or number is not None):
+            if ref != plan.head and (ref is not None or number is not None):
                 raise BridgeError('The destination sync branch differs from the prepared commits')
-            return expected, count
+            return plan.preview_master(self, master, source), plan.count
+        if base_changed:
+            # The identical staged head still merges cleanly to the pinned source tree on the new base.
+            pending = {**pending, 'base': master}
+            progress = {**progress, 'pending': pending}
+            store.save(progress)
         if number is None:
-            self.git.stage(self.target, pending['branch'], expected)
-        return self.finish_pull(store, progress, original, number), count
+            self.git.stage(self.target, pending['branch'], plan.head)
+        return self.finish_pull(store, progress, original, number), plan.count
 
     def align(self, store, progress, revision, master, *, check):
         if self.git.tree(master) == self.git.tree(revision):
@@ -551,6 +534,7 @@ class Bridge:
 
         def confirm(revision, destination):
             confirmed = checkpoint(revision, destination)
+            store.confirmed_masters[revision] = destination
             if not check:
                 store.save(confirmed)
             return confirmed
