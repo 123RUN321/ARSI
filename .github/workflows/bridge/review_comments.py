@@ -43,6 +43,7 @@ class SourceComment:
     candidate: dict | None = None  # A single RIGHT line still needs matching source and target diffs.
     reply_to: str | None = None
     reply_path: str | None = None
+    orphaned: bool = False
 
 
 def source_comment(row, prefix, body, candidate=None, *, reply_to=None):
@@ -71,6 +72,15 @@ def markdown_path(path):
 
 def located_body(row, label=''):
     return f'> {markdown_path(row["path"])}{label}\n\n{row["body"]}'
+
+
+def quoted_reply_body(item, root_note_id=None):
+    header = '> 回复'
+    if item.reply_path:
+        header += ' ' + markdown_path(item.reply_path)
+    elif root_note_id is not None:
+        header += ' #' + root_note_id
+    return f'{header}\n\n{item.body}'
 
 
 def outdated_body(row):
@@ -149,9 +159,8 @@ def order_comments(comments, records):
                 raise BridgeError(f'Cyclic GitHub review reply at comment {item.key}')
             seen.add(parent)
             parent = replies[parent].reply_to
-        if parent not in roots and parent not in records and item.key not in records:
-            raise BridgeError(f'GitHub reply {item.key} has no published root or saved receipt for {parent}')
         item.reply_to = parent
+        item.orphaned = parent not in roots and parent not in records
 
     # If timestamps tie or a reply predates its root, release the root first, then the replies in source order.
     def order(item):
@@ -192,7 +201,9 @@ def plan_comments(bridge, number, comments, target_path):
     target = review_files(bridge.target_api, target_path, paths, destination=True) if paths and target_path else {}
     for item in comments:
         row = item.candidate
-        if item.reply_to is not None:
+        if item.orphaned:
+            yield item, 'pr', {'body': quoted_reply_body(item)}
+        elif item.reply_to is not None:
             yield item, 'reply', {'body': item.body}
         elif row is None:
             yield item, 'pr', {'body': item.body}
@@ -377,9 +388,8 @@ class CommentDelivery:
             if (pull.get('state') not in ('open', 'opened', 'reopen', 'reopened')
                     or pull.get('merged_at') or pull.get('merged')):
                 raise
-            location = markdown_path(item.reply_path) if item.reply_path else '#' + intent['root_note_id']
             self.post(item.key, {'kind': 'pr', 'account': intent['account'],
-                                 'payload': {'body': f'> 回复 {location}\n\n{item.body}'}})
+                                 'payload': {'body': quoted_reply_body(item, intent['root_note_id'])}})
 
     def recover(self):
         # Recover an interrupted write even if GitHub has since edited or removed the source comment.

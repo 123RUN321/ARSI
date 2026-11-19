@@ -130,13 +130,29 @@ class SourceTests(unittest.TestCase):
                                                                   ('4', '3'), ('11', '2')]])
         self.assertEqual(count, 5)
 
-    def test_absent_root_needs_a_bare_receipt_and_cyclic_links_stop(self):
-        self.rows['/pulls/5/comments'] = [root(2, 1, in_reply_to_id=1)]
-        with self.assertRaisesRegex(BridgeError, 'no published root'):
-            read_comments(self.source, 5, {'issue:1': '100', 'review:1': '101'})
-        items, _ = read_comments(self.source, 5, {'1': '102'})
-        self.assertEqual([(item.key, item.reply_to) for item in items], [('2', '1')])
-        self.rows['/pulls/5/comments'].append(root(1, 1, in_reply_to_id=2))
+    def test_missing_root_uses_quoted_pr_comments_unless_its_bare_receipt_exists(self):
+        self.rows['/pulls/5/comments'] = [root(3, 2, in_reply_to_id=2, path=None),
+                                         root(2, 1, in_reply_to_id=1, path='dir/a`b.py')]
+        other_records = {'issue:1': '100', 'review:1': '101'}
+
+        def plan(records):
+            items, count = read_comments(self.source, 5, records)
+            self.assertEqual(count, 2)
+            planned = plan_comments(self.bridge, 5, items, '/pulls/24')
+            return [(item.key, kind, payload) for item, kind, payload in planned]
+
+        self.assertEqual(plan(other_records), [('2', 'pr', {'body': '> 回复 ``dir/a`b.py``\n\n' + RAW}),
+                                               ('3', 'pr', {'body': '> 回复\n\n' + RAW})])
+        self.assertEqual(plan({**other_records, '1': '102'}), [('2', 'reply', {'body': RAW}),
+                                                               ('3', 'reply', {'body': RAW})])
+        with redirect_stdout(io.StringIO()) as output:
+            preview_comments(self.bridge, 5, records=other_records)
+        self.assertIn('pr_comment=2', output.getvalue())
+        self.assertIn('thread replies=0', output.getvalue())
+        self.target.call.assert_not_called()
+
+    def test_cyclic_reply_links_stop(self):
+        self.rows['/pulls/5/comments'] = [root(2, 1, in_reply_to_id=1), root(1, 1, in_reply_to_id=2)]
         with self.assertRaisesRegex(BridgeError, 'Cyclic'):
             read_comments(self.source, 5)
 
@@ -296,6 +312,12 @@ class ThreadReceiptTests(unittest.TestCase):
         if self.root['comment_type'] == 'diff_comment':
             self.details[str(oid)]['position'] = {'new_path': 'file.py', 'new_line': 8}
 
+    def add_member_pr_comment(self, oid, body):
+        note = {'id': oid, 'discussion_id': 'ordinary', 'comment_type': 'pr_comment', 'body': body,
+                'user': {'id': MEMBER['id'], 'login': MEMBER['username']}}
+        self.roots.append(note)
+        self.details[str(oid)] = dict(note, user={'id': 'internal', 'login': MEMBER['username']})
+
     def deliver(self):
         with redirect_stdout(io.StringIO()):
             CommentDelivery(self.bridge, self.store, '/pulls/24').run({'number': 5})
@@ -409,10 +431,7 @@ class ThreadReceiptTests(unittest.TestCase):
                 self.assertEqual(payload, {'body': RAW})
                 raise ApiError('gitcode', 405)
             self.assertEqual((method, path, payload), ('POST', '/pulls/24/comments', {'body': fallback}))
-            note = {'id': 124, 'discussion_id': 'ordinary', 'comment_type': 'pr_comment', 'body': fallback,
-                    'user': {'id': MEMBER['id'], 'login': MEMBER['username']}}
-            self.roots.append(note)
-            self.details['124'] = dict(note, user={'id': 'internal', 'login': MEMBER['username']})
+            self.add_member_pr_comment(124, fallback)
             raise BridgeError('lost response')
 
         self.member.call.side_effect = publish
@@ -425,6 +444,34 @@ class ThreadReceiptTests(unittest.TestCase):
         self.deliver()
         self.assertEqual(self.store.review_comments['24']['8'], '124')
         self.assertEqual(self.member.call.call_count, 2)
+
+    def test_orphan_recovers_a_single_top_level_comment_under_its_bare_id(self):
+        del self.store.review_comments['24']['7']
+        expected = '> 回复 `file.py`\n\n' + RAW
+
+        def publish(method, path, payload):
+            self.assertEqual((method, path, payload), ('POST', '/pulls/24/comments', {'body': expected}))
+            self.add_member_pr_comment(124, expected)
+            raise BridgeError('lost response')
+
+        self.member.call.side_effect = publish
+        with self.assertRaisesRegex(BridgeError, 'lost response'):
+            self.deliver()
+        saved = self.store.review_comments['24']['8']
+        self.assertEqual((saved['kind'], saved['account'], saved['payload']), ('pr', MEMBER, {'body': expected}))
+        self.source[0]['body'] = 'edited upstream'
+        self.deliver()
+        self.deliver()
+        self.assertEqual(self.store.review_comments['24'], {'issue:8': '110', 'review:8': '111', '8': '124'})
+        self.member.call.assert_called_once()
+
+    def test_missing_source_root_with_an_unconfirmed_write_pauses_before_posting(self):
+        self.store.review_comments['24']['7'] = {'kind': 'pr', 'account': MEMBER, 'before': [],
+                                                 'payload': {'body': 'unconfirmed root'}}
+        with self.assertRaisesRegex(BridgeError, 'unconfirmed write'):
+            self.deliver()
+        self.member.call.assert_not_called()
+        self.assertNotIn('8', self.store.review_comments['24'])
 
     def test_ineligible_thread_or_uncertain_failure_does_not_create_a_top_level_comment(self):
         for kind, pull, status in [('diff_comment', {'state': 'open'}, 501),
