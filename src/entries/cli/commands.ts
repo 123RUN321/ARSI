@@ -1,11 +1,15 @@
 import { statSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { aborted } from 'node:util';
 import { Argument, Command, InvalidArgumentError } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
+import type { RevisionApplication } from '../../runtime/revisions/application.js';
 import { checkRecipe } from './doctor.js';
+import {
+  ensurePluginHome,
+  withRuntime,
+  type CommandContext,
+} from './runtime.js';
 
 export class CommandUsageError extends Error {
   constructor(
@@ -16,24 +20,9 @@ export class CommandUsageError extends Error {
   }
 }
 
-export interface CommandContext {
-  signal: AbortSignal;
-  openRuntime(pluginDirectories: string[]): Promise<Runtime>;
-  disposeRuntime(): Promise<{ exitCode: 0 } | { exitCode: 1; error: unknown }>;
-}
-
 interface CommandResult {
   exitCode: number;
   stdout?: string;
-}
-
-async function ensurePluginHome(): Promise<void> {
-  await mkdir(join(homedir(), '.arsi', 'plugins'), { recursive: true });
-}
-
-function requiredRevisionId(id: string): string {
-  if (!id) throw new Error('Revision ID is required');
-  return id;
 }
 
 export async function runCommand(
@@ -74,12 +63,12 @@ export async function runCommand(
     exitCode,
     stdout: JSON.stringify(value, null, 2) + '\n',
   });
-  const withRuntime = async (
+  const runJson = async (
     execute: (runtime: Runtime) => unknown,
   ): Promise<void> => {
-    await ensurePluginHome();
-    const runtime = await context.openRuntime(pluginDirectories());
-    result = jsonResult(await execute(runtime));
+    result = jsonResult(
+      await withRuntime(context.openRuntime, pluginDirectories(), execute),
+    );
   };
   program
     .command('run <recipe.yaml>')
@@ -91,15 +80,7 @@ export async function runCommand(
     .command('doctor <recipe.yaml>')
     .description('Check experiment configuration and runtime prerequisites')
     .option('--static', 'Check configuration and declared local paths only')
-    .action(async (file: string, options: { static?: boolean }) => {
-      const report = await checkRecipe(
-        file,
-        options.static ?? false,
-        pluginDirectories(),
-        context,
-      );
-      result = jsonResult(report, report.summary.failed > 0 ? 1 : 0);
-    });
+    .action(runDoctor);
   program
     .command('list')
     .description('List experiments, plugins, or policies')
@@ -115,45 +96,20 @@ export async function runCommand(
   program
     .command('show <experiment-id>')
     .description('Show an experiment')
-    .action((id: string) => withRuntime(({ manager }) => manager.get(id)));
+    .action((id: string) => runJson(({ manager }) => manager.get(id)));
   program
     .command('cancel <experiment-id>')
     .description('Cancel an experiment')
-    .action((id: string) =>
-      withRuntime(async ({ manager }) => {
-        await manager.cancel(id);
-        return { id, cancellationRequested: true };
-      }),
-    );
-  const reflection = program
-    .command('reflection')
-    .description('Inspect and apply reflection revisions');
-  reflection
-    .command('list [experiment-id]')
-    .description('List reflection revisions')
-    .action((id: string | undefined) =>
-      withRuntime(({ manager }) => manager.reflection().list(id || undefined)),
-    );
-  reflection
-    .command('show <revisionID>')
-    .description('Show reflection revisions')
-    .action((id: string) =>
-      withRuntime(({ manager }) =>
-        manager.reflection().show(requiredRevisionId(id)),
-      ),
-    );
-  reflection
-    .command('apply <revisionID>')
-    .description('Apply reflection revisions')
-    .action((id: string) =>
-      withRuntime(({ manager }) =>
-        manager.reflection().apply(requiredRevisionId(id)),
-      ),
-    );
+    .action(cancelExperiment);
+  registerReflectionCommands(
+    program
+      .command('reflection')
+      .description('Inspect and apply reflection revisions'),
+  );
   program
     .command('catalog')
     .description('Show registered contracts, plugins, and policies')
-    .action(() => withRuntime(({ registry }) => registry.catalog()));
+    .action(() => runJson(({ registry }) => registry.catalog()));
   program
     .command('dashboard')
     .description('Start the dashboard on localhost')
@@ -176,13 +132,26 @@ export async function runCommand(
     cmd: Command,
   ): Promise<void> {
     if (resume && !id) cmd.error('--resume requires --id');
-    return withRuntime(({ manager }) =>
+    return runJson(({ manager }) =>
       manager.run(resolve(file), { id, resume, signal: context.signal }),
     );
   }
 
+  async function runDoctor(
+    file: string,
+    options: { static?: boolean },
+  ): Promise<void> {
+    const report = await checkRecipe(
+      file,
+      options.static ?? false,
+      pluginDirectories(),
+      context,
+    );
+    result = jsonResult(report, report.summary.failed > 0 ? 1 : 0);
+  }
+
   function list(kind: string | undefined): Promise<void> {
-    return withRuntime(async ({ manager, registry }) => {
+    return runJson(async ({ manager, registry }) => {
       if (!kind) return manager.list();
       const { describeCatalog } = await import('./catalog.js');
       const catalog = await describeCatalog(registry);
@@ -190,6 +159,43 @@ export async function runCommand(
         ? catalog.plugins
         : catalog.policies;
     });
+  }
+
+  function cancelExperiment(id: string): Promise<void> {
+    return runJson(async ({ manager }) => {
+      await manager.cancel(id);
+      return { id, cancellationRequested: true };
+    });
+  }
+
+  function registerReflectionCommands(command: Command): void {
+    function forRevision(
+      execute: (
+        revisions: RevisionApplication,
+        id?: string,
+      ) => Promise<unknown>,
+    ): (id?: string) => Promise<void> {
+      return (id) =>
+        runJson(({ manager }) => execute(manager.reflection(), id));
+    }
+
+    function requireId(id?: string): string {
+      if (!id) throw new Error('Revision ID is required');
+      return id;
+    }
+
+    command
+      .command('list [experiment-id]')
+      .description('List reflection revisions')
+      .action(forRevision((revisions, id) => revisions.list(id || undefined)));
+    command
+      .command('show <revisionID>')
+      .description('Show reflection revisions')
+      .action(forRevision((revisions, id) => revisions.show(requireId(id))));
+    command
+      .command('apply <revisionID>')
+      .description('Apply reflection revisions')
+      .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
   }
 
   async function startDashboard({ port }: { port: number }): Promise<void> {

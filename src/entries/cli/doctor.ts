@@ -1,6 +1,6 @@
 import type { DoctorReport } from '../../contracts/index.js';
 import type { Runtime } from '../../runtime/context.js';
-import type { CommandContext } from './commands.js';
+import type { CommandContext } from './runtime.js';
 
 export async function checkRecipe(
   file: string,
@@ -26,7 +26,7 @@ export async function checkRecipe(
     signal.throwIfAborted();
     return doctorFailure('doctor.runtime', error);
   });
-  const disposal = await disposeRuntime();
+  const disposal = await disposeRuntime({ reportToStderr: false });
   if (disposal.exitCode === 1) {
     signal.throwIfAborted();
     const cleanup = doctorFailure('runtime.cleanup', disposal.error);
