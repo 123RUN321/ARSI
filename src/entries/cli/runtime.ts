@@ -45,12 +45,3 @@ export function createCommandContext(
 export async function ensurePluginHome(): Promise<void> {
   await mkdir(join(homedir(), '.arsi', 'plugins'), { recursive: true });
 }
-
-export async function withRuntime(
-  openRuntime: CommandContext['openRuntime'],
-  pluginDirectories: string[],
-  execute: (runtime: Runtime) => unknown,
-): Promise<unknown> {
-  await ensurePluginHome();
-  return execute(await openRuntime(pluginDirectories));
-}

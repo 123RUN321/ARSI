@@ -4,11 +4,7 @@ import { aborted } from 'node:util';
 import { Argument, Command, InvalidArgumentError } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
-import {
-  ensurePluginHome,
-  withRuntime,
-  type CommandContext,
-} from './runtime.js';
+import { ensurePluginHome, type CommandContext } from './runtime.js';
 
 export class CommandUsageError extends Error {
   constructor(
@@ -65,9 +61,9 @@ export async function runCommand(
   const runJson = async (
     execute: (runtime: Runtime) => unknown,
   ): Promise<void> => {
-    result = jsonResult(
-      await withRuntime(context.openRuntime, pluginDirectories(), execute),
-    );
+    await ensurePluginHome();
+    const runtime = await context.openRuntime(pluginDirectories());
+    result = jsonResult(await execute(runtime));
   };
   program
     .command('run <recipe.yaml>')
