@@ -74,10 +74,10 @@ def workflow_range():
     """A rerun reads the original event file and checkout revision."""
     event_name = os.environ['GITHUB_EVENT_NAME']
     after = sha(os.environ['GITHUB_SHA'])
-    if event_name in ('schedule', 'workflow_dispatch'):
+    if event_name == 'workflow_dispatch':
         return None, after
     if event_name != 'push':
-        raise BridgeError('Expected a push, schedule or workflow_dispatch event')
+        raise BridgeError('Expected a push or workflow_dispatch event')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8'))
     if event['ref'] != os.environ['GITHUB_REF'] or event['after'] != after or event.get('deleted'):
         raise BridgeError('Push ref and after must match the checked-out revision')
