@@ -19,7 +19,7 @@ This guide explains how to subscribe to built-in events, publish custom events, 
 
 ## 2. Built-in events
 
-The framework publishes built-in events at the execution points below. Plugins subscribe to them directly. The tables document every field of the listener's first argument, `event`: each event contains its group's common parameters plus the event-specific parameters listed in its row. Fields are required unless marked with `?`; `?` means a field may be omitted, while `string | null` means the field is present but may hold `null`. All fields are read-only; see the [event contract](../../../src/contracts/runtime/events.ts) for the type definitions.
+The framework publishes the lifecycle and fact notifications below for plugins to subscribe to. Agent conversation observation uses the separate call-local path described below. The tables document every field of the listener's first argument, `event`: each event contains its group's common parameters plus the event-specific parameters listed in its row. Fields are required unless marked with `?`; `?` means a field may be omitted, while `string | null` means the field is present but may hold `null`. All fields are read-only; see the [event contract](../../../src/contracts/runtime/events.ts) for the type definitions.
 
 Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `(event, next, ctx)`. `ctx` is the current listener's `RuntimeContext`; `next: () => Promise<CallDecision>` continues subsequent listeners and returns the admission decision, as described in [Subscribe to built-in events](#3-subscribe-to-built-in-events). Neither `ctx` nor `next` is a field of `event`.
 
@@ -64,6 +64,34 @@ Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `
 | `rsi/call-failed`    | After the failure receipt is saved, before reporting the original call error.                   | `parallel`  | None.                                                                                                             |
 | `rsi/call-cancelled` | After the cancellation receipt is saved, before reporting cancellation.                         | `parallel`  | None.                                                                                                             |
 | `rsi/call-unknown`   | After a receipt is saved for a call whose outcome is unconfirmed.                               | `parallel`  | None.                                                                                                             |
+
+### Agent conversation observation (optional)
+
+Agent backends can publish `rsi/agent-observation` through the **current `execute(input, ctx)` context** as native messages, tool activity, usage, or child sessions become available. CLI adapters decode native output before publishing; the CLI itself does not publish Runtime events.
+
+| Field     | Type                                                       | Meaning                                                                                         |
+| --------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `runId`   | `string`                                                   | Run identifier within this call; use `main` for the main Agent and distinct IDs for child runs. |
+| `native?` | `{ sessionId?: string; turnId?: string; itemId?: string }` | Optional identifiers from the native backend.                                                   |
+| `event`   | `AgentEvent`                                               | Normalized message, tool, usage, run/session lifecycle, or observation-gap data.                |
+
+The [Agent observation protocol](../../../src/contracts/models/agent-record.ts) defines the event variants and their fields. For example, publish a completed message:
+
+```ts
+ctx.event.emit("rsi/agent-observation", {
+  runId: "main",
+  event: {
+    type: "message.completed",
+    messageId: "message-1",
+    role: "assistant",
+    text: "Read the candidate file.",
+  },
+});
+```
+
+This event is consumed synchronously by the framework's call-local recorder for Dashboard and evidence queries; it is not broadcast to ordinary `ctx.event.on(...)` listeners. Use `emit` on the current execution context, rather than a retained factory context or another dispatch mode.
+
+Publishing is optional: Agent plugins keep their existing `execute`/`dispose` contract without trace adaptation. Manager receipts still record call input, output, and status, but cannot reconstruct internal conversations. Invalid observations become coverage gaps; record creation or append failure disables further recording for that call, and close failures are ignored. These observation failures do not cancel execution or replace its result/error; execution cancellation and output validation remain effective.
 
 ### Policy execution
 
