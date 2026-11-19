@@ -175,6 +175,8 @@ function parseMetric(raw: unknown): MetricObservation {
 function parseMeasurement(raw: unknown): MeasurementSummary {
   const data = record(raw);
   return {
+    diagnosticsRef:
+      data.diagnosticsRef === undefined ? null : nullable(data.diagnosticsRef),
     ref: text(data.ref),
     candidateRef: text(data.candidateRef),
     callId: text(data.callId),

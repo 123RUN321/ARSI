@@ -1,4 +1,5 @@
 import { MeasurementMetrics } from './measurement-metrics';
+import { MeasurementDiagnostics } from './measurement-diagnostics';
 import { ItemResults } from './item-results';
 import { metricValue, primaryMetric, metricLabel } from './measurement-score';
 import { scoreLabel } from './record-identifiers';
@@ -292,6 +293,10 @@ export function Measurements({
                 </CardHeader>
                 <CardContent>
                   <MeasurementMetrics metrics={measurement.metrics} />
+                  <MeasurementDiagnostics
+                    id={id}
+                    diagnosticsRef={measurement.diagnosticsRef}
+                  />
                   <h3>Item results</h3>
                   <Feedback {...taskRecords} />
                   {taskRecords.data ? (
