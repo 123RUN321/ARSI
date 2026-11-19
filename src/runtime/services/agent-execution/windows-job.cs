@@ -34,6 +34,10 @@ public static class RsiAgentJob {
     public ushort ShowWindow, ReservedSize;
     public IntPtr ReservedBytes, Input, Output, Error;
   }
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct StartupEx {
+    public Startup Info;
+    public IntPtr Attributes;
+  }
   [StructLayout(LayoutKind.Sequential)] struct ProcessInfo {
     public IntPtr Process, Thread;
     public uint ProcessId, ThreadId;
@@ -41,11 +45,12 @@ public static class RsiAgentJob {
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr attributes, string name);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job, int kind, ref ExtendedLimits limits, uint size);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool QueryInformationJobObject(IntPtr job, int kind, out Accounting accounting, uint size, IntPtr returned);
-  [DllImport("kernel32.dll", SetLastError=true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, uint flags, ref IntPtr size);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, IntPtr attribute, IntPtr value, IntPtr size, IntPtr previous, IntPtr returned);
+  [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateJobObject(IntPtr job, uint code);
-  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool CreateProcess(string application, StringBuilder command, IntPtr processAttributes, IntPtr threadAttributes, bool inherit, uint flags, IntPtr environment, string directory, ref Startup startup, out ProcessInfo process);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool CreateProcess(string application, StringBuilder command, IntPtr processAttributes, IntPtr threadAttributes, bool inherit, uint flags, IntPtr environment, string directory, ref StartupEx startup, out ProcessInfo process);
   [DllImport("kernel32.dll", SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
-  [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateProcess(IntPtr process, uint code);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr process, out uint code);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
   [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int kind);
@@ -70,21 +75,31 @@ public static class RsiAgentJob {
     IntPtr job = CreateJobObject(IntPtr.Zero, null);
     if (job == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
     ProcessInfo child = new ProcessInfo();
-    bool assigned = false;
+    IntPtr attributes = IntPtr.Zero, jobs = IntPtr.Zero;
+    bool initialized = false;
     try {
       ExtendedLimits limits = new ExtendedLimits();
       limits.Basic.Flags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE only.
       Check(SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf(typeof(ExtendedLimits))));
-      Startup startup = new Startup();
-      startup.Size = (uint)Marshal.SizeOf(typeof(Startup));
-      startup.Flags = 0x100; // STARTF_USESTDHANDLES
-      startup.Input = GetStdHandle(-10); startup.Output = GetStdHandle(-11); startup.Error = GetStdHandle(-12);
-      foreach (IntPtr handle in new IntPtr[] { startup.Input, startup.Output, startup.Error }) Check(SetHandleInformation(handle, 1, 1));
+      IntPtr size = IntPtr.Zero;
+      InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
+      if (size == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+      attributes = Marshal.AllocHGlobal(size);
+      Check(InitializeProcThreadAttributeList(attributes, 1, 0, ref size));
+      initialized = true;
+      jobs = Marshal.AllocHGlobal(IntPtr.Size);
+      Marshal.WriteIntPtr(jobs, job);
+      // PROC_THREAD_ATTRIBUTE_JOB_LIST assigns the job atomically at creation.
+      Check(UpdateProcThreadAttribute(attributes, 0, new IntPtr(0x0002000D), jobs, new IntPtr(IntPtr.Size), IntPtr.Zero, IntPtr.Zero));
+      StartupEx startup = new StartupEx();
+      startup.Info.Size = (uint)Marshal.SizeOf(typeof(StartupEx));
+      startup.Attributes = attributes;
+      startup.Info.Flags = 0x100; // STARTF_USESTDHANDLES
+      startup.Info.Input = GetStdHandle(-10); startup.Info.Output = GetStdHandle(-11); startup.Info.Error = GetStdHandle(-12);
+      foreach (IntPtr handle in new IntPtr[] { startup.Info.Input, startup.Info.Output, startup.Info.Error }) Check(SetHandleInformation(handle, 1, 1));
       StringBuilder command = new StringBuilder(Quote(executable));
       foreach (string arg in args) command.Append(" ").Append(Quote(arg));
-      Check(CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, true, 0x08000004, IntPtr.Zero, null, ref startup, out child));
-      Check(AssignProcessToJobObject(job, child.Process));
-      assigned = true;
+      Check(CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, true, 0x08080004, IntPtr.Zero, null, ref startup, out child));
       if (ResumeThread(child.Thread) == UInt32.MaxValue) throw new Win32Exception(Marshal.GetLastWin32Error());
       if (WaitForSingleObject(child.Process, UInt32.MaxValue) != 0) throw new Win32Exception(Marshal.GetLastWin32Error());
       uint code; Check(GetExitCodeProcess(child.Process, out code));
@@ -97,7 +112,9 @@ public static class RsiAgentJob {
       }
       throw new InvalidOperationException("Agent job cleanup could not be confirmed");
     } finally {
-      if (!assigned && child.Process != IntPtr.Zero) TerminateProcess(child.Process, 125);
+      if (initialized) DeleteProcThreadAttributeList(attributes);
+      if (attributes != IntPtr.Zero) Marshal.FreeHGlobal(attributes);
+      if (jobs != IntPtr.Zero) Marshal.FreeHGlobal(jobs);
       if (child.Thread != IntPtr.Zero) CloseHandle(child.Thread);
       if (child.Process != IntPtr.Zero) CloseHandle(child.Process);
       CloseHandle(job);

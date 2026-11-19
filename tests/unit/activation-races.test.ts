@@ -180,7 +180,6 @@ test('restored activation publishes its binding and revision together to existin
       worker: {
         plugin: 'activation.worker',
         config: { version: 2 },
-        execution: { timeoutMs: 1000 },
       },
     },
     revisions: { worker: 'revision-restored' },
@@ -192,7 +191,6 @@ test('restored activation publishes its binding and revision together to existin
       version: 2,
     });
     assert.equal(f.revisionRefs.worker, 'revision-restored');
-    assert.deepEqual(f.bindings.worker!.execution, { timeoutMs: 1000 });
     assert.deepEqual(f.notifications, []);
     assert.deepEqual(f.created, [2]);
   } finally {

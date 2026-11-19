@@ -19,12 +19,10 @@ export type {
 export type {
   Binding,
   BindingDeclaration,
-  ExecutionOptions,
   Recipe,
   RecipeDeclaration,
 } from './recipe.js';
 export {
-  executionOptionsSchema,
   bindingDeclarationSchema,
   recipeDeclarationSchema,
 } from './recipe.js';

@@ -1,8 +1,10 @@
+import { withAgentExecutionTimeout } from '../shared/agent-timeout.js';
 import { randomUUID } from 'node:crypto';
 import type {
   AgentInput,
   AgentOutput,
   OperationDefinition,
+  Operation,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
 
@@ -27,7 +29,7 @@ export const createAgentPi: OperationDefinition<
   );
   if (config.maxTokens !== undefined && config.maxTokens > config.contextWindow)
     throw new Error('agent.pi maxTokens must not exceed contextWindow');
-  return {
+  const operation: Operation<AgentInput, AgentOutput> = {
     async execute(request, context) {
       async function runTask(
         task: PiTask,
@@ -77,4 +79,5 @@ export const createAgentPi: OperationDefinition<
     },
     async dispose() {},
   };
+  return withAgentExecutionTimeout(operation, config.executionTimeoutMs);
 };

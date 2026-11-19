@@ -121,9 +121,9 @@ test('Pi exhausts request retries while Memory and Reflection retain effective s
       bindings: {
         agent: {
           plugin: piDefinition.id,
-          execution: { timeoutMs: 15000 },
           config: {
             model: 'fixture',
+            executionTimeoutMs: 15000,
             base_url: `http://127.0.0.1:${address.port}/v1`,
             api_key: '${RSI_OPTIONAL_UPDATES_TEST_KEY}',
             retries: 3,

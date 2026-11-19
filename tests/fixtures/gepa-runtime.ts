@@ -719,9 +719,9 @@ export async function runGepa(options: {
         [bindingNames.agent]: options.realAgentEndpoint
           ? {
               plugin: 'agent.pi',
-              execution: { timeoutMs: 30000 },
               config: {
                 model: 'fixture',
+                executionTimeoutMs: 30000,
                 base_url: options.realAgentEndpoint,
                 api_key: '${GEPA_LOCAL_FIXTURE_KEY}',
                 maxTokens: 4096,

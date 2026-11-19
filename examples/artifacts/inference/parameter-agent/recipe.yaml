@@ -27,7 +27,7 @@ policy:
 bindings:
   agent:
     plugin: agent.codex
-    execution: { timeoutMs: 120000 }
+    config: { timeoutMs: 120000 }
   proposer:
     plugin: proposer.agent
     config:

@@ -1,3 +1,4 @@
+import { withAgentExecutionTimeout } from '../shared/agent-timeout.js';
 import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import { writeFile, rm } from 'node:fs/promises';
@@ -6,6 +7,7 @@ import type {
   AgentInput,
   AgentOutput,
   OperationDefinition,
+  Operation,
 } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
 import { parseConfig } from '../../shared/schema.js';
@@ -24,7 +26,7 @@ export const createAgentDsh: OperationDefinition<
     rawConfig,
     'agent.dsh config',
   );
-  return {
+  const operation: Operation<AgentInput, AgentOutput> = {
     async execute(request, context) {
       if (request.role !== undefined)
         throw new Error('For DSH role delegation, use native subagents');
@@ -108,4 +110,5 @@ export const createAgentDsh: OperationDefinition<
     },
     async dispose() {},
   };
+  return withAgentExecutionTimeout(operation, config.timeoutMs);
 };

@@ -680,7 +680,7 @@ try {
  await writeFile(recipePath,JSON.stringify({
   schemaVersion:'rsi.recipe/v1',id:'consumer.recipe',application:{plugin:'consumer.application',config:{}},
   policy:{id:'consumer.policy',config:{},input:{}},budget:{operations:10,elapsedWallMs:10000},
-  bindings:{worker:{plugin:'consumer.worker',config:{},execution:{timeoutMs:5000}},unused:{plugin:'consumer.worker',config:{}}}
+  bindings:{worker:{plugin:'consumer.worker',config:{}},unused:{plugin:'consumer.worker',config:{}}}
  }));
  const experiment=await runtime.manager.run(recipePath,{id:'consumer.experiment'});
  assert.equal(experiment.status,'succeeded');assert.equal(experiment.recipeId,'consumer.recipe');
@@ -710,9 +710,8 @@ console.log('Installed resources and managed ctx.event subscriptions, publishing
     `
 import type { Context, Events } from '@deepseek-ai/cordis';
 import { Registry } from 'arsi';
-import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput, type ExecutionOptions, type BindingDeclaration } from 'arsi/contracts';
-export const bindingExecution: ExecutionOptions = { timeoutMs: 5000 };
-export const configuredBinding: BindingDeclaration = { plugin: 'consumer.worker', config: {}, execution: bindingExecution };
+import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput, type BindingDeclaration } from 'arsi/contracts';
+export const configuredBinding: BindingDeclaration = { plugin: 'consumer.worker', config: {} };
 declare module 'arsi/contracts' {
  interface RuntimeContext { traceId?: string; }
 }

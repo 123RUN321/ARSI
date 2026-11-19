@@ -114,65 +114,6 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
   }
 });
 
-test('Runtime applies a binding deadline to an ordinary Agent with a strict plugin Schema', async () => {
-  let executions = 0;
-  const agent: OperationDefinition = {
-    id: 'test.deadline-agent',
-    contract: agentContract,
-    configSchema: { type: 'object', additionalProperties: false },
-    async create(config) {
-      assert.deepEqual(config, {});
-      return {
-        async execute(_input, context) {
-          executions++;
-          await new Promise<void>((resolve) =>
-            context.signal.addEventListener('abort', () => resolve(), {
-              once: true,
-            }),
-          );
-          return { late: true };
-        },
-        async dispose() {},
-      };
-    },
-  };
-  const fixture = await managerFixture(
-    async (context) => {
-      const cwd = await prepareAgentProject(context, 'test', {}, [], []);
-      const scope = context.extend({
-        scope: { id: 'deadline', limits: {}, signal: context.signal },
-      });
-      await assert.rejects(
-        scope.invokeAgent('agent', {
-          goal: 'deadline',
-          cwd,
-          outputSchema: { type: 'object' },
-        }),
-        /execution timed out/,
-      );
-      assert.equal(context.signal.aborted, false);
-      const receipt = (await context.facts.list('calls')).find(
-        (call) => call.pluginId === agent.id,
-      )!;
-      assert.equal(receipt.status, 'failed');
-      assert.equal(receipt.output, undefined);
-      return {};
-    },
-    {
-      plugins: [agent],
-      bindings: {
-        agent: { plugin: agent.id, config: {}, execution: { timeoutMs: 30 } },
-      },
-    },
-  );
-  try {
-    assert.equal((await fixture.run()).status, 'succeeded');
-    assert.equal(executions, 1);
-  } finally {
-    await fixture.dispose();
-  }
-});
-
 for (const status of ['failed', 'cancelled'] as const) {
   test(`an explicit resume after ${status} keeps separate conversations and payloads`, async () => {
     let executions = 0;

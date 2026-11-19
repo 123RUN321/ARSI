@@ -313,22 +313,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           }
         });
         const parentSignal = ctx.signal;
-        const deadline = new AbortController();
-        const timeout = binding.execution?.timeoutMs;
-        const timer =
-          timeout === undefined
-            ? undefined
-            : setTimeout(
-                () =>
-                  deadline.abort(
-                    new Error(`Call ${bindingId} execution timed out`),
-                  ),
-                timeout,
-              );
-        if (timeout !== undefined)
-          ctx = ctx.extend({
-            signal: AbortSignal.any([parentSignal, deadline.signal]),
-          });
         let output: JsonValue;
         let memoryFailed = false;
         try {
@@ -349,9 +333,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           if (decision.kind === 'reject')
             throw new Error(`Call admission rejected: ${decision.reason}`);
           output = checkedOutput(await lease.operation.execute(input, ctx));
-          // An expired local deadline rejects a late result. Parent cancellation
-          // still allows confirmed effects to settle into a reusable receipt.
-          deadline.signal.throwIfAborted();
           memoryFailed = isMemory && object(output).status === 'failed';
           if (
             !(await commit({
@@ -413,7 +394,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           }
           throw error;
         } finally {
-          clearTimeout(timer);
           childFailures.delete(callId);
           uncertain.delete(callId);
         }

@@ -89,8 +89,6 @@ bindings:
           roundTimeoutSeconds: 14400
   agent:
     plugin: agent.pi
-    execution:
-      timeoutMs: 1800000
     config:
       model: deepseek-v4.1-flash
       base_url: ${MODEL_ENDPOINT}
@@ -100,5 +98,6 @@ bindings:
       retries: 1
       retryBaseDelayMs: 1000
       timeoutMs: 600000
+      executionTimeoutMs: 1800000
 budget:
   elapsedWallMs: 86400000

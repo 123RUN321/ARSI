@@ -709,3 +709,16 @@ test('Pi compaction respects the shared budget and cancellation', async () => {
     await cancelled.close();
   }
 });
+
+test('Pi retains config.executionTimeoutMs separately from the model request timeout', async () => {
+  const f = await modelFixture([{ stall: true }], {
+    executionTimeoutMs: 50,
+    timeoutMs: 5000,
+  });
+  try {
+    await assert.rejects(f.run(), /execution timed out/);
+    assert.equal(f.controller.signal.aborted, false);
+  } finally {
+    await f.close();
+  }
+});

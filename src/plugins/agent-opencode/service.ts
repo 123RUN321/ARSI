@@ -1,7 +1,9 @@
+import { withAgentExecutionTimeout } from '../shared/agent-timeout.js';
 import type {
   AgentInput,
   AgentOutput,
   OperationDefinition,
+  Operation,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
 
@@ -22,7 +24,7 @@ export const createAgentOpenCode: OperationDefinition<
     rawConfig,
     'agent.opencode config',
   );
-  return {
+  const operation: Operation<AgentInput, AgentOutput> = {
     async execute(request, context) {
       if (request.role !== undefined)
         throw new Error(
@@ -40,4 +42,5 @@ export const createAgentOpenCode: OperationDefinition<
     },
     async dispose() {},
   };
+  return withAgentExecutionTimeout(operation, config.timeoutMs);
 };
