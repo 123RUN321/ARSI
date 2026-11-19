@@ -4,7 +4,7 @@ import {
   errorText,
   RuntimeCleanupInterruptedError,
 } from '../../shared/errors.js';
-import { CommandUsageError, runCommand } from './commands.js';
+import { runCommand } from './commands.js';
 import { createCommandContext, writeRuntimeCleanupError } from './runtime.js';
 
 async function main(argv: string[]): Promise<number> {
@@ -24,18 +24,12 @@ async function main(argv: string[]): Promise<number> {
     if (result.stdout !== undefined) process.stdout.write(result.stdout);
     exitCode = result.exitCode;
   } catch (error) {
-    if (error instanceof CommandUsageError) {
-      process.stderr.write(error.helpText);
-      exitCode = 2;
-    } else {
-      const interruptedCleanup =
-        error instanceof RuntimeCleanupInterruptedError;
-      process.stderr.write(
-        errorText(interruptedCleanup ? error.interruption : error) + '\n',
-      );
-      if (interruptedCleanup) writeRuntimeCleanupError(error.cause);
-      exitCode = controller.signal.aborted ? 130 : 1;
-    }
+    const interruptedCleanup = error instanceof RuntimeCleanupInterruptedError;
+    process.stderr.write(
+      errorText(interruptedCleanup ? error.interruption : error) + '\n',
+    );
+    if (interruptedCleanup) writeRuntimeCleanupError(error.cause);
+    exitCode = controller.signal.aborted ? 130 : 1;
   } finally {
     const cleanupExitCode = await context.disposeRuntime().finally(() => {
       process.removeListener('SIGINT', abort);

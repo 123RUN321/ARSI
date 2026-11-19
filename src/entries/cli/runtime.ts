@@ -1,6 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import type { Runtime } from '../../runtime/context.js';
 import { errorText } from '../../shared/errors.js';
 
@@ -42,8 +39,4 @@ export function createCommandContext(
 
 export function writeRuntimeCleanupError(error: unknown): void {
   process.stderr.write(`Failed to dispose runtime: ${errorText(error)}\n`);
-}
-
-export async function ensurePluginHome(): Promise<void> {
-  await mkdir(join(homedir(), '.arsi', 'plugins'), { recursive: true });
 }

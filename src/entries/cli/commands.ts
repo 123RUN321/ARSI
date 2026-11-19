@@ -1,19 +1,15 @@
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { aborted } from 'node:util';
-import { Argument, Command, InvalidArgumentError } from 'commander';
+import {
+  Argument,
+  Command,
+  InvalidArgumentError,
+  type CommanderError,
+} from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
-import { ensurePluginHome, type CommandContext } from './runtime.js';
-
-export class CommandUsageError extends Error {
-  constructor(
-    message: string,
-    readonly helpText: string,
-  ) {
-    super(message);
-  }
-}
+import type { CommandContext } from './runtime.js';
 
 interface CommandResult {
   exitCode: number;
@@ -25,23 +21,15 @@ export async function runCommand(
   context: CommandContext,
 ): Promise<CommandResult> {
   let result: { exitCode: number; json?: unknown } | undefined;
-  let help = '';
-  const helpRequested = new Error('Help requested');
-  const captureHelp = (text: string): void => {
-    help += text;
-  };
+  let commanderExit: CommanderError | undefined;
   const program = new Command('arsi')
     .description('Make everything rsi-able')
     .allowExcessArguments(false)
     .showHelpAfterError()
     .exitOverride((error) => {
-      if (error.exitCode === 0) throw helpRequested;
-      throw new CommandUsageError(
-        error.message,
-        help || program.helpInformation(),
-      );
+      commanderExit = error;
+      throw error;
     })
-    .configureOutput({ writeOut: captureHelp, writeErr: captureHelp })
     .option(
       '--plugin-dir <directory>',
       'Load extensions from a directory (repeatable)',
@@ -57,7 +45,6 @@ export async function runCommand(
   const runJson = async (
     execute: (runtime: Runtime) => unknown,
   ): Promise<void> => {
-    await ensurePluginHome();
     const runtime = await openRuntime();
     result = { exitCode: 0, json: await execute(runtime) };
   };
@@ -92,30 +79,21 @@ export async function runCommand(
     .command('cancel <experiment-id>')
     .description('Cancel an experiment')
     .action(cancelExperiment);
-  program
+  const reflection = program
     .command('reflection')
-    .description('Inspect and apply reflection revisions')
-    .addCommand(
-      new Command('list')
-        .copyInheritedSettings(program)
-        .argument('[experiment-id]')
-        .description('List reflection revisions')
-        .action(forRevision((revisions, id) => revisions.list(id))),
-    )
-    .addCommand(
-      new Command('show')
-        .copyInheritedSettings(program)
-        .argument('<revisionID>')
-        .description('Show reflection revisions')
-        .action(forRevision((revisions, id) => revisions.show(requireId(id)))),
-    )
-    .addCommand(
-      new Command('apply')
-        .copyInheritedSettings(program)
-        .argument('<revisionID>')
-        .description('Apply reflection revisions')
-        .action(forRevision((revisions, id) => revisions.apply(requireId(id)))),
-    );
+    .description('Inspect and apply reflection revisions');
+  reflection
+    .command('list [experiment-id]')
+    .description('List reflection revisions')
+    .action(forRevision((revisions, id) => revisions.list(id)));
+  reflection
+    .command('show <revisionID>')
+    .description('Show reflection revisions')
+    .action(forRevision((revisions, id) => revisions.show(requireId(id))));
+  reflection
+    .command('apply <revisionID>')
+    .description('Apply reflection revisions')
+    .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
   program
     .command('catalog')
     .description('Show registered contracts, plugins, and policies')
@@ -194,7 +172,6 @@ export async function runCommand(
   }
 
   async function startDashboard({ port }: { port: number }): Promise<void> {
-    await ensurePluginHome();
     if (!statSync('.rsi', { throwIfNoEntry: false })?.isDirectory())
       throw new Error(
         'Dashboard requires a .rsi directory in the current working directory. Run it from your experiment workspace.',
@@ -215,9 +192,8 @@ export async function runCommand(
   try {
     await program.parseAsync(argv.length ? argv : ['--help'], { from: 'user' });
   } catch (error) {
-    if (error !== helpRequested) throw error;
-    await ensurePluginHome();
-    return { exitCode: 0, stdout: help };
+    if (commanderExit === undefined || error !== commanderExit) throw error;
+    return { exitCode: commanderExit.exitCode === 0 ? 0 : 2 };
   }
   if (!result)
     throw new Error('Choose a subcommand; use --help for available commands');

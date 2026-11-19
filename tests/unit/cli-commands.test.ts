@@ -1,34 +1,39 @@
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import {
-  CommandUsageError,
-  runCommand,
-} from '../../src/entries/cli/commands.js';
+import { CommanderError } from 'commander';
+import { runCommand } from '../../src/entries/cli/commands.js';
 import { Manager } from '../../src/runtime/manager/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
 
 const home = await mkdtemp(join(tmpdir(), 'rsi-cli-commands-'));
-const homeVariable = process.platform === 'win32' ? 'USERPROFILE' : 'HOME';
-const previousHome = process.env[homeVariable];
-process.env[homeVariable] = home;
 after(async () => {
-  if (previousHome === undefined) delete process.env[homeVariable];
-  else process.env[homeVariable] = previousHome;
   await rm(home, { recursive: true, force: true });
 });
 
-const withoutRuntime = {
-  signal: new AbortController().signal,
-  async openRuntime(): Promise<never> {
-    assert.fail('The CLI opened a Runtime');
-  },
-  async releaseRuntime(): Promise<never> {
-    assert.fail('The CLI disposed a Runtime');
-  },
-};
+function launch(...args: string[]) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      import.meta.resolve('tsx'),
+      resolve('src/entries/cli/main.ts'),
+      ...args,
+    ],
+    {
+      cwd: home,
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+      encoding: 'utf8',
+      timeout: 30000,
+      killSignal: 'SIGKILL',
+    },
+  );
+  assert.ifError(result.error);
+  return result;
+}
 
 function commandFixture(t: TestContext) {
   const registry = new Registry();
@@ -47,7 +52,11 @@ function commandFixture(t: TestContext) {
   return {
     manager,
     openRuntime,
-    context: { ...withoutRuntime, openRuntime },
+    context: {
+      signal: new AbortController().signal,
+      openRuntime,
+      releaseRuntime: disposeRuntime,
+    },
   };
 }
 
@@ -83,7 +92,19 @@ test('CLI forwards run options and repeatable global plugin directories', async 
   ]);
 });
 
-test('CLI provides command-specific and nested help', async () => {
+test('CLI preserves errors thrown by command actions', async (t) => {
+  const { manager, context } = commandFixture(t);
+  const failure = new CommanderError(0, 'fixture.failure', 'Action failed');
+  t.mock.method(manager, 'run', async () => {
+    throw failure;
+  });
+  await assert.rejects(runCommand(['run', 'recipe.yaml'], context), (error) => {
+    assert.equal(error, failure);
+    return true;
+  });
+});
+
+test('CLI prints command-specific and nested help to stdout', () => {
   for (const args of [
     [],
     ['-h'],
@@ -95,41 +116,39 @@ test('CLI provides command-specific and nested help', async () => {
     ['help', 'run'],
     ['reflection', 'apply', '--help'],
   ]) {
-    const result = await runCommand(args, withoutRuntime);
-    assert.equal(result.exitCode, 0);
-    assert.match(result.stdout ?? '', /Usage:/);
-    if (args.includes('run')) assert.match(result.stdout ?? '', /--resume/);
-    if (args.includes('doctor')) assert.match(result.stdout ?? '', /--static/);
-    if (args.includes('apply')) assert.match(result.stdout ?? '', /revisionID/);
+    const result = launch(...args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    assert.match(result.stdout, /Usage: arsi/);
+    if (args.length === 0) assert.match(result.stdout, /Run facts are saved/);
+    if (args.includes('run')) assert.match(result.stdout, /--resume/);
+    if (args.includes('doctor')) assert.match(result.stdout, /--static/);
+    if (args.includes('apply')) assert.match(result.stdout, /revisionID/);
   }
 });
 
-test('CLI rejects invalid input before runtime initialization', async () => {
-  for (const args of [
-    ['run'],
-    ['run', 'r', '--resume'],
-    ['run', 'recipe.yaml', '--id', 'run', '--retry'],
-    ['show', 'id', 'extra'],
-    ['catalog', '--bad'],
-    ['list', 'bad'],
-    ['reflection', 'apply'],
-    ['dashboard', '--port', '0'],
-    ['dashboard', '--port', '65536'],
-    ['--plugin-dir'],
-    ['serve'],
-    ['unknown'],
-    ['validate', 'r.yaml'],
-  ]) {
-    await assert.rejects(runCommand(args, withoutRuntime), CommandUsageError);
+test('CLI reports invalid input and focused help to stderr before runtime initialization', () => {
+  for (const [args, message, command = ''] of [
+    [['run'], /missing required argument/, ' run'],
+    [['run', 'r', '--resume'], /requires --id/, ' run'],
+    [['run', 'r', '--id', 'run', '--retry'], /unknown option/, ' run'],
+    [['show', 'id', 'extra'], /too many arguments/, ' show'],
+    [['catalog', '--bad'], /unknown option/, ' catalog'],
+    [['list', 'bad'], /allowed choices/i, ' list'],
+    [['reflection', 'apply'], /missing required argument/, ' reflection apply'],
+    [['dashboard', '--port', '0'], /port must be 1\.\.65535/, ' dashboard'],
+    [['dashboard', '--port', '65536'], /port must be 1\.\.65535/, ' dashboard'],
+    [['--plugin-dir'], /argument missing/],
+    [['serve'], /unknown command/],
+    [['unknown'], /unknown command/],
+    [['validate', 'r.yaml'], /unknown command/],
+  ] as const) {
+    const result = launch('--plugin-dir', 'missing-extension', ...args);
+    assert.equal(result.status, 2, result.stderr);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, message);
+    assert.ok(result.stderr.includes(`Usage: arsi${command} `), result.stderr);
   }
-  await assert.rejects(
-    runCommand(['run', 'r', '--resume'], withoutRuntime),
-    /requires --id/,
-  );
-  await assert.rejects(
-    runCommand(['run', 'r', '--retry'], withoutRuntime),
-    /unknown option/,
-  );
 });
 
 test('CLI dispatches experiment actions and nested reflection actions', async (t) => {
@@ -166,18 +185,4 @@ test('CLI dispatches experiment actions and nested reflection actions', async (t
     run('reflection', 'apply', ''),
     /Revision ID is required/,
   );
-});
-
-test('CLI usage errors include focused help like evaluator', async () => {
-  for (const args of [
-    ['run'],
-    ['run', 'r.yaml', '--resume'],
-    ['dashboard', '--port', '0'],
-  ]) {
-    await assert.rejects(runCommand(args, withoutRuntime), (error: unknown) => {
-      assert.ok(error instanceof CommandUsageError);
-      assert.match(error.helpText, new RegExp('Usage: arsi ' + args[0]));
-      return true;
-    });
-  }
 });

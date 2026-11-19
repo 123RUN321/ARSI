@@ -46,56 +46,34 @@ test('CLI dashboard requires an existing .rsi directory in its working directory
   }
 });
 
-test('CLI creates its extension home on first launch and preserves existing files', async () => {
+test('CLI leaves the extension home untouched and shows help even if its path is blocked', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-cli-home-'));
-  const home = join(root, 'home');
-  const plugins = join(home, '.arsi', 'plugins');
-  const launch = async (...args: string[]): Promise<void> => {
-    await execute(
+  const home = join(root, '.arsi');
+  const launch = (...args: string[]) =>
+    execute(
       process.execPath,
-      ['--import', 'tsx', resolve('src/entries/cli/main.ts'), ...args],
+      [
+        '--import',
+        import.meta.resolve('tsx'),
+        resolve('src/entries/cli/main.ts'),
+        ...args,
+      ],
       {
-        env: { ...process.env, HOME: home, USERPROFILE: home },
+        cwd: root,
+        env: { ...process.env, HOME: root, USERPROFILE: root },
         timeout: 30000,
       },
     );
-  };
   try {
-    await launch();
-    assert.ok((await stat(plugins)).isDirectory());
-    const marker = join(plugins, 'existing.txt');
-    await writeFile(marker, 'preserve me');
-    await launch('--help');
-    assert.equal(await readFile(marker, 'utf8'), 'preserve me');
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+    const { stdout } = await launch('catalog');
+    assert.match(stdout, /"application\.agentbundle"/);
+    await assert.rejects(stat(home), { code: 'ENOENT' });
 
-test('CLI reports an error when its home path is occupied by a file', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'rsi-cli-home-'));
-  const blocked = join(root, '.arsi');
-  try {
-    await writeFile(blocked, 'preserve me');
-    await assert.rejects(
-      execute(
-        process.execPath,
-        ['--import', 'tsx', resolve('src/entries/cli/main.ts'), '--help'],
-        {
-          env: { ...process.env, HOME: root, USERPROFILE: root },
-          timeout: 30000,
-        },
-      ),
-      (error: unknown) => {
-        assert.ok(
-          error instanceof Error && 'code' in error && 'stderr' in error,
-        );
-        assert.equal(error.code, 1);
-        assert.match(String(error.stderr), /ENOTDIR|EEXIST/);
-        return true;
-      },
-    );
-    assert.equal(await readFile(blocked, 'utf8'), 'preserve me');
+    await writeFile(home, 'preserve me');
+    const help = await launch('--help');
+    assert.match(help.stdout, /Usage: arsi/);
+    assert.equal(help.stderr, '');
+    assert.equal(await readFile(home, 'utf8'), 'preserve me');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
