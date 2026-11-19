@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { JsonObject } from '../../src/contracts/index.js';
 import {
   FileAgentRecorder,
   readAgentRecords,
@@ -182,7 +183,7 @@ for (const outcome of ['invalid output', 'cancelled'] as const) {
     await assert.rejects(
       f.execute(
         {
-          async execute() {
+          async execute(): Promise<JsonObject> {
             if (outcome === 'cancelled')
               controller.abort(new Error('User cancelled'));
             return outcome === 'invalid output'
