@@ -25,7 +25,7 @@ const withoutRuntime = {
   async openRuntime(): Promise<never> {
     assert.fail('The CLI opened a Runtime');
   },
-  async disposeRuntime(): Promise<never> {
+  async releaseRuntime(): Promise<never> {
     assert.fail('The CLI disposed a Runtime');
   },
 };

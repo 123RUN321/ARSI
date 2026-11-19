@@ -4,7 +4,6 @@ import { aborted } from 'node:util';
 import { Argument, Command, InvalidArgumentError } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
-import { checkRecipe } from './doctor.js';
 import {
   ensurePluginHome,
   withRuntime,
@@ -141,12 +140,15 @@ export async function runCommand(
     file: string,
     options: { static?: boolean },
   ): Promise<void> {
-    const report = await checkRecipe(
-      file,
-      options.static ?? false,
-      pluginDirectories(),
-      context,
+    const { checkRecipe } = await import(
+      '../../runtime/doctor/check-recipe.js'
     );
+    const report = await checkRecipe(file, {
+      signal: context.signal,
+      staticOnly: options.static ?? false,
+      openRuntime: () => context.openRuntime(pluginDirectories()),
+      releaseRuntime: context.releaseRuntime,
+    });
     result = jsonResult(report, report.summary.failed > 0 ? 1 : 0);
   }
 

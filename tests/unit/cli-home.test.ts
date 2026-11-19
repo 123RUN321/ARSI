@@ -127,22 +127,31 @@ test('CLI reports runtime cleanup failures and preserves command errors', async 
         if (process.argv.includes('interrupted')) process.emit('SIGINT');
       }`,
     );
-    for (const { args, code } of [
-      { args: ['show', 'missing'], code: 1 },
-      { args: ['show', 'interrupted'], code: 130 },
+    for (const { args, code, commandError } of [
+      { args: ['show', 'missing'], code: 1, commandError: /ENOENT.*missing/ },
+      {
+        args: ['show', 'interrupted'],
+        code: 130,
+        commandError: /ENOENT.*interrupted/,
+      },
+      {
+        args: ['doctor', 'interrupted'],
+        code: 130,
+        commandError: /^Interrupted$/,
+      },
       { args: ['catalog'], code: 1 },
     ]) {
       await assert.rejects(launch(...args), (error: unknown) => {
         assert.ok(
-          error instanceof Error && 'code' in error && 'stderr' in error,
+          error instanceof Error &&
+            'code' in error &&
+            'stdout' in error &&
+            'stderr' in error,
         );
         assert.equal(error.code, code);
+        if (args[0] === 'doctor') assert.equal(error.stdout, '');
         const diagnostics = String(error.stderr).trimEnd().split(/\r?\n/);
-        if (args[0] === 'show')
-          assert.match(
-            diagnostics.shift() ?? '',
-            new RegExp(`ENOENT.*${args[1]}`),
-          );
+        if (commandError) assert.match(diagnostics.shift() ?? '', commandError);
         assert.deepEqual(diagnostics, [
           'Failed to dispose runtime: Runtime plugins are still in use',
         ]);

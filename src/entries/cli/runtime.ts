@@ -7,13 +7,19 @@ import { errorText } from '../../shared/errors.js';
 export interface CommandContext {
   signal: AbortSignal;
   openRuntime(pluginDirectories: string[]): Promise<Runtime>;
-  disposeRuntime(options?: {
-    reportToStderr?: boolean;
-  }): Promise<{ exitCode: 0 } | { exitCode: 1; error: unknown }>;
+  releaseRuntime(): Promise<void>;
 }
 
-export function createCommandContext(signal: AbortSignal): CommandContext {
+export function createCommandContext(
+  signal: AbortSignal,
+): CommandContext & { disposeRuntime(): Promise<0 | 1> } {
   let runtime: Runtime | undefined;
+  async function releaseRuntime(): Promise<void> {
+    const current = runtime;
+    runtime = undefined;
+    await current?.dispose();
+  }
+
   return {
     signal,
     async openRuntime(pluginDirectories) {
@@ -21,18 +27,16 @@ export function createCommandContext(signal: AbortSignal): CommandContext {
       runtime = await createRuntime({ pluginDirectories });
       return runtime;
     },
-    async disposeRuntime({ reportToStderr = true } = {}) {
-      const current = runtime;
-      runtime = undefined;
+    releaseRuntime,
+    async disposeRuntime() {
       try {
-        await current?.dispose();
-        return { exitCode: 0 };
+        await releaseRuntime();
+        return 0;
       } catch (error) {
-        if (reportToStderr)
-          process.stderr.write(
-            `Failed to dispose runtime: ${errorText(error)}\n`,
-          );
-        return { exitCode: 1, error };
+        process.stderr.write(
+          `Failed to dispose runtime: ${errorText(error)}\n`,
+        );
+        return 1;
       }
     },
   };

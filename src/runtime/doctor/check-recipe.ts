@@ -1,19 +1,25 @@
 import type { DoctorReport } from '../../contracts/index.js';
-import type { Runtime } from '../../runtime/context.js';
-import type { CommandContext } from './runtime.js';
+import type { Runtime } from '../context.js';
+import { doctorFailure, doctorRecipe } from './index.js';
 
+/** The caller owns the Runtime if diagnosis throws before releasing it. */
 export async function checkRecipe(
   file: string,
-  staticOnly: boolean,
-  pluginDirectories: string[],
-  { signal, openRuntime, disposeRuntime }: CommandContext,
+  {
+    signal,
+    staticOnly,
+    openRuntime,
+    releaseRuntime,
+  }: {
+    signal: AbortSignal;
+    staticOnly: boolean;
+    openRuntime(): Promise<Runtime>;
+    releaseRuntime(): Promise<void>;
+  },
 ): Promise<DoctorReport> {
-  const { doctorRecipe, doctorFailure } = await import(
-    '../../runtime/doctor/index.js'
-  );
   let runtime: Runtime;
   try {
-    runtime = await openRuntime(pluginDirectories);
+    runtime = await openRuntime();
   } catch (error) {
     signal.throwIfAborted();
     return doctorFailure('runtime.registration', error);
@@ -26,10 +32,11 @@ export async function checkRecipe(
     signal.throwIfAborted();
     return doctorFailure('doctor.runtime', error);
   });
-  const disposal = await disposeRuntime({ reportToStderr: false });
-  if (disposal.exitCode === 1) {
+  try {
+    await releaseRuntime();
+  } catch (error) {
     signal.throwIfAborted();
-    const cleanup = doctorFailure('runtime.cleanup', disposal.error);
+    const cleanup = doctorFailure('runtime.cleanup', error);
     report.checks.push(...cleanup.checks);
     report.summary.failed += cleanup.summary.failed;
   }

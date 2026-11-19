@@ -26,8 +26,8 @@ async function main(argv: string[]): Promise<number> {
   } finally {
     process.removeListener('SIGINT', abort);
     process.removeListener('SIGTERM', abort);
-    const cleanup = await context.disposeRuntime();
-    exitCode ||= cleanup.exitCode;
+    const cleanupExitCode = await context.disposeRuntime();
+    exitCode ||= cleanupExitCode;
   }
   return exitCode;
 }
