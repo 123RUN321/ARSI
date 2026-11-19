@@ -65,33 +65,13 @@ Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `
 | `rsi/call-cancelled` | After the cancellation receipt is saved, before reporting cancellation.                         | `parallel`  | None.                                                                                                             |
 | `rsi/call-unknown`   | After a receipt is saved for a call whose outcome is unconfirmed.                               | `parallel`  | None.                                                                                                             |
 
-### Agent conversation observation (optional)
+### Agent conversation observation
 
-Agent backends can publish `rsi/agent-observation` through the **current `execute(input, ctx)` context** as native messages, tool activity, usage, or child sessions become available. CLI adapters decode native output before publishing; the CLI itself does not publish Runtime events.
+| Event | Publication point | Dispatch | Parameters |
+| --- | --- | --- | --- |
+| `rsi/agent-observation` | Agent backend observations become available. | `emit` | `runId: string`: Run ID (`main` for the main Agent).<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`: Native identifiers.<br>`event: AgentEvent`: Normalized observation; see the [protocol](../../../src/contracts/models/agent-record.ts). |
 
-| Field     | Type                                                       | Meaning                                                                                         |
-| --------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `runId`   | `string`                                                   | Run identifier within this call; use `main` for the main Agent and distinct IDs for child runs. |
-| `native?` | `{ sessionId?: string; turnId?: string; itemId?: string }` | Optional identifiers from the native backend.                                                   |
-| `event`   | `AgentEvent`                                               | Normalized message, tool, usage, run/session lifecycle, or observation-gap data.                |
-
-The [Agent observation protocol](../../../src/contracts/models/agent-record.ts) defines the event variants and their fields. For example, publish a completed message:
-
-```ts
-ctx.event.emit("rsi/agent-observation", {
-  runId: "main",
-  event: {
-    type: "message.completed",
-    messageId: "message-1",
-    role: "assistant",
-    text: "Read the candidate file.",
-  },
-});
-```
-
-This event is consumed synchronously by the framework's call-local recorder for Dashboard and evidence queries; it is not broadcast to ordinary `ctx.event.on(...)` listeners. Use `emit` on the current execution context, rather than a retained factory context or another dispatch mode.
-
-Publishing is optional: Agent plugins keep their existing `execute`/`dispose` contract without trace adaptation. Manager receipts still record call input, output, and status, but cannot reconstruct internal conversations. Invalid observations become coverage gaps; record creation or append failure disables further recording for that call, and close failures are ignored. These observation failures do not cancel execution or replace its result/error; execution cancellation and output validation remain effective.
+Optional: publish through the current execution context. The call-local recorder consumes it without broadcasting to plugin listeners; recording failures do not affect execution.
 
 ### Policy execution
 

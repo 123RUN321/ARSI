@@ -65,33 +65,13 @@
 | `rsi/call-cancelled` | 取消回执保存后，报告调用取消前                   | `parallel`  | 无。                                                                  |
 | `rsi/call-unknown`   | 插件执行结果未确认的回执保存后                   | `parallel`  | 无。                                                                  |
 
-### Agent 对话观察（可选）
+### Agent 对话观察
 
-Agent 后端可以在获得原生消息、工具活动、用量或子会话信息时，通过**当前 `execute(input, ctx)` 的上下文**发布 `rsi/agent-observation`。CLI 适配代码先解析原生输出，再发布事件；CLI 本身不会发布 Runtime 事件。
+| 事件 | 发布时机 | 分发方式 | 参数 |
+| --- | --- | --- | --- |
+| `rsi/agent-observation` | Agent 后端获得观察数据时 | `emit` | `runId: string`：运行 ID，主 Agent 为 `main`。<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`：原生标识。<br>`event: AgentEvent`：统一观察数据，见[协议定义](../../../src/contracts/models/agent-record.ts)。 |
 
-| 字段      | 类型                                                       | 含义                                                                  |
-| --------- | ---------------------------------------------------------- | --------------------------------------------------------------------- |
-| `runId`   | `string`                                                   | 本次调用内的运行标识；主 Agent 使用 `main`，子运行使用各自独立的 ID。 |
-| `native?` | `{ sessionId?: string; turnId?: string; itemId?: string }` | 原生后端提供的可选标识。                                              |
-| `event`   | `AgentEvent`                                               | 统一格式的消息、工具、用量、运行/会话生命周期或观察缺口数据。         |
-
-各事件变体及其字段见 [Agent 观察协议](../../../src/contracts/models/agent-record.ts)。例如，发布一条完整消息：
-
-```ts
-ctx.event.emit("rsi/agent-observation", {
-  runId: "main",
-  event: {
-    type: "message.completed",
-    messageId: "message-1",
-    role: "assistant",
-    text: "Read the candidate file.",
-  },
-});
-```
-
-该事件由框架在本次调用内的记录器同步消费，供 Dashboard 和证据查询使用，不广播给普通 `ctx.event.on(...)` 监听者。应在当前执行上下文上使用 `emit`，不能使用保留的工厂上下文或其他分发方式代替。
-
-发布事件是可选能力：未适配 trace 的 Agent 插件仍沿用原来的 `execute`/`dispose` 契约。Manager 回执仍记录调用输入、输出和状态，但无法还原内部对话。无效观察数据会转为覆盖缺口；记录创建或追加失败后，本次调用停止继续记录，关闭失败也会被忽略。这些观察失败不会取消执行或覆盖执行结果、错误；执行取消和输出校验仍然有效。
+可选事件，通过当前执行上下文发布，仅由本次调用的记录器消费，不广播给插件监听者；记录失败不影响执行。
 
 ### Policy 执行
 
