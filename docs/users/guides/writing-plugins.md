@@ -192,7 +192,7 @@ Runtime finds plugins by registered ID. Creating a file or adding an ID to a Rec
 
 > When maintaining built-in framework plugins, you can place implementations in `src/plugins/`, register them in the [built-in registration file](../../../src/runtime/builtins.ts), and run `pnpm build` to build them with the framework.
 
-1. Run your custom plugin project's own build command to generate `dist/proposer-keep-parent/`. Deploy the compiled files and runtime dependencies to `~/.arsi/plugins/my-extension/`, preserving the relative directory structure.
+1. Run your custom plugin project's own build command to generate `dist/proposer-keep-parent/`. Create `~/.arsi/plugins/my-extension/`, then deploy the compiled files and runtime dependencies there, preserving the relative directory structure.
 
 2. Create `index.mjs` in `~/.arsi/plugins/my-extension/`, exporting `register(registry)`:
 

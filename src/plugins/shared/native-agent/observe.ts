@@ -1,7 +1,7 @@
-import type { AgentObservation } from '../../../contracts/index.js';
+import type { AgentObservation, JsonValue } from '../../../contracts/index.js';
 
 /** Protocol detail decoding may fail independently of task/result decoding. */
-export function observeNative<T extends unknown[]>(
+export function observeNative<T extends (JsonValue | object)[]>(
   observe: (...args: T) => void,
   record: (event: AgentObservation) => void,
   signal: AbortSignal,
@@ -10,7 +10,7 @@ export function observeNative<T extends unknown[]>(
     try {
       observe(...args);
     } catch (error) {
-      // Storage failure aborts the task synchronously and must never become a gap.
+      // Preserve explicit execution cancellation while isolating decoder failures.
       signal.throwIfAborted();
       record({
         runId: 'main',

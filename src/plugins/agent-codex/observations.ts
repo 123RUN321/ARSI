@@ -1,4 +1,8 @@
-import type { AgentObservation, JsonObject } from '../../contracts/index.js';
+import type {
+  AgentObservation,
+  JsonObject,
+  JsonValue,
+} from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
 
 export function codexObservations(
@@ -105,7 +109,7 @@ export function codexObservations(
         ...(typeof item.phase === 'string' ? { phase: item.phase } : {}),
       });
     else if (item.type === 'reasoning' && completed) {
-      const text = (value: unknown): string =>
+      const text = (value: JsonValue | undefined): string =>
         Array.isArray(value)
           ? value.filter((v): v is string => typeof v === 'string').join('\n')
           : '';

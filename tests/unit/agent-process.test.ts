@@ -64,7 +64,7 @@ test(
           throw new Error('Invalid protocol');
         },
       ),
-      (error: unknown) => {
+      (error: Error) => {
         assert.ok(
           error instanceof Error &&
             'status' in error &&

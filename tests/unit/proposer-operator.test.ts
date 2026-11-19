@@ -1060,6 +1060,11 @@ test('metric Proposer executes two rounds with measured diagnostics, current bes
       }
       assert.equal(generates.length, 2);
       assert.equal(analyses.length, 2);
+      for (const { input } of analyses) {
+        const example = object(object(input.evidenceGuide).example);
+        assert.equal(typeof example.value, 'number');
+        assert.match(string(example.path), /^\/kernels\/0\/metrics\//);
+      }
       assert.equal(object(generates[0]!.input).hardwareContext, hardwareText);
       assert.equal(object(generates[1]!.input).hardwareContext, hardwareText);
       assert.equal(object(analyses[0]!.input).hardwareContext, hardwareText);

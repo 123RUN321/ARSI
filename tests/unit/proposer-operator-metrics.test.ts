@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import type { JsonObject } from '../../src/contracts/index.js';
 import { operatorProposerContract } from '../../src/contracts/plugin-types/proposer-operator.js';
 import { operatorEditOutputSchema } from '../../src/plugins/proposer-operator/schema.js';
 import { parseMetricsDiagnosis as parse } from '../../src/plugins/shared/operator-attempt/service.js';
+import { metricEvidenceGuide } from '../../src/plugins/shared/operator-attempt/metric-evidence.js';
 import { validate } from '../../src/shared/schema.js';
 import { summaryResponseSchema } from '../../src/plugins/shared/operator-attempt/schema.js';
 
@@ -141,4 +143,30 @@ test('packaged and example summary JSON examples satisfy the model response cont
     assert.ok(example, path);
     validate(summaryResponseSchema, JSON.parse(example[1]), path);
   }
+});
+
+test('diagnosis guide cites a measured value accepted by the evidence checker', () => {
+  const profile: JsonObject = {
+    kernels: [
+      { metrics: {} },
+      { metrics: { 'a/b': { ub_ratio: 1, label: 'x', 'bw~/s': 0 } } },
+    ],
+  };
+  const example = { path: '/kernels/1/metrics/a~1b/bw~0~1s', value: 0 };
+  assert.deepEqual(metricEvidenceGuide(profile).example, example);
+  assert.equal(metricEvidenceGuide({ kernels: [] }).example, undefined);
+  const diagnosis = {
+    status: 'hypothesis',
+    category: 'vector',
+    summary: 'Review bandwidth',
+    reasoning: 'The observed counter warrants investigation',
+    rootCause: 'Uncertain',
+    recommendedFix: 'Review tiling',
+    evidence: [example],
+  };
+  assert.deepEqual(parse(diagnosis, profile), diagnosis);
+  for (const path of [example.path + '/', '/kernels/1/metrics/bw~0~1s'])
+    assert.throws(() =>
+      parse({ ...diagnosis, evidence: [{ path, value: 0 }] }, profile),
+    );
 });

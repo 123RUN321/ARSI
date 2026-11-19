@@ -9,8 +9,6 @@ import { useObservation } from './use-observation';
 import { traceRows, eventText, type TraceRow } from './trace-model';
 import { scoreLabel } from './record-identifiers';
 
-const parsePayload = (value: unknown): JsonValue => parseAgentPayload(value);
-
 type Filter = 'All' | 'Model' | 'Tools' | 'Errors';
 export function TraceInspector({
   id,
@@ -69,7 +67,7 @@ export function TraceInspector({
     payloadRef && !payloads[payloadRef]
       ? `/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}/agent/payloads/${encodeURIComponent(payloadRef)}`
       : null,
-    parsePayload,
+    parseAgentPayload,
     null,
   );
   useEffect(() => {

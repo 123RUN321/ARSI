@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, mkdtemp, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -74,19 +74,31 @@ test('an interrupted trailing append exposes only complete records', async (t) =
   assert.equal(page.recording, 'interrupted');
 });
 
-test('a recording failure cancels execution and cannot publish a successful result', async (t) => {
+test('an Agent without trace adaptation succeeds when the recording directory cannot be created', async (t) => {
   const f = await agentFixture();
   t.after(() => f.close());
-  let stopped = false;
-  const agent = {
-    async execute(
-      _input: import('../../src/contracts/index.js').JsonValue,
-      context: import('../../src/contracts/index.js').RuntimeContext,
-    ) {
-      await rm(join(f.context.directory, 'agent', 'payloads'), {
-        recursive: true,
-      });
-      assert.throws(() =>
+  await writeFile(join(f.context.directory, 'agent'), 'blocked');
+  assert.deepEqual(
+    await f.execute({
+      async execute(_input, context) {
+        assert.equal(context.signal.aborted, false);
+        return { answer: 'accepted' };
+      },
+      async dispose() {},
+    }),
+    { answer: 'accepted' },
+  );
+});
+
+test('an append failure disables recording without cancelling execution or changing its result', async (t) => {
+  const f = await agentFixture();
+  t.after(() => f.close());
+  assert.deepEqual(
+    await f.execute({
+      async execute(_input, context) {
+        await rm(join(f.context.directory, 'agent', 'payloads'), {
+          recursive: true,
+        });
         context.event.emit('rsi/agent-observation', {
           runId: 'main',
           event: {
@@ -95,15 +107,43 @@ test('a recording failure cancels execution and cannot publish a successful resu
             role: 'assistant',
             text: 'x'.repeat(10000),
           },
-        }),
-      );
-      stopped = context.signal.aborted;
-      return { answer: 'must not be accepted' };
+        });
+        context.event.emit('rsi/agent-observation', {
+          runId: 'main',
+          event: { type: 'run.finished', status: 'completed' },
+        });
+        assert.equal(context.signal.aborted, false);
+        return { answer: 'accepted' };
+      },
+      async dispose() {},
+    }),
+    { answer: 'accepted' },
+  );
+  const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  assert.equal(records.items.length, 1);
+});
+
+test('a close failure cannot replace a successful result', async (t) => {
+  const f = await agentFixture();
+  t.after(() => f.close());
+  const originalClose = FileAgentRecorder.prototype.close;
+  t.mock.method(
+    FileAgentRecorder.prototype,
+    'close',
+    function (this: FileAgentRecorder) {
+      originalClose.call(this);
+      throw new Error('Disk sync failed');
     },
-    async dispose() {},
-  };
-  await assert.rejects(f.execute(agent));
-  assert(stopped);
+  );
+  assert.deepEqual(
+    await f.execute({
+      async execute() {
+        return { answer: 'accepted' };
+      },
+      async dispose() {},
+    }),
+    { answer: 'accepted' },
+  );
 });
 
 test('unconfirmed process cleanup remains unknown when closing the record also fails', async (t) => {
@@ -132,3 +172,29 @@ test('unconfirmed process cleanup remains unknown when closing the record also f
     (error) => error === unknown,
   );
 });
+
+for (const outcome of ['invalid output', 'cancelled'] as const) {
+  test(`recording failure does not hide ${outcome}`, async (t) => {
+    const f = await agentFixture();
+    t.after(() => f.close());
+    await writeFile(join(f.context.directory, 'agent'), 'blocked');
+    const controller = new AbortController();
+    await assert.rejects(
+      f.execute(
+        {
+          async execute() {
+            if (outcome === 'cancelled')
+              controller.abort(new Error('User cancelled'));
+            return outcome === 'invalid output'
+              ? {}
+              : { answer: 'late result' };
+          },
+          async dispose() {},
+        },
+        f.request,
+        f.context.extend({ signal: controller.signal }),
+      ),
+      outcome === 'invalid output' ? /Agent output/ : /User cancelled/,
+    );
+  });
+}

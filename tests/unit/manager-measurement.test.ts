@@ -9,6 +9,7 @@ import { object, string, digest } from '../../src/shared/json.js';
 test('Manager accepts plugin-private artifacts without global Schema registration', async () => {
   const fixture = await managerFixture(async (context) => {
     const measurement = await measurementFixture(context);
+    measurement.evaluator = { pluginId: 'test.driver' };
     return { ref: await context.recordMeasurement(measurement) };
   });
   try {
@@ -17,6 +18,9 @@ test('Manager accepts plugin-private artifacts without global Schema registratio
       'measurements',
       string(object(result.output).ref),
     );
+    const evaluator = object(measurement.evaluator);
+    assert.equal(evaluator.pluginId, 'test.driver');
+    assert.match(string(evaluator.implementationDigest), /^[a-f0-9]{64}$/);
     assert.equal(object(measurement.profile).schemaId, 'test.private/v1');
     assert.deepEqual(
       await fixture.manager.artifacts.readJson(

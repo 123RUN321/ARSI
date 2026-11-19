@@ -24,7 +24,7 @@ export function agentProcessLauncher(scope: {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-      let failure: unknown;
+      let failure: Error | undefined;
       let buffer = '';
       let stderr = '';
       let pending = Promise.resolve();
@@ -78,8 +78,8 @@ export function agentProcessLauncher(scope: {
             )
               child.stdin.end();
           })
-          .catch((error: unknown) => {
-            failure = error;
+          .catch((error) => {
+            failure = error instanceof Error ? error : new Error(String(error));
             stop();
           });
       };

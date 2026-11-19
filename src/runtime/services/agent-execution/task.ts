@@ -34,19 +34,23 @@ export function managedAgentOperation(operation: Operation): Operation {
       const controller = new AbortController();
       const signal = AbortSignal.any([context.signal, controller.signal]);
       const execution = (async (): Promise<JsonObject> => {
-        const recorder = new FileAgentRecorder(context.directory);
-        let unconfirmed: unknown;
+        let recorder: FileAgentRecorder | undefined;
+        let recordingFailed = false;
         const record = (observation: AgentObservation): void => {
+          if (recordingFailed) return;
           try {
+            recorder ??= new FileAgentRecorder(context.directory);
             recorder.record(observation);
-          } catch (error) {
-            controller.abort(error);
-            throw error;
+          } catch {
+            // Optional observation must never cancel or change the Agent result.
+            recordingFailed = true;
           }
         };
         // Native detail is optional call-local telemetry. The framework still records
         // details when available; the Manager receipt owns input, result and status.
-        const emit = ((...args: unknown[]): unknown => {
+        const emit = ((
+          ...args: Parameters<EventPipeline['emit']>
+        ): ReturnType<EventPipeline['emit']> => {
           const index = typeof args[0] === 'string' ? 0 : 1;
           if (args[index] === 'rsi/agent-observation') {
             let observation: AgentObservation;
@@ -99,24 +103,11 @@ export function managedAgentOperation(operation: Operation): Operation {
             );
           }
           return result;
-        } catch (error) {
-          const unknown =
-            error !== null &&
-            typeof error === 'object' &&
-            'status' in error &&
-            error.status === 'unknown';
-          const cause: unknown = unknown
-            ? error
-            : signal.aborted
-              ? signal.reason
-              : error;
-          if (unknown) unconfirmed = cause;
-          throw cause;
         } finally {
           try {
-            recorder.close();
-          } catch (error) {
-            throw unconfirmed ?? error;
+            recorder?.close();
+          } catch {
+            // Closing optional telemetry cannot replace execution or cancellation.
           }
         }
       })();

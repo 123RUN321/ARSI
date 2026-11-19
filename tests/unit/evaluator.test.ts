@@ -218,6 +218,9 @@ for (const kind of ['agentbench', 'inferencebench'] as const) {
         call,
       );
       const measurement = measurements[0]!;
+      assert.deepEqual(measurement.evaluator, {
+        pluginId: `evaluator.${kind}`,
+      });
       if (kind === 'inferencebench') {
         assert.ok(Array.isArray(measurement.extensions));
         const summary = object(measurement.extensions[0]);

@@ -7,7 +7,6 @@ import type {
 import {
   measurementEvidenceSchema,
   measurementItemsSchema,
-  validateMeasurement,
 } from '../../contracts/models/measurement.js';
 import { digest, object, string, strings } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
@@ -16,7 +15,6 @@ import {
   plain,
   redact,
 } from '../shared/evaluator-adapter/data.js';
-import { sourceIdentity } from '../shared/evaluator-adapter/identity.js';
 import {
   nativeStatus,
   typed,
@@ -37,27 +35,6 @@ import {
 } from './training-feedback.js';
 import { agentbenchProfileSchema } from './measurement-schema.js';
 
-let implementationIdentity: Promise<string> | undefined;
-function adapterIdentity(): Promise<string> {
-  return (implementationIdentity ??= sourceIdentity(import.meta.url, [
-    './index',
-    './service',
-    './finalized-timeout',
-    './schema',
-    './conditions',
-    './measurement',
-    './measurement-schema',
-    './metrics',
-    './training-feedback',
-    '../shared/evaluator-adapter/configuration',
-    '../shared/evaluator-adapter/data',
-    '../shared/evaluator-adapter/sdk',
-    '../shared/evaluator-adapter/measurement',
-    '../shared/evaluator-adapter/metric',
-    '../shared/evaluator-adapter/identity',
-    '../shared/evaluator-adapter/schemas/index',
-  ]));
-}
 export async function normalizeEvaluation(
   native: SdkEvaluatorConfig,
   input: JsonObject,
@@ -220,10 +197,7 @@ export async function normalizeEvaluation(
     experimentId: context.experimentId,
     callId: context.callId,
     candidateRef: string(input.candidateRef),
-    evaluator: {
-      pluginId: 'evaluator.agentbench',
-      implementationDigest: await adapterIdentity(),
-    },
+    evaluator: { pluginId: 'evaluator.agentbench' },
     startedAt:
       typeof run.startedAt === 'string'
         ? run.startedAt
@@ -273,6 +247,5 @@ export async function normalizeEvaluation(
     diagnosticsRef: failure ? await context.artifacts.putJson(failure) : null,
     extensions: [],
   };
-  validateMeasurement(measurement);
   return context.recordMeasurement(measurement);
 }

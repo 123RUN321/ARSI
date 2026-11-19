@@ -1,0 +1,22 @@
+[
+  {
+    "github": {"id": "83061759", "username": "xiaohei366"},
+    "gitcode": {"id": "66cbe75e08f63d641318ef0e", "username": "Gideon_Zhao"},
+    "gitcode_pr_token_secret": "GITCODE_MEMBER_GIDEON_TOKEN"
+  },
+  {
+    "github": {"id": "64133530", "username": "FangchengDou"},
+    "gitcode": {"id": "6a1e3cb71f88da2753c3ad22", "username": "doufangcheng"},
+    "gitcode_pr_token_secret": "GITCODE_MEMBER_FANGCHENG_TOKEN"
+  },
+  {
+    "github": {"id": "15665868", "username": "chestnut19981123"},
+    "gitcode": {"id": "6a26b478270ba352b07370bb", "username": "Chestnut19981123"},
+    "gitcode_pr_token_secret": "GITCODE_MEMBER_CHESTNUT_TOKEN"
+  },
+  {
+    "github": {"id": "15794005", "username": "leeif"},
+    "gitcode": {"id": "6a0ec57ec0cc1c4f56bc52ce", "username": "liyifan610"},
+    "gitcode_pr_token_secret": "GITCODE_MEMBER_LEEIF_TOKEN"
+  }
+]

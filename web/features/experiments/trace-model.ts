@@ -1,3 +1,4 @@
+import type { JsonValue, JsonObject } from '../../../src/contracts/json.js';
 import type { CallTrace } from '../../../src/contracts/observation.js';
 
 export interface TraceRow {
@@ -12,16 +13,16 @@ export interface TraceRow {
   duration: number | null;
   thinking?: string;
   body?: string;
-  args?: unknown;
-  result?: unknown;
+  args?: JsonValue;
+  result?: JsonValue;
   payloadRefs?: string[];
 }
-export function eventObject(value: unknown): Record<string, unknown> {
+export function eventObject(value: JsonValue | undefined): JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value))
     : {};
 }
-export function eventText(value: unknown): string {
+export function eventText(value: JsonValue | undefined): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value))
     return value.map(eventText).filter(Boolean).join('\n\n');
@@ -52,7 +53,7 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
       at: record.at,
       duration: null,
     };
-    const key = (id: unknown): string => `${runId}:${String(id)}`;
+    const key = (id: JsonValue | undefined): string => `${runId}:${String(id)}`;
     if (
       event.type === 'message.appended' ||
       event.type === 'message.completed'

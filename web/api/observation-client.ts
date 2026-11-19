@@ -176,6 +176,8 @@ function parseMetric(raw: unknown): MetricObservation {
 function parseMeasurement(raw: unknown): MeasurementSummary {
   const data = record(raw);
   return {
+    diagnosticsRef:
+      data.diagnosticsRef === undefined ? null : nullable(data.diagnosticsRef),
     ref: text(data.ref),
     candidateRef: text(data.candidateRef),
     callId: text(data.callId),
@@ -345,9 +347,7 @@ function choice<T extends string>(value: unknown, values: readonly T[]): T {
   return result;
 }
 
-export function parseAgentPayload(value: unknown): JsonValue {
-  return jsonValue(value);
-}
+export const parseAgentPayload = jsonValue;
 
 function jsonValue(value: unknown): JsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean')

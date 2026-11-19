@@ -86,7 +86,7 @@ arsi show terminal-skills-01
 
 A cancellation request does not stop all work immediately. Runtime propagates the cancellation signal and cleans up its own resources. Check the final status and cleanup records.
 
-- Pressing Ctrl+C in the terminal running the CLI also sends a cancellation signal.
+- Press Ctrl+C once to request cancellation and let the CLI clean up. Press it again while the CLI is still running to force it to exit.
 
 To continue a failed, cancelled, or interrupted experiment, use the same workspace, experiment ID, and required extensions. Supply the current Recipe.
 

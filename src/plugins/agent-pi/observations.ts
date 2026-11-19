@@ -1,10 +1,11 @@
+import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
 import type { AgentObservation } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
 
 export function piObservations(
   record: (event: AgentObservation) => void,
   runId: string,
-): (value: unknown) => void {
+): (value: AgentSessionEvent) => void {
   let serial = 0;
   return (value) => {
     const event = object(JSON.parse(JSON.stringify(value)));

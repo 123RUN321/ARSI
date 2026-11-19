@@ -1,3 +1,4 @@
+import { isObservedMetricPath } from './metric-evidence.js';
 import { createHash } from 'node:crypto';
 import {
   type Candidate,
@@ -518,10 +519,7 @@ export function parseMetricsDiagnosis(
   );
   if (result.status === 'no-new-hypothesis') return result;
   for (const evidence of result.evidence) {
-    if (
-      !/^\/kernels\/\d+\/metrics\/[^/]+\//.test(evidence.path) ||
-      /(?:ub_ratio|core_utilization)/.test(evidence.path)
-    )
+    if (!isObservedMetricPath(evidence.path))
       throw new Error(
         'Metric bottleneck evidence must reference an observed kernel metric',
       );

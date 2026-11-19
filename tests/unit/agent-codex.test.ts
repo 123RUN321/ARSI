@@ -1,3 +1,4 @@
+import type { JsonValue, JsonObject } from '../../src/contracts/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAgentCodex } from '../../src/plugins/agent-codex/service.js';
@@ -5,10 +6,10 @@ import { agentFixture } from '../fixtures/agent-execution.js';
 import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 
 test('Codex drives app-server, records commentary and tools, and validates the terminal answer', async (t) => {
-  const sent: unknown[] = [];
+  const sent: JsonValue[] = [];
   const f = await agentFixture(async (spec, consume) => {
     assert(spec.interactive);
-    const send = (message: unknown) => sent.push(message);
+    const send = (message: JsonValue) => sent.push(message);
     for (const message of [
       { id: 1, result: {} },
       { id: 4, result: { config: { windows: {} }, origins: {} } },
@@ -106,9 +107,9 @@ test('native agents reject an unenforceable modelCalls budget before launch', as
 
 for (const model of [undefined, 'explicit-model']) {
   test(`Codex preserves native instructions and forwards schema with model ${model ?? 'default'}`, async (t) => {
-    const sent: Array<Record<string, unknown>> = [];
+    const sent: Array<JsonObject> = [];
     const f = await agentFixture(async (spec, consume) => {
-      const send = (message: unknown) => {
+      const send = (message: JsonValue) => {
         sent.push(JSON.parse(JSON.stringify(message)));
       };
       assert(spec.args.includes('approval_policy="never"'));
@@ -169,7 +170,7 @@ for (const model of [undefined, 'explicit-model']) {
       },
     );
     const turn = sent.find((message) => message.method === 'turn/start')!
-      .params as Record<string, unknown>;
+      .params as JsonObject;
     assert.deepEqual(turn.outputSchema, f.request.outputSchema);
     assert.equal('baseInstructions' in turn, false);
     assert.equal('approvalPolicy' in turn, false);
@@ -219,7 +220,7 @@ for (const sandbox of ['elevated', 'unelevated'] as const) {
     `Codex retains the native Windows ${sandbox} sandbox in standalone execution`,
     { skip: process.platform !== 'win32' },
     async (t) => {
-      const sent: Array<Record<string, unknown>> = [];
+      const sent: Array<JsonObject> = [];
       const f = await agentFixture(async (spec, consume) => {
         assert(
           spec.args.includes('sandbox_workspace_write.network_access=true'),
@@ -230,7 +231,7 @@ for (const sandbox of ['elevated', 'unelevated'] as const) {
           ),
           false,
         );
-        const send = (message: unknown) =>
+        const send = (message: JsonValue) =>
           sent.push(JSON.parse(JSON.stringify(message)));
         for (const message of [
           { id: 1, result: {} },
@@ -272,7 +273,7 @@ for (const sandbox of ['elevated', 'unelevated'] as const) {
       assert.equal(
         (
           sent.find((message) => message.method === 'thread/start')!
-            .params as Record<string, unknown>
+            .params as JsonObject
         ).sandbox,
         'workspace-write',
       );

@@ -1,6 +1,10 @@
 import { object } from '../../shared/json.js';
 import { launchEnvironment } from './session.js';
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
+import type {
+  DoctorContext,
+  DoctorResult,
+  JsonValue,
+} from '../../contracts/index.js';
 import { runDoctorCheck } from '../../shared/doctor-check.js';
 import {
   checkNativeAgent,
@@ -53,10 +57,12 @@ export async function checkOpenCodeAgent(
           launchEnvironment(context.directory),
         );
         try {
-          const entries: unknown = JSON.parse(stdout);
+          const entries: JsonValue = JSON.parse(stdout);
           if (
             !Array.isArray(entries) ||
-            !entries.some((entry: unknown) => object(entry).info !== undefined)
+            !entries.some(
+              (entry: JsonValue) => object(entry).info !== undefined,
+            )
           )
             throw new Error('missing native configuration');
         } catch {

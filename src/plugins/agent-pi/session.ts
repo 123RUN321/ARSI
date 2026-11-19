@@ -239,14 +239,15 @@ export async function createPiSession(
           )
             observe(event);
         });
-        let callFailure: unknown;
+        let callFailure: Error | undefined;
         const original = session.agent.streamFunction;
         session.agent.streamFunction = async (m, c, o) => {
           signal.throwIfAborted();
           try {
             await context.charge('modelCalls', 1);
           } catch (error) {
-            callFailure = error;
+            callFailure =
+              error instanceof Error ? error : new Error(String(error));
             session?.setAutoRetryEnabled(false);
             throw error;
           }
@@ -364,7 +365,7 @@ export async function createPiSession(
           signal.removeEventListener('abort', cancel);
         }
       } catch (error) {
-        const cause: unknown = signal.aborted ? signal.reason : error;
+        const cause = signal.aborted ? signal.reason : error;
         const message = cause instanceof Error ? cause.message : String(cause);
         if (request.parentRunId !== null)
           context.event.emit('rsi/agent-observation', {

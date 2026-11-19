@@ -11,7 +11,11 @@ import {
   projectMarker,
   roleNamePattern,
 } from '../shared/agent-editing/project.js';
-import type { AgentInput, JsonObject } from '../../contracts/index.js';
+import type {
+  AgentInput,
+  JsonObject,
+  JsonValue,
+} from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
 import { runCodexProcess } from './process.js';
 
@@ -59,7 +63,7 @@ export async function runSession(options: {
   if (platform === 'win32')
     launchConfig.push('sandbox_workspace_write.network_access=true');
   const startThread = (
-    send: (message: unknown) => void,
+    send: (message: JsonValue) => void,
     policy: JsonObject,
   ): void => {
     send({

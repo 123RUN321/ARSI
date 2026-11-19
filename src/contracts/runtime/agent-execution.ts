@@ -1,3 +1,5 @@
+import type { JsonValue } from '../json.js';
+
 export interface AgentProcessSpec {
   executable: string;
   args: string[];
@@ -7,7 +9,7 @@ export interface AgentProcessSpec {
 }
 export type AgentLineHandler = (
   line: string,
-  send: (message: unknown) => void,
+  send: (message: JsonValue) => void,
 ) => void | boolean | Promise<void | boolean>;
 export type AgentProcessLauncher = (
   spec: AgentProcessSpec,
