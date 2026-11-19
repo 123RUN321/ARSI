@@ -24,7 +24,7 @@ export async function runCommand(
   argv: string[],
   context: CommandContext,
 ): Promise<CommandResult> {
-  let result: CommandResult | undefined;
+  let result: { exitCode: number; json?: unknown } | undefined;
   let help = '';
   const helpRequested = new Error('Help requested');
   const captureHelp = (text: string): void => {
@@ -54,16 +54,12 @@ export async function runCommand(
     );
   const openRuntime = (): Promise<Runtime> =>
     context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir);
-  const jsonResult = (value: unknown, exitCode = 0): CommandResult => ({
-    exitCode,
-    stdout: JSON.stringify(value, null, 2) + '\n',
-  });
   const runJson = async (
     execute: (runtime: Runtime) => unknown,
   ): Promise<void> => {
     await ensurePluginHome();
     const runtime = await openRuntime();
-    result = jsonResult(await execute(runtime));
+    result = { exitCode: 0, json: await execute(runtime) };
   };
   program
     .command('run <recipe.yaml>')
@@ -164,7 +160,7 @@ export async function runCommand(
       openRuntime,
       releaseRuntime: context.releaseRuntime,
     });
-    result = jsonResult(report, report.summary.failed > 0 ? 1 : 0);
+    result = { exitCode: report.summary.failed > 0 ? 1 : 0, json: report };
   }
 
   function list(kind: string | undefined): Promise<void> {
@@ -225,5 +221,10 @@ export async function runCommand(
   }
   if (!result)
     throw new Error('Choose a subcommand; use --help for available commands');
+  if ('json' in result)
+    return {
+      exitCode: result.exitCode,
+      stdout: JSON.stringify(result.json, null, 2) + '\n',
+    };
   return result;
 }
