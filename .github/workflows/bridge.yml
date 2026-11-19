@@ -44,6 +44,7 @@ jobs:
           GITCODE_MEMBER_GIDEON_TOKEN: ${{ secrets.GITCODE_MEMBER_GIDEON_TOKEN }}
           GITCODE_MEMBER_FANGCHENG_TOKEN: ${{ secrets.GITCODE_MEMBER_FANGCHENG_TOKEN }}
           GITCODE_MEMBER_CHESTNUT_TOKEN: ${{ secrets.GITCODE_MEMBER_CHESTNUT_TOKEN }}
+          GITCODE_MEMBER_LEEIF_TOKEN: ${{ secrets.GITCODE_MEMBER_LEEIF_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -eu

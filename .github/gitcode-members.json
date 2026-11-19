@@ -13,5 +13,10 @@
     "github": {"id": "15665868", "username": "chestnut19981123"},
     "gitcode": {"id": "6a26b478270ba352b07370bb", "username": "Chestnut19981123"},
     "gitcode_pr_token_secret": "GITCODE_MEMBER_CHESTNUT_TOKEN"
+  },
+  {
+    "github": {"id": "15794005", "username": "leeif"},
+    "gitcode": {"id": "6a0ec57ec0cc1c4f56bc52ce", "username": "liyifan610"},
+    "gitcode_pr_token_secret": "GITCODE_MEMBER_LEEIF_TOKEN"
   }
 ]
