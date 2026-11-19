@@ -9,7 +9,12 @@ import {
 } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
-import type { CommandContext } from './runtime.js';
+
+export interface CommandContext {
+  signal: AbortSignal;
+  openRuntime(pluginDirectories: string[]): Promise<Runtime>;
+  releaseRuntime(): Promise<void>;
+}
 
 interface CommandResult {
   exitCode: number;
