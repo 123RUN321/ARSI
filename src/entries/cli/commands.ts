@@ -52,8 +52,8 @@ export async function runCommand(
       'after',
       '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.arsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
     );
-  const pluginDirectories = (): string[] =>
-    program.opts<{ pluginDir: string[] }>().pluginDir;
+  const openRuntime = (): Promise<Runtime> =>
+    context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir);
   const jsonResult = (value: unknown, exitCode = 0): CommandResult => ({
     exitCode,
     stdout: JSON.stringify(value, null, 2) + '\n',
@@ -62,7 +62,7 @@ export async function runCommand(
     execute: (runtime: Runtime) => unknown,
   ): Promise<void> => {
     await ensurePluginHome();
-    const runtime = await context.openRuntime(pluginDirectories());
+    const runtime = await openRuntime();
     result = jsonResult(await execute(runtime));
   };
   program
@@ -161,7 +161,7 @@ export async function runCommand(
     const report = await checkRecipe(file, {
       signal: context.signal,
       staticOnly: options.static ?? false,
-      openRuntime: () => context.openRuntime(pluginDirectories()),
+      openRuntime,
       releaseRuntime: context.releaseRuntime,
     });
     result = jsonResult(report, report.summary.failed > 0 ? 1 : 0);
@@ -203,7 +203,7 @@ export async function runCommand(
       throw new Error(
         'Dashboard requires a .rsi directory in the current working directory. Run it from your experiment workspace.',
       );
-    const runtime = await context.openRuntime(pluginDirectories());
+    const runtime = await openRuntime();
     const { createServer } = await import('../web/server.js');
     const server = await createServer(runtime);
     const address = await server.listen({ host: '127.0.0.1', port });
