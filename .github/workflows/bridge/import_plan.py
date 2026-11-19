@@ -22,13 +22,19 @@ class ImportPlan:
                                   maintenance_message='Preview GitCode merge\n')
 
 
-def is_outer_merge(original, batch, graph):
+def is_outer_merge(bridge, original, batch, graph):
     if len(batch) != 1 or len(graph) < 2 or not original:
         return False
     outer = graph[-1]
-    return (len(outer) == 3 and outer[0] == original.get('merge_commit_sha') == batch[0]
-            and (original.get('merged') is True or bool(original.get('merged_at')))
-            and (original.get('head') or {}).get('sha') == outer[2])
+    if (len(outer) != 3 or outer[0] != batch[0] or not (original.get('merged') is True or original.get('merged_at'))
+            or (original.get('head') or {}).get('sha') != outer[2]):
+        return False
+    # REST 2026-03-10 exposes the landing SHA on the merged event.
+    landed = bridge.source_merge_sha(original['number'])
+    if landed != outer[0]:
+        print(f'FULL GRAPH {outer[0]} | GitHub PR #{original["number"]} was merged at {landed}')
+        return False
+    return True
 
 
 def topic_boundaries(git, store, graph, master, history):
@@ -84,7 +90,7 @@ def plan_import(bridge, store, batch, master, *, original=None, topic_parents=No
 
     # Only a newly planned, confirmed two-parent GitHub PR may select the native merge.
     # A resumed import receives its saved boundaries, or stays on the old full-graph path.
-    if is_outer_merge(original, batch, graph):
+    if is_outer_merge(bridge, original, batch, graph):
         topic_parents = topic_boundaries(git, store, graph, master, history)
         if topic_parents is None:
             print(f'FULL GRAPH {source} | no verified destination fork point')

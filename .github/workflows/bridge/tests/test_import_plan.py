@@ -5,10 +5,12 @@ from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api import BridgeError
+from bridge import Bridge
 from git_ops import Git, Remote
 from import_plan import plan_import
 from state_store import GitStore, checkpoint
@@ -23,7 +25,11 @@ class ImportPlanTests(unittest.TestCase):
         temp = TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.git = Git(temp.name)
-        self.bridge = SimpleNamespace(git=self.git, bot=BOT, author=lambda oid, emails: MEMBER)
+        self.bridge = Bridge.__new__(Bridge)
+        self.bridge.git, self.bridge.bot = self.git, BOT
+        self.bridge.author = lambda oid, emails: MEMBER
+        self.bridge.github_api = Mock()
+        self.bridge.source_merge_commits = {}
         self.confirmed = {}
         self.store = SimpleNamespace(confirmed_master=self.confirmed.get)
 
@@ -40,8 +46,10 @@ class ImportPlanTests(unittest.TestCase):
         return self.git.run('hash-object', '-w', '-t', 'commit', '--stdin',
                             binary=True, input_data=raw).stdout.strip().decode()
 
-    def plan(self, outer, topic, master, **fields):
-        original = dict({'merged': True, 'merge_commit_sha': outer, 'head': {'sha': topic}}, **fields)
+    def plan(self, outer, topic, master, *, landed=None, **fields):
+        original = dict({'number': 78, 'merged': True, 'head': {'sha': topic}}, **fields)
+        self.bridge.github_api.pages.return_value = [{'event': 'merged', 'commit_id': landed or outer}]
+        self.bridge.source_merge_commits.clear()
         with redirect_stdout(StringIO()):
             return plan_import(self.bridge, self.store, [outer], master, original=original)
 
@@ -128,8 +136,40 @@ class ImportPlanTests(unittest.TestCase):
         self.assertFalse(self.plan(outer, topic, master).native_merge)
         self.confirmed[base] = a
         self.assertTrue(self.plan(outer, topic, master).native_merge)
-        for fields in ({'merged': False}, {'head': {'sha': main}}, {'merge_commit_sha': main}):
+        for fields in ({'merged': False}, {'head': {'sha': main}}, {'landed': main}):
             self.assertFalse(self.plan(outer, topic, master, **fields).native_merge)
+
+    def test_associated_prs_use_the_merged_event_and_reuse_it_for_the_plan(self):
+        base = self.commit({}, 'base')
+        master = self.git.rebuild(base, [], BOT)
+        topic = self.commit({'feature': 'data'}, 'business', base)
+        outer = self.commit({'feature': 'data'}, 'merge', base, topic)
+        self.bridge.source_branch = 'master'
+        self.bridge.binding = {'source': ['example/project', 1, 'refs/heads/master']}
+        base_ref = {'ref': 'master', 'repo': {'id': 1}}
+        responses = {
+            f'/commits/{outer}/pulls': [{'number': n, 'base': base_ref, 'merged_at': '2026-01-01T00:00:00Z'}
+                                        for n in (78, 79)],
+            '/issues/78/events': [{'event': 'referenced', 'commit_id': topic}, {'event': 'merged', 'commit_id': outer}],
+            '/issues/79/events': [{'event': 'merged', 'commit_id': base}],
+        }
+        self.bridge.github_api.pages.side_effect = responses.__getitem__
+        self.assertEqual(self.bridge.source_pull(outer), '78')
+        pr = {'number': 78, 'merged': True, 'head': {'sha': topic}}
+        self.bridge.github_api.pages.reset_mock()
+        with redirect_stdout(StringIO()):
+            plan = plan_import(self.bridge, self.store, [outer], master, original=pr)
+        self.bridge.github_api.pages.assert_not_called()
+        self.assertEqual((plan.native_merge, plan.count, self.git.parents(plan.head)), (True, 1, [master]))
+
+    def test_missing_or_conflicting_merge_events_cannot_confirm_a_landing(self):
+        first, second = '1' * 40, '2' * 40
+        for rows in ([], [{'event': 'referenced', 'commit_id': first}],
+                     [{'event': 'merged', 'commit_id': x} for x in (first, second)]):
+            with self.subTest(rows=rows):
+                self.bridge.github_api.pages.return_value = rows
+                with self.assertRaisesRegex(BridgeError, 'merged event commit for GitHub PR #78'):
+                    self.bridge.source_merge_sha(78)
 
     def test_git_failure_is_distinct_from_merge_conflict(self):
         tip = self.commit({}, 'tip')

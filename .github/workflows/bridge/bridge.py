@@ -147,6 +147,7 @@ class Bridge:
         self.member_tokens = member_tokens or {}
         self.verified_members = {}
         self.unavailable_members = set()
+        self.source_merge_commits = {}
         self.source = Remote('github', source_repo, github_token, 'x-access-token')
         self.github_api = Api('github', github_token, self.source.repo)
         source_info = checked_repo(self.github_api)
@@ -226,20 +227,28 @@ class Bridge:
             self.disable_member(actual, f'member write rejected with HTTP {error.code}')
         return post(self.bot, self.target_api)
 
+    def source_merge_sha(self, number):
+        number = pull_number({'number': number})
+        if number not in self.source_merge_commits:
+            events = self.github_api.pages(f'/issues/{number}/events')
+            revisions = {sha(event.get('commit_id')) for event in events if event.get('event') == 'merged'}
+            if len(revisions) != 1:
+                raise BridgeError(f'Could not confirm one merged event commit for GitHub PR #{number}')
+            self.source_merge_commits[number] = revisions.pop()
+        return self.source_merge_commits[number]
+
     def source_pull(self, commit):
-        matches, exact = set(), set()
+        matches = set()
         for pull in self.github_api.pages(f'/commits/{sha(commit)}/pulls'):
             base = pull.get('base') or {}
             if (not pull.get('merged_at') or base.get('ref') != self.source_branch
                     or (base.get('repo') or {}).get('id') != self.binding['source'][1]):
                 continue
-            number = pull_number(pull)
-            matches.add(number)
-            if pull.get('merge_commit_sha') == commit:
-                exact.add(number)
-        matches = exact or matches
+            matches.add(pull_number(pull))
         if len(matches) > 1:
-            raise BridgeError(f'GitHub returned multiple source PRs for commit {commit}')
+            matches = {number for number in matches if self.source_merge_sha(number) == commit}
+            if len(matches) != 1:
+                raise BridgeError(f'GitHub returned multiple source PRs for commit {commit} without a unique landing')
         return next(iter(matches), None)
 
     def source_link(self, pending):
