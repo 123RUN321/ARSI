@@ -262,9 +262,12 @@ class CommentDelivery:
             root = self.thread_root(intent)
             # Child list entries carry the mapped account ID. Their enclosing root supplies the discussion ID.
             discussion = root['discussion_id']
-            children = root.get('reply', [])
+            children = root.get('reply')
+            if children is None:
+                return []
             if not isinstance(children, list) or any(
-                    not isinstance(row, dict) or row.get('discussion_id', discussion) != discussion for row in children):
+                    not isinstance(row, dict) or row.get('discussion_id') not in (None, discussion)
+                    for row in children):
                 raise BridgeError('Destination returned an inconsistent discussion reply list')
             return [{**row, 'discussion_id': discussion} for row in children]
         if kind not in ('diff', 'pr'):

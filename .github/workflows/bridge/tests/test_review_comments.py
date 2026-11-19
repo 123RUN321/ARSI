@@ -300,6 +300,33 @@ class ThreadReceiptTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             CommentDelivery(self.bridge, self.store, '/pulls/24').run({'number': 5})
 
+    def test_first_reply_to_a_null_reply_list_recovers_when_the_child_has_no_discussion_id(self):
+        self.root['reply'] = None
+
+        def publish(method, path, payload):
+            self.root['reply'] = []
+            self.add_child(123)
+            self.root['reply'][0]['discussion_id'] = None
+            raise BridgeError('lost response')
+
+        self.member.call.side_effect = publish
+        with self.assertRaisesRegex(BridgeError, 'lost response'):
+            self.deliver()
+        self.assertEqual(self.store.review_comments['24']['8']['before'], [])
+        self.deliver()
+        self.deliver()
+        self.member.call.assert_called_once_with('POST', self.path, {'body': RAW})
+        self.assertEqual(self.store.review_comments['24']['8'], '123')
+
+    def test_malformed_reply_lists_and_conflicting_discussions_stop_before_posting(self):
+        for children in ({}, '', False, [None], [{'id': 123, 'discussion_id': 'other'}]):
+            with self.subTest(children=children):
+                self.root['reply'] = children
+                with self.assertRaisesRegex(BridgeError, 'inconsistent discussion reply list'):
+                    self.deliver()
+                self.member.call.assert_not_called()
+                self.assertNotIn('8', self.store.review_comments['24'])
+
     def test_exact_note_id_selects_the_posted_child_among_identical_replies_on_a_line(self):
         self.root['comment_type'] = 'diff_comment'
         self.add_child(121)
