@@ -33,13 +33,15 @@ export function createCommandContext(
         await releaseRuntime();
         return 0;
       } catch (error) {
-        process.stderr.write(
-          `Failed to dispose runtime: ${errorText(error)}\n`,
-        );
+        writeRuntimeCleanupError(error);
         return 1;
       }
     },
   };
+}
+
+export function writeRuntimeCleanupError(error: unknown): void {
+  process.stderr.write(`Failed to dispose runtime: ${errorText(error)}\n`);
 }
 
 export async function ensurePluginHome(): Promise<void> {

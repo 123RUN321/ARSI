@@ -1,4 +1,5 @@
 import type { DoctorReport } from '../../contracts/index.js';
+import { RuntimeCleanupInterruptedError } from '../../shared/errors.js';
 import type { Runtime } from '../context.js';
 import { doctorFailure, doctorRecipe } from './index.js';
 
@@ -35,10 +36,12 @@ export async function checkRecipe(
   try {
     await releaseRuntime();
   } catch (error) {
-    signal.throwIfAborted();
+    if (signal.aborted)
+      throw new RuntimeCleanupInterruptedError(signal.reason, error);
     const cleanup = doctorFailure('runtime.cleanup', error);
     report.checks.push(...cleanup.checks);
     report.summary.failed += cleanup.summary.failed;
   }
+  signal.throwIfAborted();
   return report;
 }

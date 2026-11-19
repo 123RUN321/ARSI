@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, fork } from 'node:child_process';
+import { once } from 'node:events';
 import { promisify } from 'node:util';
 import type { DoctorReport } from '../../src/contracts/index.js';
 
@@ -100,6 +101,58 @@ test('CLI reports an error when its home path is occupied by a file', async () =
   }
 });
 
+test(
+  'CLI handles the first SIGINT and forces exit on the second during stalled registration',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'rsi-cli-signal-'));
+    try {
+      await writeFile(
+        join(root, 'index.mjs'),
+        `export async function register() {
+          process.once('SIGINT', () => process.send('interrupted'));
+          process.send('registering');
+          await new Promise(() => setInterval(() => {}, 1000));
+        }`,
+      );
+      const child = fork(
+        resolve('src/entries/cli/main.ts'),
+        ['catalog', '--plugin-dir', root],
+        {
+          execArgv: ['--import', import.meta.resolve('tsx')],
+          cwd: root,
+          env: { ...process.env, HOME: root, USERPROFILE: root },
+        },
+      );
+      const closed = once(child, 'close');
+      try {
+        const [phase] = await once(child, 'message', {
+          signal: AbortSignal.timeout(30000),
+        });
+        assert.equal(phase, 'registering');
+        const interrupted = once(child, 'message', {
+          signal: AbortSignal.timeout(5000),
+        });
+        assert.ok(child.kill('SIGINT'));
+        const [message] = await interrupted;
+        assert.equal(message, 'interrupted');
+
+        const exited = once(child, 'exit', {
+          signal: AbortSignal.timeout(5000),
+        });
+        assert.ok(child.kill('SIGINT'));
+        assert.deepEqual(await exited, [130, null]);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null)
+          child.kill('SIGKILL');
+        await closed;
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
 test('CLI reports runtime cleanup failures and preserves command errors', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rsi-cli-cleanup-'));
   const launch = (...args: string[]) =>
@@ -125,6 +178,13 @@ test('CLI reports runtime cleanup failures and preserves command errors', async 
       `export function register(registry) {
         registry.retain(registry.catalog().plugins[0]);
         if (process.argv.includes('interrupted')) process.emit('SIGINT');
+        if (process.argv.includes('interrupted-during-cleanup')) {
+          const dispose = registry.dispose.bind(registry);
+          registry.dispose = () => {
+            process.emit('SIGINT');
+            return dispose();
+          };
+        }
       }`,
     );
     for (const { args, code, commandError } of [
@@ -136,6 +196,11 @@ test('CLI reports runtime cleanup failures and preserves command errors', async 
       },
       {
         args: ['doctor', 'interrupted'],
+        code: 130,
+        commandError: /^Interrupted$/,
+      },
+      {
+        args: ['doctor', 'interrupted-during-cleanup'],
         code: 130,
         commandError: /^Interrupted$/,
       },

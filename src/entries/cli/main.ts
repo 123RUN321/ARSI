@@ -1,13 +1,21 @@
 #!/usr/bin/env node
-import { errorText } from '../../shared/errors.js';
+import { constants } from 'node:os';
+import {
+  errorText,
+  RuntimeCleanupInterruptedError,
+} from '../../shared/errors.js';
 import { CommandUsageError, runCommand } from './commands.js';
-import { createCommandContext } from './runtime.js';
+import { createCommandContext, writeRuntimeCleanupError } from './runtime.js';
 
 async function main(argv: string[]): Promise<number> {
   let exitCode = 0;
   const controller = new AbortController();
   const context = createCommandContext(controller.signal);
-  const abort = (): void => controller.abort(new Error('Interrupted'));
+  const abort = (signal: NodeJS.Signals = 'SIGINT'): void => {
+    if (controller.signal.aborted)
+      process.exit(128 + constants.signals[signal]);
+    controller.abort(new Error('Interrupted'));
+  };
   // Keep the listeners installed during dispatch so signal-exit lets cleanup run.
   process.on('SIGINT', abort);
   process.on('SIGTERM', abort);
@@ -20,13 +28,19 @@ async function main(argv: string[]): Promise<number> {
       process.stderr.write(error.helpText);
       exitCode = 2;
     } else {
-      process.stderr.write(errorText(error) + '\n');
+      const interruptedCleanup =
+        error instanceof RuntimeCleanupInterruptedError;
+      process.stderr.write(
+        errorText(interruptedCleanup ? error.interruption : error) + '\n',
+      );
+      if (interruptedCleanup) writeRuntimeCleanupError(error.cause);
       exitCode = controller.signal.aborted ? 130 : 1;
     }
   } finally {
-    process.removeListener('SIGINT', abort);
-    process.removeListener('SIGTERM', abort);
-    const cleanupExitCode = await context.disposeRuntime();
+    const cleanupExitCode = await context.disposeRuntime().finally(() => {
+      process.removeListener('SIGINT', abort);
+      process.removeListener('SIGTERM', abort);
+    });
     exitCode ||= cleanupExitCode;
   }
   return exitCode;
