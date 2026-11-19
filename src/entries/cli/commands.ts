@@ -51,11 +51,11 @@ export async function runCommand(
       'Load extensions from a directory (repeatable)',
       (value: string, previous: string[]) => [...previous, value],
       [],
+    )
+    .addHelpText(
+      'after',
+      '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.arsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
     );
-  program.addHelpText(
-    'after',
-    '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.arsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
-  );
   const pluginDirectories = (): string[] =>
     program.opts<{ pluginDir: string[] }>().pluginDir;
   const jsonResult = (value: unknown, exitCode = 0): CommandResult => ({
