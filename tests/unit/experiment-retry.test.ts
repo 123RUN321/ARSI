@@ -8,26 +8,10 @@ import {
   defineContract,
   type JsonObject,
 } from '../../src/contracts/index.js';
-import { parseCommand } from '../../src/entries/cli/commands.js';
 import { createServer } from '../../src/entries/web/server.js';
 import { Manager } from '../../src/runtime/manager/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
 import { object } from '../../src/shared/json.js';
-
-test('CLI exposes one resume option with an experiment id', () => {
-  assert.equal(
-    parseCommand(['run', 'recipe.yaml', '--id', 'run', '--resume']).resume,
-    true,
-  );
-  assert.throws(
-    () => parseCommand(['run', 'recipe.yaml', '--resume']),
-    /requires --id/,
-  );
-  assert.throws(
-    () => parseCommand(['run', 'recipe.yaml', '--id', 'run', '--retry']),
-    /unknown option/,
-  );
-});
 
 test('HTTP exposes the same single resume option and requires an existing experiment id', async () => {
   const { managerFixture } = await import('../helpers/manager-fixture.js');

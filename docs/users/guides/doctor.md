@@ -76,7 +76,7 @@ Review `unchecked` results even when the exit code is zero. A complete JSON repo
 
 - `1` means at least one check failed.
 - `0` means no check failed, **including reports with unchecked entries**.
-- Interruption returns `130`.
+- Interruption returns `130`. If interruption occurs during Runtime cleanup and cleanup fails, stderr includes both diagnostics.
 - A command usage error, such as omitting the Recipe argument, returns `2`.
 
 ## 3. Checks for built-in components

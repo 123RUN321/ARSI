@@ -192,7 +192,7 @@ Runtime 通过注册 ID 查找插件。创建文件或在 Recipe 中填写 ID �
 
 > 维护框架内置插件时，也可将实现放在 `src/plugins/`，在[内置注册文件](../../../src/runtime/builtins.ts)中注册，并执行 `pnpm build` 随框架构建。
 
-1. 使用自定义插件工程自己的构建命令生成 `dist/proposer-keep-parent/`，将编译结果及运行时依赖部署到 `~/.arsi/plugins/my-extension/`，保留相对目录结构。
+1. 使用自定义插件工程自己的构建命令生成 `dist/proposer-keep-parent/`。创建 `~/.arsi/plugins/my-extension/`，再将编译结果及运行时依赖部署到该目录，保留相对目录结构。
 
 2. 在`~/.arsi/plugins/my-extension/`下创建 `index.mjs`，导出 `register(registry)`：
 

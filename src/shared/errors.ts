@@ -22,6 +22,17 @@ export function errorText(error: unknown): string {
   return message;
 }
 
+export class RuntimeCleanupInterruptedError extends Error {
+  constructor(
+    readonly interruption: unknown,
+    cleanupError: unknown,
+  ) {
+    super('Runtime cleanup failed during interruption', {
+      cause: cleanupError,
+    });
+  }
+}
+
 /** The candidate did not start. Expose this to the caller only after confirming cleanup. */
 export class InferenceStartupError extends OperationRejectedError {
   override readonly name = 'InferenceStartupError';
