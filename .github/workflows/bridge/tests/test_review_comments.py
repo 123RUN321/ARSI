@@ -68,7 +68,7 @@ class SourceTests(unittest.TestCase):
             ('issue:7', 'pr', {'body': RAW}), ('14', 'pr', {'body': '> `file.py` · LEFT L8\n\n' + RAW}),
             ('review:7', 'pr', {'body': '**APPROVED**'}), ('review:9', 'pr', {'body': RAW}),
             ('15', 'pr', {'body': '> `file.py` · 原第 11 行 · RIGHT · 已过时/无法挂行\n\n' + RAW}),
-            ('review:12', 'pr', {'body': '**DISMISSED**'}),
+            ('review:12', 'pr', {'body': '**DISMISSED**'}), ('16', 'reply', {'body': RAW}),
         ])
 
     def test_locations_for_ranges_outdated_rows_and_unverified_single_lines(self):
@@ -108,9 +108,37 @@ class SourceTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()) as output:
             preview_comments(self.bridge, 5, '/pulls/24', {'issue:7': {'kind': 'pr'}})
         self.assertIn('pr_comment=1, diff_comment=1, single-line candidates=0', output.getvalue())
-        self.assertIn('replies ignored=1', output.getvalue())
+        self.assertIn('thread replies=1', output.getvalue())
         self.assertIn('unconfirmed writes=1', output.getvalue())
+        with redirect_stdout(io.StringIO()) as output:
+            preview_comments(self.bridge, 5, records={'9': '120'})
+        self.assertIn('thread replies=0', output.getvalue())
         self.target.call.assert_not_called()
+
+    def test_orders_each_thread_after_its_root_even_on_ties_and_excludes_draft_replies(self):
+        self.rows['/pulls/5/reviews'] = [{'id': 41, 'state': 'PENDING'}]
+        self.rows['/pulls/5/comments'] = [
+            root(10, 7, in_reply_to_id=2), root(11, 8, in_reply_to_id=10),
+            root(2, 7, subject_type='file'), root(9, 7, in_reply_to_id=2, user={'id': 41}),
+            root(4, 6, in_reply_to_id=3), root(3, 8), root(8, 3, in_reply_to_id=2),
+            {'id': 12, 'in_reply_to_id': 2, 'pull_request_review_id': 41},
+        ]
+        items, count = read_comments(self.source, 5)
+        self.assertEqual([item.key for item in items], ['2', '8', '9', '10', '3', '4', '11'])
+        self.assertEqual([(i.key, i.reply_to, i.body) for i in items if i.reply_to],
+                         [(key, parent, RAW) for key, parent in [('8', '2'), ('9', '2'), ('10', '2'),
+                                                                  ('4', '3'), ('11', '2')]])
+        self.assertEqual(count, 5)
+
+    def test_absent_root_needs_a_bare_receipt_and_cyclic_links_stop(self):
+        self.rows['/pulls/5/comments'] = [root(2, 1, in_reply_to_id=1)]
+        with self.assertRaisesRegex(BridgeError, 'no published root'):
+            read_comments(self.source, 5, {'issue:1': '100', 'review:1': '101'})
+        items, _ = read_comments(self.source, 5, {'1': '102'})
+        self.assertEqual([(item.key, item.reply_to) for item in items], [('2', '1')])
+        self.rows['/pulls/5/comments'].append(root(1, 1, in_reply_to_id=2))
+        with self.assertRaisesRegex(BridgeError, 'Cyclic'):
+            read_comments(self.source, 5)
 
 
 class ReceiptStore:
@@ -163,7 +191,7 @@ class ReceiptTests(unittest.TestCase):
         self.member_api.call.side_effect = ApiError('gitcode', 403)
         self.note['user'] = {'id': BOT['id'], 'login': BOT['username']}
         self.detail['user']['login'] = BOT['username']
-        self.api.pages.side_effect = [[], [self.note]]
+        self.api.pages.side_effect = [[], [], [self.note]]
         self.api.call.side_effect = [BridgeError('lost response'), self.detail]
         with self.assertRaisesRegex(BridgeError, 'lost response'), redirect_stdout(io.StringIO()):
             self.delivery().post('issue:7', self.intent)
@@ -230,3 +258,180 @@ class ReceiptTests(unittest.TestCase):
         self.delivery().recover()
         self.api.pages.assert_called_once_with('/pulls/24/comments', comment_type='diff_comment')
         self.assertEqual(self.store.review_comments['24'], {'6': '120', '7': '123'})
+
+
+class ThreadReceiptTests(unittest.TestCase):
+    path = '/pulls/24/discussions/thread/comments'
+
+    def setUp(self):
+        self.store = ReceiptStore({'7': '120', 'issue:8': '110', 'review:8': '111'})
+        self.source = [root(8, 2, in_reply_to_id=7)]
+        self.bridge = Bridge.__new__(Bridge)
+        self.bridge.github_api = SimpleNamespace(pages={'/issues/5/comments': [], '/pulls/5/reviews': [],
+                                                        '/pulls/5/comments': self.source}.__getitem__)
+        self.api, self.member = Mock(), Mock()
+        self.bridge.target_api, self.bridge.bot = self.api, BOT
+        self.bridge.mapping, self.bridge.verified_members = {'7': MEMBER}, {MEMBER['id']: (MEMBER, self.member)}
+        self.bridge.unavailable_members, self.bridge.member_secrets = set(), {}
+        self.bridge.verify_pending_refs = Mock()
+        self.root = {'id': 120, 'discussion_id': 'thread', 'comment_type': 'pr_comment', 'reply': []}
+        self.roots = [self.root]
+        self.details = {'120': {'id': 120, 'discussion_id': 'thread'}}
+        self.pull = {'state': 'open'}
+        self.api.pages.side_effect = self.pages
+        self.api.call.side_effect = self.read
+
+    def pages(self, path, comment_type=None):
+        self.assertEqual(path, '/pulls/24/comments')
+        return deepcopy([r for r in self.roots if comment_type is None or comment_type == r['comment_type']])
+
+    def read(self, method, path):
+        self.assertEqual(method, 'GET')
+        return self.pull if path == '/pulls/24' else self.details[path.rsplit('/', 1)[1]]
+
+    def add_child(self, oid, account=MEMBER, body=RAW):
+        user = {'id': account['id'], 'login': account['username']}
+        self.root['reply'].append({'id': oid, 'user': user, 'body': body})
+        self.details[str(oid)] = {'id': oid, 'user': dict(user, id='internal'), 'discussion_id': 'thread', 'body': body}
+        if self.root['comment_type'] == 'diff_comment':
+            self.details[str(oid)]['position'] = {'new_path': 'file.py', 'new_line': 8}
+
+    def deliver(self):
+        with redirect_stdout(io.StringIO()):
+            CommentDelivery(self.bridge, self.store, '/pulls/24').run({'number': 5})
+
+    def test_exact_note_id_selects_the_posted_child_among_identical_replies_on_a_line(self):
+        self.root['comment_type'] = 'diff_comment'
+        self.add_child(121)
+
+        def publish(method, path, payload):
+            self.assertEqual((method, path, payload), ('POST', self.path, {'body': RAW}))
+            self.add_child(122)
+            self.add_child(123)
+            return {'id': 'thread', 'noteId': 123}
+
+        self.member.call.side_effect = publish
+        self.deliver()
+        self.deliver()
+        self.member.call.assert_called_once()
+        self.assertEqual(self.store.review_comments['24'], {'7': '120', '8': '123', 'issue:8': '110', 'review:8': '111'})
+
+    def test_lost_response_reconciles_only_unique_new_replies_in_the_right_thread(self):
+        self.add_child(121)
+        self.member.call.side_effect = BridgeError('lost response')
+        with self.assertRaisesRegex(BridgeError, 'lost response'):
+            self.deliver()
+        intent = self.store.review_comments['24']['8']
+        self.assertEqual((intent['kind'], intent['discussion_id'], intent['root_note_id'], intent['before']),
+                         ('reply', 'thread', '120', ['121']))
+        self.source.clear()
+        self.roots.append(dict(self.root, id=155, discussion_id='other', reply=[dict(self.root['reply'][0], id=156)]))
+        self.add_child(122, BOT)
+        self.add_child(123, body=RAW.strip())
+        self.add_child(124)
+        self.details['124']['discussion_id'] = 'other'
+        self.add_child(125)
+        self.details['125']['user']['login'] = 'other'
+        with self.assertRaisesRegex(BridgeError, 'unconfirmed write'):
+            self.deliver()
+        self.add_child(126)
+        self.add_child(127)
+        with self.assertRaisesRegex(BridgeError, 'Ambiguous discussion reply'):
+            self.deliver()
+        self.root['reply'].pop()
+        self.deliver()
+        self.assertEqual(self.store.review_comments['24']['8'], '126')
+        self.member.call.assert_called_once()
+
+    def test_definite_member_rejection_retries_the_same_nested_post_as_the_robot(self):
+        def reject_member(*args):
+            self.add_child(122, BOT)
+            raise ApiError('gitcode', 403)
+
+        def robot(method, path, payload=None):
+            if method == 'GET':
+                return self.read(method, path)
+            self.assertEqual((method, path, payload), ('POST', self.path, {'body': RAW}))
+            self.add_child(123, BOT)
+            raise BridgeError('lost robot response')
+
+        self.member.call.side_effect = reject_member
+        self.api.call.side_effect = robot
+        with self.assertRaisesRegex(BridgeError, 'lost robot response'):
+            self.deliver()
+        pending = self.store.review_comments['24']['8']
+        self.assertEqual((pending['account'], pending['before']), (BOT, ['122']))
+        self.deliver()
+        self.member.call.assert_called_once_with('POST', self.path, {'body': RAW})
+        self.assertEqual(self.store.review_comments['24']['8'], '123')
+        self.assertEqual([c['id'] for c in self.root['reply']], [122, 123])
+
+    def test_list_permission_error_before_writing_keeps_the_member_and_its_receipt_untouched(self):
+        self.api.pages.side_effect = ApiError('gitcode', 403)
+        with self.assertRaisesRegex(BridgeError, 'before publishing'):
+            self.deliver()
+        self.member.call.assert_not_called()
+        self.assertFalse(self.bridge.unavailable_members)
+        self.assertNotIn('8', self.store.review_comments['24'])
+
+    def test_unsupported_ordinary_thread_recovers_the_located_fallback_only_once(self):
+        fallback = '> 回复 `file.py`\n\n' + RAW
+
+        def publish(method, path, payload):
+            if path == self.path:
+                self.assertEqual(payload, {'body': RAW})
+                raise ApiError('gitcode', 405)
+            self.assertEqual((method, path, payload), ('POST', '/pulls/24/comments', {'body': fallback}))
+            note = {'id': 124, 'discussion_id': 'ordinary', 'comment_type': 'pr_comment', 'body': fallback,
+                    'user': {'id': MEMBER['id'], 'login': MEMBER['username']}}
+            self.roots.append(note)
+            self.details['124'] = dict(note, user={'id': 'internal', 'login': MEMBER['username']})
+            raise BridgeError('lost response')
+
+        self.member.call.side_effect = publish
+        with self.assertRaisesRegex(BridgeError, 'lost response'):
+            self.deliver()
+        record = self.store.review_comments['24']['8']
+        self.assertEqual((record['kind'], record['account'], record['payload']), ('pr', MEMBER, {'body': fallback}))
+        self.source.clear()
+        self.deliver()
+        self.deliver()
+        self.assertEqual(self.store.review_comments['24']['8'], '124')
+        self.assertEqual(self.member.call.call_count, 2)
+
+    def test_ineligible_thread_or_uncertain_failure_does_not_create_a_top_level_comment(self):
+        for kind, pull, status in [('diff_comment', {'state': 'open'}, 501),
+                                   ('pr_comment', {'state': 'closed'}, 405),
+                                   ('pr_comment', {'state': 'open', 'merged_at': 'yesterday'}, 405),
+                                   ('pr_comment', {'state': 'open'}, 502)]:
+            with self.subTest(kind=kind, pull=pull, status=status):
+                self.root['comment_type'], self.pull = kind, pull
+                self.member.call.reset_mock()
+                self.member.call.side_effect = ApiError('gitcode', status)
+                with self.assertRaisesRegex(BridgeError, str(status)):
+                    self.deliver()
+                self.member.call.assert_called_once_with('POST', self.path, {'body': RAW})
+                record = self.store.review_comments['24'].get('8')
+                self.assertEqual(record['kind'] if record else None, 'reply' if status == 502 else None)
+
+    def test_readback_failure_after_a_successful_nested_post_keeps_the_nested_intent(self):
+        def publish(*args):
+            self.add_child(123)
+            self.api.pages.side_effect = ApiError('gitcode', 405)
+            return {'id': 'thread', 'note_id': 123}
+
+        self.member.call.side_effect = publish
+        with self.assertRaises(ApiError):
+            self.deliver()
+        self.assertEqual(self.store.review_comments['24']['8']['kind'], 'reply')
+        self.api.pages.side_effect = self.pages
+        self.deliver()
+        self.assertEqual(self.store.review_comments['24']['8'], '123')
+        self.member.call.assert_called_once_with('POST', self.path, {'body': RAW})
+
+    def test_root_detail_must_match_a_root_on_this_pr_before_posting(self):
+        self.details['120']['discussion_id'] = 'other'
+        with self.assertRaisesRegex(BridgeError, 'Could not confirm reply root'):
+            self.deliver()
+        self.member.call.assert_not_called()
+        self.assertNotIn('8', self.store.review_comments['24'])
