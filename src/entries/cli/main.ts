@@ -24,11 +24,12 @@ async function main(argv: string[]): Promise<number> {
     if (result.stdout !== undefined) process.stdout.write(result.stdout);
     exitCode = result.exitCode;
   } catch (error) {
-    const interruptedCleanup = error instanceof RuntimeCleanupInterruptedError;
-    process.stderr.write(
-      errorText(interruptedCleanup ? error.interruption : error) + '\n',
-    );
-    if (interruptedCleanup) writeRuntimeCleanupError(error.cause);
+    if (error instanceof RuntimeCleanupInterruptedError) {
+      process.stderr.write(errorText(error.interruption) + '\n');
+      writeRuntimeCleanupError(error.cause);
+    } else {
+      process.stderr.write(errorText(error) + '\n');
+    }
     exitCode = controller.signal.aborted ? 130 : 1;
   } finally {
     const cleanupExitCode = await context.disposeRuntime().finally(() => {
