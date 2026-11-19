@@ -71,7 +71,16 @@ Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `
 | --- | --- | --- | --- |
 | `rsi/agent-observation` | Agent backend observations become available. | `emit` | `runId: string`: Run ID (`main` for the main Agent).<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`: Native identifiers.<br>`event: AgentEvent`: Normalized observation; see the [protocol](../../../src/contracts/models/agent-record.ts). |
 
-Optional: publish through the current execution context. The call-local recorder consumes it without broadcasting to plugin listeners; recording failures do not affect execution.
+In a Runtime-managed Agent's `execute(input, ctx)`, publish through the current `ctx`:
+
+```ts
+ctx.event.emit('rsi/agent-observation', {
+  runId: 'main',
+  event: { type: 'message.appended', messageId: 'reply-1', text: 'Hello' },
+});
+```
+
+The framework automatically saves the observation to `agent/events.jsonl` under this call's `ctx.directory` for Dashboard queries; the plugin need not write files or register a listener. This event is optional and is not broadcast to plugin listeners; recording failures do not affect execution.
 
 ### Policy execution
 

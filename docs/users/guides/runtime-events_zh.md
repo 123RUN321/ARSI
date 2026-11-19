@@ -71,7 +71,16 @@
 | --- | --- | --- | --- |
 | `rsi/agent-observation` | Agent 后端获得观察数据时 | `emit` | `runId: string`：运行 ID，主 Agent 为 `main`。<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`：原生标识。<br>`event: AgentEvent`：统一观察数据，见[协议定义](../../../src/contracts/models/agent-record.ts)。 |
 
-可选事件，通过当前执行上下文发布，仅由本次调用的记录器消费，不广播给插件监听者；记录失败不影响执行。
+在 Runtime 管理的 Agent 的 `execute(input, ctx)` 中，通过当前 `ctx` 发布：
+
+```ts
+ctx.event.emit('rsi/agent-observation', {
+  runId: 'main',
+  event: { type: 'message.appended', messageId: 'reply-1', text: 'Hello' },
+});
+```
+
+框架自动将观察数据保存到本次调用的 `ctx.directory` 下的 `agent/events.jsonl`，供 Dashboard 查询；插件无需自行写文件或注册监听。该事件可选，不广播给插件监听者；记录失败不影响执行。
 
 ### Policy 执行
 
