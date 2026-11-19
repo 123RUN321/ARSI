@@ -120,6 +120,9 @@ class Git:
     def tree(self, commit):
         return sha(self.run('rev-parse', sha(commit) + '^{tree}').stdout.strip())
 
+    def parents(self, commit):
+        return self.run('show', '-s', '--format=%P', sha(commit)).stdout.split()
+
     def introduced_commits(self, first, last):
         parents = self.run('show', '-s', '--format=%P', sha(first)).stdout.split()
         base = parents[0] if parents else None
@@ -131,8 +134,34 @@ class Git:
         by_tree = {}
         for row in self.run('log', '--format=%T %H', sha(head)).stdout.splitlines():
             tree, commit = row.split()
-            by_tree.setdefault(tree, commit)
+            by_tree.setdefault(tree, []).append(commit)
         return by_tree
+
+    def matching_import(self, source, candidates):
+        """Identify an older translated business commit, including its ordered parent trees."""
+        parents = [self.tree(p) for p in self.parents(source)]
+        matches = []
+        for candidate in candidates:
+            target_parents = self.parents(candidate)
+            if [self.tree(p) for p in target_parents] != parents:
+                continue
+            fields = self.run('show', '-s', '--format=%an%x00%ae', candidate, binary=True).stdout.rstrip(b'\n')
+            try:
+                name, email = fields.decode('utf-8').split('\0')
+            except UnicodeDecodeError:
+                continue  # Translated GitCode identities are always encoded as UTF-8.
+            if self.rebuild(source, target_parents, {'username': name, 'email': email}) == candidate:
+                matches.append(candidate)
+        return matches[0] if len(matches) == 1 else None
+
+    def merge_tree(self, base, head):
+        result = self.run('merge-tree', '--write-tree', sha(base), sha(head), allowed=(0, 1), binary=True)
+        first = result.stdout.partition(b'\n')[0]
+        if not re.fullmatch(rb'[0-9a-f]{40}', first):
+            raise BridgeError('git merge-tree did not return a result tree')
+        if result.returncode == 1:
+            return None
+        return first.decode('ascii')
 
     def alignment_counts(self, master, source):
         changes = self.run('diff', '--no-renames', '--name-status', '-z', sha(master), sha(source),
@@ -170,7 +199,7 @@ class Git:
             authors[source] = {'username': name, 'email': email}
         return authors
 
-    def verify_merge_identity(self, head, master, bot):
+    def verify_merge_identity(self, head, master, bot, *, native_source=None):
         # A fast-forward has no extra commit. A normal PR merge introduces head
         # as a secondary parent, even if master advanced again before our fetch.
         merges = self.run('rev-list', '--first-parent', '--merges', '--parents',
@@ -178,8 +207,12 @@ class Git:
         for row in merges:
             fields = row.split()
             if head in fields[2:]:
+                if native_source and (len(fields) != 3 or self.tree(fields[0]) != self.tree(native_source)):
+                    raise BridgeError('The native GitCode merge has a different tree or topology from the GitHub PR')
                 self.verify_identity(fields[0], bot)
-                break
+                return
+        if native_source:
+            raise BridgeError('Could not find the native GitCode merge of the prepared topic head')
 
     def rebuild(self, source, parents, account, *, maintenance_message=None):
         raw = self.run('cat-file', 'commit', sha(source), binary=True).stdout
