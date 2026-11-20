@@ -5,16 +5,26 @@ import childProcess, { type SpawnOptions } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseDocument } from 'yaml';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
+import { ManagedEvents } from '../../src/runtime/services/events.js';
 import { FileFacts } from '../../src/runtime/storage/index.js';
 import { object } from '../../src/shared/json.js';
 import {
   cleanupEvaluatorImages,
   recordImageCleanupInput,
 } from '../../src/plugins/shared/evaluator-adapter/image-cleanup.js';
-import { prepareEvaluationConfig } from '../../src/plugins/evaluator-agentbench/service.js';
-import { prepareEvaluationConfig as prepareKernelConfig } from '../../src/plugins/evaluator-operatorbench/service.js';
-import { runSdkCli } from '../../src/plugins/shared/evaluator-adapter/cli.js';
+import {
+  createAgentbench,
+  prepareEvaluationConfig,
+} from '../../src/plugins/evaluator-agentbench/service.js';
+import {
+  createOperatorbench,
+  prepareEvaluationConfig as prepareKernelConfig,
+} from '../../src/plugins/evaluator-operatorbench/service.js';
+import { registerBuiltins } from '../../src/runtime/builtins.js';
+import { managerFixture } from '../helpers/manager-fixture.js';
 
 async function fixture(t: test.TestContext) {
   const dataDirectory = await mkdtemp(join(tmpdir(), 'rsi-image-cleanup-'));
@@ -41,16 +51,20 @@ async function fixture(t: test.TestContext) {
   });
   const context = new RuntimeContext().extend({
     experimentId,
+    bindingId: 'agent-evaluator',
+    callId: 'call-' + 'a'.repeat(32),
     dataDirectory,
     facts,
     signal: new AbortController().signal,
+    cleanup: new AbortController().signal,
   });
-  const callId = 'call-' + 'a'.repeat(32);
   async function register(
     attempt?: string,
     workspaceRef: string | null = randomUUID(),
     overrides: JsonObject = {},
+    owner = context,
   ) {
+    const { callId } = owner;
     const directory = join(
       dataDirectory,
       'experiments',
@@ -60,7 +74,7 @@ async function fixture(t: test.TestContext) {
       ...(attempt ? ['attempts', attempt] : []),
     );
     const idempotencyKey = attempt ? callId + '-' + attempt : callId;
-    const call = context.extend({ directory, callId, idempotencyKey });
+    const call = owner.extend({ directory, idempotencyKey });
     const input = prepareEvaluationConfig(
       {
         benchmark: { name: 'terminalbench', version: '4.0' },
@@ -120,6 +134,113 @@ function report(...statuses: string[]): JsonObject {
   };
 }
 
+function experimentEvents(t: test.TestContext, context: RuntimeContext) {
+  const events = new ManagedEvents({
+    context: () => context,
+    diagnostic: ({ error }) => assert.fail(String(error)),
+  });
+  t.after(() => events.dispose());
+  return events;
+}
+
+const agentConfig = { benchmark: 'terminalbench', services: {} };
+
+test('an experiment without a Docker evaluator never opens its image journal, including on completed resume', async (t) => {
+  const f = await managerFixture(async () => ({ done: true }));
+  t.after(() => f.dispose());
+  await registerBuiltins(f.manager.options.registry);
+  const scan = t.mock.method(FileFacts.prototype, 'scan');
+  const result = await f.run();
+  assert.equal(result.status, 'succeeded');
+  const recipePath = join(f.manager.rootDirectory, 'recipe.yaml');
+  const saved = await f.manager.run(recipePath, { id: 'test', resume: true });
+  assert.deepEqual(saved, result);
+  const policyPath = join(f.manager.rootDirectory, 'policy.yaml');
+  const policy = parseDocument(await readFile(policyPath, 'utf8'));
+  const recipe = parseDocument(await readFile(recipePath, 'utf8'));
+  policy.setIn(['require', 'unused'], { contract: 'contract.agentbench' });
+  recipe.setIn(['bindings', 'unused'], {
+    plugin: 'evaluator.agentbench',
+    config: agentConfig,
+  });
+  await writeFile(policyPath, policy.toString());
+  await writeFile(recipePath, recipe.toString());
+  assert.equal(
+    (await f.manager.run(recipePath, { id: 'unused' })).status,
+    'succeeded',
+  );
+  assert.ok(
+    scan.mock.calls.every(
+      (call) => !call.arguments[0].startsWith('evaluator-images-'),
+    ),
+  );
+});
+
+test('failed, cancelled and foreign finishes leave the evaluator inputs pending', async (t) => {
+  const f = await fixture(t);
+  const entry = await f.register();
+  for (const [eventId, status, savedStatus] of [
+    [f.context.experimentId, 'failed', 'failed'],
+    [f.context.experimentId, 'cancelled', 'cancelled'],
+    ['foreign', 'succeeded', 'succeeded'],
+    [f.context.experimentId, 'succeeded', 'running'],
+  ] as const) {
+    const events = experimentEvents(t, f.context);
+    const scope = events.prepare(f.context.bindingId);
+    const evaluator = await createAgentbench(
+      agentConfig,
+      f.context.extend({ event: scope.event }),
+    );
+    events.activate(scope);
+    await f.context.facts.write('experiments', f.context.experimentId, {
+      id: f.context.experimentId,
+      status: savedStatus,
+    });
+    await events.event.parallel('rsi/experiment-finished', {
+      experimentId: eventId,
+      recipeId: 'test',
+      status,
+    });
+    events.stop();
+    await evaluator.dispose();
+    assert.deepEqual((await f.read(entry.key)).attempts, []);
+  }
+});
+
+test('older receipts require a call identifying the same experiment and binding', async (t) => {
+  const f = await fixture(t);
+  const entry = await f.register();
+  const { bindingId, ...legacy } = await f.read(entry.key);
+  assert.equal(bindingId, f.context.bindingId);
+  await f.context.facts.write(f.kind, entry.key, legacy);
+  const paths: string[] = [];
+  const run = async ({ configPath }: { configPath: string }) => {
+    paths.push(configPath);
+    return report('retained');
+  };
+  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  for (const [experimentId, owner] of [
+    ['foreign', f.context.bindingId],
+    [f.context.experimentId, 'other'],
+  ]) {
+    await f.context.facts.write('calls', entry.key, {
+      callId: entry.key,
+      experimentId,
+      bindingId: owner,
+    });
+    await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  }
+  assert.deepEqual((await f.read(entry.key)).attempts, []);
+  await f.context.facts.write('calls', entry.key, {
+    callId: entry.key,
+    experimentId: f.context.experimentId,
+    bindingId,
+  });
+  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  assert.deepEqual(paths, [entry.path]);
+  assert.equal((await f.read(entry.key)).bindingId, bindingId);
+});
+
 test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs', async (t) => {
   const f = await fixture(t);
   const first = await f.register();
@@ -132,7 +253,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
     'failed',
     'candidate',
   );
-  await cleanupEvaluatorImages(f.context, async (options) => {
+  await cleanupEvaluatorImages(f.context, 'agentbundle', async (options) => {
     assert.equal(options.command, 'cleanup images');
     paths.push(options.configPath);
     return options.configPath === first.path ? partial : report('retained');
@@ -143,7 +264,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   assert.equal(pending.status, 'pending');
   assert.ok(Array.isArray(pending.attempts));
   assert.deepEqual(object(pending.attempts[0]).report, partial);
-  await cleanupEvaluatorImages(f.context, async (options) => {
+  await cleanupEvaluatorImages(f.context, 'agentbundle', async (options) => {
     assert.equal(options.configPath, first.path);
     return report('deleted');
   });
@@ -151,7 +272,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   assert.equal(final.status, 'complete');
   assert.ok(Array.isArray(final.attempts));
   assert.equal(final.attempts.length, 2);
-  await cleanupEvaluatorImages(f.context, async () =>
+  await cleanupEvaluatorImages(f.context, 'agentbundle', async () =>
     assert.fail('completed input was replayed'),
   );
 });
@@ -168,10 +289,11 @@ test('uncertain ownership, edited input and an unrelated experiment never invoke
   };
   await cleanupEvaluatorImages(
     f.context.extend({ experimentId: 'elsewhere' }),
+    'agentbundle',
     run,
   );
   assert.deepEqual((await f.read(shared.key)).attempts, []);
-  await cleanupEvaluatorImages(f.context, run);
+  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
   assert.deepEqual(calls, []);
   assert.match(
     JSON.stringify((await f.read(edited.key)).attempts),
@@ -190,14 +312,16 @@ test('an aborted cleanup or an SDK error stays retryable with a recorded reason'
     f.context.extend({
       signal: AbortSignal.abort(new Error('cleanup deadline')),
     }),
+    'agentbundle',
   );
-  await cleanupEvaluatorImages(f.context, async () => {
+  await cleanupEvaluatorImages(f.context, 'agentbundle', async () => {
     throw new Error('daemon unavailable');
   });
   const controller = new AbortController();
   const partial = report('deleted', 'skipped');
   await cleanupEvaluatorImages(
     f.context.extend({ signal: controller.signal }),
+    'agentbundle',
     async () => {
       controller.abort(new Error('interrupted after one removal'));
       return partial;
@@ -233,11 +357,11 @@ test('a changed configuration variable does not settle cleanup against a differe
     calls++;
     return report();
   };
-  await cleanupEvaluatorImages(f.context, run);
+  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
   assert.equal(calls, 0);
   assert.equal((await f.read(entry.key)).status, 'pending');
   process.env.RSI_CLEANUP_TEST_IMAGE = 'fixture/original:1';
-  await cleanupEvaluatorImages(f.context, run);
+  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
   assert.equal(calls, 1);
   assert.equal((await f.read(entry.key)).status, 'complete');
 });
@@ -257,6 +381,7 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   await mkdir(directory, { recursive: true });
   const context = f.context.extend({
     callId,
+    bindingId: 'kernel-evaluator',
     idempotencyKey: callId,
     directory,
   });
@@ -273,7 +398,46 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   await writeFile(path, JSON.stringify(config));
   await recordImageCleanupInput({ context, kind: 'kernel' }, path, process.env);
   const issued: string[] = [];
-  await cleanupEvaluatorImages(context, async (options) => {
+  await cleanupEvaluatorImages(context, 'agentbundle', async () =>
+    assert.fail('AgentBench consumed a kernel input'),
+  );
+  assert.deepEqual((await f.read(callId)).attempts, []);
+  const events = experimentEvents(t, context);
+  const scope = events.prepare(context.bindingId);
+  const evaluator = await createOperatorbench(
+    {
+      benchmark: 'kernel',
+      task: {
+        directory: fileURLToPath(
+          new URL(
+            '../../examples/artifacts/kernel/transpose-copy/task/',
+            import.meta.url,
+          ),
+        ),
+      },
+    },
+    context.extend({
+      event: scope.event,
+      cleanup: AbortSignal.abort(new Error('operator cleanup deadline')),
+    }),
+  );
+  events.activate(scope);
+  await context.facts.write('experiments', context.experimentId, {
+    id: context.experimentId,
+    status: 'succeeded',
+  });
+  await events.event.parallel('rsi/experiment-finished', {
+    experimentId: context.experimentId,
+    recipeId: 'test',
+    status: 'succeeded',
+  });
+  events.stop();
+  await evaluator.dispose();
+  assert.match(
+    JSON.stringify((await f.read(callId)).attempts),
+    /operator cleanup deadline/,
+  );
+  await cleanupEvaluatorImages(context, 'kernel', async (options) => {
     issued.push(options.configPath);
     return report('retained');
   });
@@ -281,7 +445,7 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   assert.equal((await f.read(callId)).status, 'complete');
 });
 
-test('installed SDK cleans a profile-selected Docker environment using an isolated empty inventory', async (t) => {
+test('only the final AgentBench instance disposes its binding through the installed SDK', async (t) => {
   const f = await fixture(t);
   const root = f.context.dataDirectory;
   const docker = join(root, 'docker.cjs');
@@ -302,6 +466,12 @@ test('installed SDK cleans a profile-selected Docker environment using an isolat
   const entry = await f.register(undefined, randomUUID(), {
     environment: { config: { dockerExecutable: process.execPath } },
   });
+  const peer = await f.register(
+    undefined,
+    randomUUID(),
+    {},
+    f.context.extend({ bindingId: 'peer', callId: 'call-' + 'e'.repeat(32) }),
+  );
   const commandsSent: string[][] = [];
   const spawn = childProcess.spawn;
   t.mock.method(
@@ -309,22 +479,48 @@ test('installed SDK cleans a profile-selected Docker environment using an isolat
     'spawn',
     (command: string, args: string[], options: SpawnOptions) => {
       commandsSent.push(args.slice(3));
-      return spawn(command, args, options);
+      return spawn(command, args, {
+        ...options,
+        env: {
+          ...options.env,
+          NODE_OPTIONS:
+            '--require=' + JSON.stringify(docker.replaceAll('\\', '/')),
+        },
+      });
     },
   );
-  await cleanupEvaluatorImages(f.context, (options) =>
-    runSdkCli({
-      ...options,
-      env: {
-        ...options.env,
-        EVALUATOR_CACHE_DIR: join(root, 'cache'),
-        NODE_OPTIONS:
-          '--require=' + JSON.stringify(docker.replaceAll('\\', '/')),
-      },
-    }),
-  );
+  const events = experimentEvents(t, f.context);
+  const create = async () => {
+    const scope = events.prepare(f.context.bindingId);
+    const evaluator = await createAgentbench(
+      agentConfig,
+      f.context.extend({ event: scope.event, signal: AbortSignal.abort() }),
+    );
+    events.activate(scope);
+    return evaluator;
+  };
+  const retired = await create();
+  const current = await create();
+  await retired.dispose();
+  assert.deepEqual((await f.read(entry.key)).attempts, []);
+  const experimentId = f.context.experimentId;
+  await f.context.facts.write('experiments', experimentId, {
+    id: experimentId,
+    status: 'succeeded',
+  });
+  await events.event.parallel('rsi/experiment-finished', {
+    experimentId,
+    recipeId: 'test',
+    status: 'succeeded',
+  });
+  events.stop();
+  assert.deepEqual(commandsSent, []);
+  const disposal = current.dispose();
+  await current.dispose();
   const receipt = await f.read(entry.key);
   assert.equal(receipt.status, 'complete', JSON.stringify(receipt.attempts));
+  await disposal;
+  assert.deepEqual((await f.read(peer.key)).attempts, []);
   assert.match(JSON.stringify(receipt.attempts), /fixture-daemon/);
   const commands = await readFile(log, 'utf8');
   assert.match(commands, /image ls/);

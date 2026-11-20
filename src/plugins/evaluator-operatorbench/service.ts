@@ -21,6 +21,7 @@ import { digest, object, string } from '../../shared/json.js';
 import { compareFilePaths } from '../../shared/paths.js';
 import { parseConfig, validate } from '../../shared/schema.js';
 import { sourceIdentity } from '../shared/evaluator-adapter/identity.js';
+import { evaluatorImageDisposer } from '../shared/evaluator-adapter/image-cleanup.js';
 import { archiveItemExecution } from '../shared/evaluator-adapter/measurement.js';
 import { prepareOperatorCase } from './kernel-input.js';
 import { loadOperatorTask } from '../shared/operator-task.js';
@@ -48,7 +49,7 @@ import {
 
 export async function createOperatorbench(
   rawConfig: unknown,
-  _context: RuntimeContext,
+  services: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<OperatorbenchInput, OperatorbenchOutput>> {
   const config = parseConfig<OperatorbenchConfig>(
@@ -264,7 +265,7 @@ export async function createOperatorbench(
         },
       );
     },
-    async dispose(): Promise<void> {},
+    dispose: evaluatorImageDisposer(services, 'kernel'),
   };
 }
 

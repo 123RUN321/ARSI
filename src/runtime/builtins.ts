@@ -17,7 +17,6 @@ import { paretoEvolutionProposerDefinition } from '../plugins/proposer-pareto-ev
 import { memoryDefinition } from '../plugins/memory-agent/index.js';
 import { reflectionDefinition } from '../plugins/reflection-agent/index.js';
 import { agentbenchDefinition } from '../plugins/evaluator-agentbench/index.js';
-import { cleanupEvaluatorImages } from '../plugins/shared/evaluator-adapter/image-cleanup.js';
 import { inferencebenchDefinition } from '../plugins/evaluator-inferencebench/index.js';
 import { inferenceSelectorDefinition } from '../plugins/selector-inference/index.js';
 import { metricSelectorDefinition } from '../plugins/selector-metrics/index.js';
@@ -52,7 +51,6 @@ export async function registerBuiltins(registry: Registry): Promise<void> {
     operatorbenchDefinition,
   ];
   for (const definition of definitions) registry.registerOperation(definition);
-  registry.cleanupSucceededExperiment = cleanupEvaluatorImages;
   for (const path of [
     'harness2/policy.yaml',
     'wikiskill/policy.yaml',

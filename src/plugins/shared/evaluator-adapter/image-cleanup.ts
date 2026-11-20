@@ -14,7 +14,7 @@ import { clone, redact } from './data.js';
 
 type CleanupContext = Pick<
   RuntimeContext,
-  'experimentId' | 'dataDirectory' | 'facts' | 'signal'
+  'experimentId' | 'bindingId' | 'dataDirectory' | 'facts' | 'signal'
 >;
 export type ImageCleanupSource =
   | {
@@ -24,13 +24,15 @@ export type ImageCleanupSource =
     }
   | { context: RuntimeContext; kind: 'kernel' };
 
+const callKey = /^(call-[0-9a-f]{32})(?:-([0-9a-f]{24}))?$/;
+
 function configPath(
   context: CleanupContext,
   key: string,
-  kind: JsonValue,
+  kind: ImageCleanupSource['kind'],
 ): string | undefined {
-  const match = /^(call-[0-9a-f]{32})(?:-([0-9a-f]{24}))?$/.exec(key);
-  if (!match || (kind !== 'agentbundle' && kind !== 'kernel')) return undefined;
+  const match = callKey.exec(key);
+  if (!match) return undefined;
   return join(
     context.dataDirectory,
     'experiments',
@@ -101,6 +103,7 @@ export async function recordImageCleanupInput(
   }
   await context.facts.write(`evaluator-images-${context.experimentId}`, key, {
     experimentId: context.experimentId,
+    bindingId: context.bindingId,
     key,
     kind,
     ownerPath,
@@ -153,22 +156,80 @@ function cleanupResult(value: unknown): {
   };
 }
 
+/** Use the recorded call to identify the binding of older receipts. */
+async function ownsBinding(
+  context: CleanupContext,
+  entry: JsonObject,
+): Promise<boolean> {
+  if (entry.bindingId !== undefined)
+    return entry.bindingId === context.bindingId;
+  const match = typeof entry.key === 'string' && callKey.exec(entry.key);
+  if (!match) return false;
+  try {
+    const call = await context.facts.read('calls', match[1]);
+    return (
+      call.callId === match[1] &&
+      call.experimentId === context.experimentId &&
+      call.bindingId === context.bindingId
+    );
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return false;
+    throw error;
+  }
+}
+
+/** A retired instance can be disposed mid-experiment. Only the active binding sees the terminal event. */
+export function evaluatorImageDisposer(
+  context: RuntimeContext,
+  ownerKind: ImageCleanupSource['kind'],
+): () => Promise<void> {
+  let succeeded = false;
+  const unsubscribe = context.event?.on('rsi/experiment-finished', (event) => {
+    if (event.experimentId === context.experimentId)
+      succeeded = event.status === 'succeeded';
+  });
+  async function dispose(): Promise<void> {
+    unsubscribe?.();
+    if (!succeeded) return;
+    const experiment = await context.facts.read(
+      'experiments',
+      context.experimentId,
+    );
+    if (
+      experiment.id === context.experimentId &&
+      experiment.status === 'succeeded'
+    )
+      await cleanupEvaluatorImages(
+        context.extend({ signal: context.cleanup }),
+        ownerKind,
+      );
+  }
+  let disposal: Promise<void> | undefined;
+  return () => (disposal ??= dispose());
+}
+
 export async function cleanupEvaluatorImages(
   context: CleanupContext,
+  ownerKind: ImageCleanupSource['kind'],
   run = runSdkCli,
 ): Promise<void> {
   const kind = `evaluator-images-${context.experimentId}`;
   const receipts =
     context.facts.scan?.(kind) ?? (await context.facts.list(kind));
   for await (const entry of receipts) {
-    if (entry.status !== 'pending') continue;
+    if (
+      entry.status !== 'pending' ||
+      entry.experimentId !== context.experimentId ||
+      entry.kind !== ownerKind ||
+      !(await ownsBinding(context, entry))
+    )
+      continue;
     const key = string(entry.key);
     let outcome: JsonObject;
     try {
       context.signal.throwIfAborted();
-      if (entry.experimentId !== context.experimentId)
-        throw new Error('Evaluator cleanup experiment identity mismatch');
-      const path = configPath(context, key, entry.kind);
+      const path = configPath(context, key, ownerKind);
       if (!path) throw new Error('Invalid Evaluator cleanup call identity');
       if (digest(await readFile(path, 'utf8')) !== entry.inputDigest)
         throw new Error('Evaluator input changed after the recorded call');
@@ -219,6 +280,7 @@ export async function cleanupEvaluatorImages(
       throw new Error('Invalid Evaluator cleanup receipt');
     await context.facts.write(kind, key, {
       ...entry,
+      bindingId: context.bindingId,
       status: outcome.status,
       attempts: [
         ...entry.attempts,
