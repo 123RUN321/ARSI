@@ -1,10 +1,9 @@
-import { runSdkCli, type SdkCliOptions } from './cli.js';
+import { diagnoseExperiment, type DoctorOptions } from 'arsi-evaluator';
 
-export interface SdkDoctorOptions extends SdkCliOptions {
-  networkConfigPath: string;
-}
+export type SdkDoctorOptions = Required<
+  Pick<DoctorOptions, 'configPath' | 'networkConfigPath' | 'env' | 'signal'>
+>;
 
 export type SdkDoctorRunner = (options: SdkDoctorOptions) => Promise<unknown>;
 
-export const sdkDoctor: SdkDoctorRunner = (options) =>
-  runSdkCli({ ...options, command: 'doctor' });
+export const sdkDoctor = diagnoseExperiment;

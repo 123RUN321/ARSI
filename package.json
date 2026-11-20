@@ -47,7 +47,7 @@
     "agent-bundle-core": "git+https://github.com/ARSI-LAB/agentbundle.git#0.0.1&path:/packages/core",
     "ajv": "8.20.0",
     "commander": "15.0.0",
-    "arsi-evaluator": "git+https://github.com/ARSI-LAB/ARSI-Evaluator.git#0.0.5",
+    "arsi-evaluator": "git+https://github.com/ARSI-LAB/ARSI-Evaluator.git#7bb8f00850e880dc245dcabac836202918c3c613",
     "exceljs": "4.4.0",
     "fastify": "5.12.7",
     "htmlparser2": "10.0.0",

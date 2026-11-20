@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import childProcess, { type SpawnOptions } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -254,7 +253,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
     'candidate',
   );
   await cleanupEvaluatorImages(f.context, 'agentbundle', async (options) => {
-    assert.equal(options.command, 'cleanup images');
+    assert.equal(options.execute, true);
     paths.push(options.configPath);
     return options.configPath === first.path ? partial : report('retained');
   });
@@ -455,6 +454,7 @@ test('only the final AgentBench instance disposes its binding through the instal
     docker,
     `
     const command = require('node:path').basename(process.argv[1] ?? '');
+    if (command === 'cli.js') throw new Error('Evaluator cleanup must use the SDK directly');
     if (['info', 'image', 'ps'].includes(command)) {
       const args = [command, ...process.argv.slice(2)].join(' ');
       require('node:fs').appendFileSync(${JSON.stringify(log)}, args + '\\n');
@@ -472,23 +472,18 @@ test('only the final AgentBench instance disposes its binding through the instal
     {},
     f.context.extend({ bindingId: 'peer', callId: 'call-' + 'e'.repeat(32) }),
   );
-  const commandsSent: string[][] = [];
-  const spawn = childProcess.spawn;
-  t.mock.method(
-    childProcess,
-    'spawn',
-    (command: string, args: string[], options: SpawnOptions) => {
-      commandsSent.push(args.slice(3));
-      return spawn(command, args, {
-        ...options,
-        env: {
-          ...options.env,
-          NODE_OPTIONS:
-            '--require=' + JSON.stringify(docker.replaceAll('\\', '/')),
-        },
-      });
-    },
-  );
+  // The SDK starts our Docker substitute directly in the process environment.
+  const previous = process.env.NODE_OPTIONS;
+  process.env.NODE_OPTIONS = [
+    previous,
+    '--require=' + JSON.stringify(docker.replaceAll('\\', '/')),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  t.after(() => {
+    if (previous === undefined) delete process.env.NODE_OPTIONS;
+    else process.env.NODE_OPTIONS = previous;
+  });
   const events = experimentEvents(t, f.context);
   const create = async () => {
     const scope = events.prepare(f.context.bindingId);
@@ -514,7 +509,7 @@ test('only the final AgentBench instance disposes its binding through the instal
     status: 'succeeded',
   });
   events.stop();
-  assert.deepEqual(commandsSent, []);
+  await assert.rejects(readFile(log), { code: 'ENOENT' });
   const disposal = current.dispose();
   await current.dispose();
   const receipt = await f.read(entry.key);
@@ -525,5 +520,4 @@ test('only the final AgentBench instance disposes its binding through the instal
   const commands = await readFile(log, 'utf8');
   assert.match(commands, /image ls/);
   assert.doesNotMatch(commands, /image rm/);
-  assert.deepEqual(commandsSent, [['cleanup', 'images', entry.path, '--yes']]);
 });

@@ -18,7 +18,7 @@ import {tmpdir} from 'node:os';
 import {join,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createBundleSdk} from 'agent-bundle-core';
-import {Evaluator} from 'arsi-evaluator';
+import {Evaluator,cleanupImages} from 'arsi-evaluator';
 import {RuntimeContext} from './dist/src/contracts/index.js';
 import {FileArtifacts} from './dist/src/runtime/storage/index.js';
 import {createAgentbench} from './dist/src/plugins/evaluator-agentbench/service.js';
@@ -42,7 +42,8 @@ try {
  await writeFile(invalidDoctorConfig,'{}');
  await assert.rejects(sdkDoctor({configPath:invalidDoctorConfig,
   networkConfigPath:process.env.EVALUATOR_NETWORK_CONFIG,
-  env:process.env,signal:new AbortController().signal}),/SDK doctor could not complete/);
+  env:process.env,signal:new AbortController().signal}),/benchmark|services/i);
+ await assert.rejects(cleanupImages({configPath:invalidDoctorConfig}),/benchmark|services/i);
  const plugin=\`
 import {appendFileSync} from 'node:fs';
 import {createBundleSdk} from \${JSON.stringify(import.meta.resolve('agent-bundle-core'))};

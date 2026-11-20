@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { loadConfig } from 'arsi-evaluator';
+import {
+  cleanupImages,
+  loadConfig,
+  type ImageCleanupOptions,
+} from 'arsi-evaluator';
 import type {
   JsonObject,
   JsonValue,
@@ -9,7 +13,6 @@ import type {
 } from '../../../contracts/index.js';
 import { errorText } from '../../../shared/errors.js';
 import { digest, object, string } from '../../../shared/json.js';
-import { runSdkCli } from './cli.js';
 import { clone, redact } from './data.js';
 
 type CleanupContext = Pick<
@@ -212,7 +215,7 @@ export function evaluatorImageDisposer(
 export async function cleanupEvaluatorImages(
   context: CleanupContext,
   ownerKind: ImageCleanupSource['kind'],
-  run = runSdkCli,
+  run: (options: ImageCleanupOptions) => Promise<unknown> = cleanupImages,
 ): Promise<void> {
   const kind = `evaluator-images-${context.experimentId}`;
   const receipts =
@@ -261,9 +264,8 @@ export async function cleanupEvaluatorImages(
       ]);
       outcome = cleanupResult(
         await run({
-          command: 'cleanup images',
           configPath: path,
-          env: process.env,
+          execute: true,
           signal,
         }),
       );
