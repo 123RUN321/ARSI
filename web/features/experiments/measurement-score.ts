@@ -4,8 +4,8 @@ import type {
 } from '../../api/observation-client.js';
 
 const primaryNames = [
-  'meanReward',
   'score',
+  'meanReward',
   'reward.reward',
   'reward.overall',
   'reward.test_pass_rate',
@@ -15,15 +15,16 @@ const primaryNames = [
 export function primaryMetric(
   metrics: readonly MetricObservation[],
 ): MetricObservation | undefined {
+  const available = metrics.filter(
+    (metric) =>
+      metric.status === 'available' &&
+      Object.values(metric.values).some((value) => Number.isFinite(value)),
+  );
   return (
     primaryNames
-      .map((name) => metrics.find((metric) => metric.name === name))
+      .map((name) => available.find((metric) => metric.name === name))
       .find((metric) => metric !== undefined) ??
-    metrics.find(
-      (metric) =>
-        metric.status === 'available' &&
-        Object.values(metric.values).some((value) => typeof value === 'number'),
-    ) ??
+    available[0] ??
     metrics[0]
   );
 }
@@ -52,8 +53,10 @@ export function metricLabel(
     : `${label} (${metric.unit})`;
 }
 
-export function primaryScore(measurement: MeasurementSummary): number | null {
-  const metric = primaryMetric(measurement.metrics);
+export function primaryScore(
+  measurement: MeasurementSummary,
+  metric = primaryMetric(measurement.metrics),
+): number | null {
   return metric && primaryNames.includes(metric.name)
     ? metricValue(measurement, metric)
     : null;
@@ -68,7 +71,8 @@ export function metricValue(
   );
   return measurement.status === 'succeeded' &&
     metric?.status === 'available' &&
-    typeof metric.values.value === 'number'
+    typeof metric.values.value === 'number' &&
+    Number.isFinite(metric.values.value)
     ? metric.values.value
     : null;
 }
@@ -76,10 +80,11 @@ export function metricValue(
 /** Average each recorded round first so repeated evaluations do not overweight a task. */
 export function roundAverage(
   groups: readonly (readonly MeasurementSummary[])[],
+  metric = primaryMetric(groups.flat().flatMap((item) => item.metrics)),
 ): number | null {
   const means = groups.flatMap((group) => {
     const values = group
-      .map(primaryScore)
+      .map((item) => primaryScore(item, metric))
       .filter((value): value is number => value !== null);
     return values.length
       ? [values.reduce((sum, value) => sum + value, 0) / values.length]

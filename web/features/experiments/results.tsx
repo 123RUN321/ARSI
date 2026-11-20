@@ -15,7 +15,7 @@ import { useAllObservations, useObservation } from './use-observation';
 import { InferenceReport } from './inference-report';
 import { inferenceSummary } from './inference-summary';
 import { Measurements } from './measurements';
-import { metricValue } from './measurement-score';
+import { metricValue, primaryMetric } from './measurement-score';
 
 export function Results({
   id,
@@ -42,21 +42,10 @@ export function Results({
   const final = finalResults(references, measurements.data?.items ?? []);
   const metricKey = (metric: { name: string; unit: string }): string =>
     JSON.stringify([metric.name, metric.unit]);
-  const metrics = [
-    ...new Map(
-      final.scores.flatMap(({ measurement }) =>
-        measurement.metrics.map(
-          (metric) => [metricKey(metric), metric] as const,
-        ),
-      ),
-    ).entries(),
-  ];
-  const activeMetric = (metrics.find(
-    ([, metric]) => metric.name === 'meanReward',
-  ) ??
-    metrics.find(([, metric]) => metric.name === 'score') ??
-    metrics.find(([, metric]) => 'value' in metric.values) ??
-    metrics[0])?.[0];
+  const preferred = primaryMetric(
+    final.scores.flatMap(({ measurement }) => measurement.metrics),
+  );
+  const activeMetric = preferred ? metricKey(preferred) : undefined;
   if (!records.calls.data) return <Feedback {...records.calls} />;
   if (
     inferenceSummary(

@@ -105,7 +105,7 @@ export function parseExperiment(raw: unknown): ExperimentSummary {
   return {
     id: text(data.id),
     recipeId: nullable(data.recipeId),
-    policyRef: nullable(data.policyRef),
+    policyRef: nullable(data.policyRef ?? null),
     status: text(data.status),
     startedAt: nullable(data.startedAt),
     finishedAt: nullable(data.finishedAt),

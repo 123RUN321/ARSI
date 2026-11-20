@@ -14,7 +14,11 @@ import {
   ChartTooltipContent,
 } from '../../../components/ui/chart';
 import { useRoundLabels } from '../round-labels';
-import { primaryScore, roundAverage } from '../measurement-score';
+import {
+  primaryMetric,
+  primaryScore,
+  roundAverage,
+} from '../measurement-score';
 import { scoreLabel } from '../record-identifiers';
 
 export function HarnessAverage({
@@ -31,6 +35,7 @@ export function HarnessAverage({
       }),
     ),
   ];
+  const metric = primaryMetric(evaluations.flatMap((item) => item.metrics));
   const points = ['Base', 'Invariant', 'Domain', 'Composed'].map((variant) => {
     const groups = rounds.map((round) =>
       evaluations.filter((item) => {
@@ -38,9 +43,9 @@ export function HarnessAverage({
         return stage?.round === round && stage.variant === variant;
       }),
     );
-    const value = roundAverage(groups);
+    const value = roundAverage(groups, metric);
     const count = groups.filter((items) =>
-      items.some((item) => primaryScore(item) !== null),
+      items.some((item) => primaryScore(item, metric) !== null),
     ).length;
     return {
       variant,

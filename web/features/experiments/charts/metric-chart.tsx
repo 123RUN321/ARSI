@@ -92,8 +92,8 @@ export function ScorePlot({
   )?.name;
   const primaryMetric =
     metrics.find(([, item]) => item.name === preferredName) ??
-    metrics.find(([, item]) => item.name === 'meanReward') ??
     metrics.find(([, item]) => item.name === 'score') ??
+    metrics.find(([, item]) => item.name === 'meanReward') ??
     metrics.find(([, item]) => item.statistics.includes('value')) ??
     metrics[0];
   const activeMetric = !comparison
