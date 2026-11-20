@@ -156,15 +156,18 @@ export async function createOperatorbench(
           try {
             try {
               native = object(
-                await runner({
-                  configPath,
-                  signal: context.signal,
-                  env: {
-                    ...process.env,
-                    RSI_KERNEL_REPLAY_NO_MODEL_KEY:
-                      'not-a-secret-no-model-calls',
+                await runner(
+                  {
+                    configPath,
+                    signal: context.signal,
+                    env: {
+                      ...process.env,
+                      RSI_KERNEL_REPLAY_NO_MODEL_KEY:
+                        'not-a-secret-no-model-calls',
+                    },
                   },
-                }),
+                  { context, kind: 'kernel' },
+                ),
               );
             } catch (error) {
               if (

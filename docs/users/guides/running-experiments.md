@@ -98,11 +98,17 @@ Runtime restores budget usage, compatible effective revisions, call receipts, an
 
 Experiments created before the Runtime saved control-flow decisions require a new experiment ID.
 
-- Completed experiments return their saved result without additional calls or charges.
+- Resuming a successful experiment retries pending Evaluator image cleanup and returns the saved result without running the Policy or charging the budget again.
 - Keep the ordered Policy step IDs, types, nesting, and required plugin contract IDs. New calls use the currently registered input and output schemas.
 - The Runtime reuses completed Policy steps and committed results. It retries unfinished steps using the supplied bindings, configuration, and code. For an in-progress branch, loop iteration, or foreach, it preserves the previously selected branch, iteration, or items. A retried plugin call uses a fresh attempt directory and acquires fresh instances.
 - Retry keeps recorded usage and the original start time. Update the Recipe budget if the experiment exhausted it.
 - Once the previous execution releases the experiment lock or the lock expires after a crash, resume can retry incomplete calls, including receipts marked `unknown` or left as `running`. The Runtime archives the previous receipt and any unresolved cleanup record. A retry can repeat an external operation whose previous outcome is unknown.
+
+### Evaluator Docker images
+
+After a successful experiment saves its result and releases its instances, RSI asks the Evaluator SDK to clean up Docker images for each recorded Agentbench or Operatorbench call attempt. RSI passes the public input it wrote for that attempt (`evaluator.json` or `sdk-config.json`). Failed or cancelled experiments keep their images for resume. Local Inferencebench runs need no Docker cleanup.
+
+Inspect `.rsi/facts/evaluator-images-<experiment-id>/` for the per-attempt receipts. The SDK reports deleted and retained references, including images shared with other configurations. Skipped references, failures and unconfirmed ownership remain pending. After resolving the recorded reason, run the same `arsi run … --id … --resume` command in the original environment. Attempts created before RSI started recording these inputs have no automatic cleanup receipt.
 
 ## Dashboard
 

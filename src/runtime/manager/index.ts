@@ -210,6 +210,13 @@ export class Manager {
     let restore: JsonObject | undefined;
     const checkpoints = new PolicyCheckpoints(this.facts, id);
     const resources = join(this.directory, 'experiments', id, 'resources');
+    const cleanupSucceededExperiment = (signal: AbortSignal) =>
+      this.options.registry.cleanupSucceededExperiment?.({
+        experimentId: id,
+        dataDirectory: this.directory,
+        facts: this.facts,
+        signal: AbortSignal.any([signal, controller.signal]),
+      }) ?? Promise.resolve();
     try {
       if (continuing) {
         resumedRecord = readExperimentRecord(await this.get(id));
@@ -217,6 +224,17 @@ export class Manager {
         assertDefinitionLock(locked);
         if (resumedRecord.status === 'succeeded') {
           await assertCleanupResolved(this.facts, id);
+          const reserve = object(
+            object(locked.recipe).budget ?? {},
+          ).cleanupReserveMs;
+          await cleanupSucceededExperiment(
+            AbortSignal.any([
+              ...(options.signal ? [options.signal] : []),
+              ...(typeof reserve === 'number'
+                ? [AbortSignal.timeout(reserve)]
+                : []),
+            ]),
+          );
           await releaseLock();
           return resumedRecord;
         }
@@ -987,6 +1005,9 @@ export class Manager {
         finalNotification,
         () => Promise.allSettled([...diagnostics]),
         terminal !== 'succeeded',
+        terminal === 'succeeded'
+          ? () => cleanupSucceededExperiment(cleanup.signal)
+          : undefined,
       );
       void cleanupJob.then(
         () => {

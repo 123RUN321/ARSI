@@ -28,6 +28,13 @@ interface Registration {
 
 export class Registry {
   readonly context = new Context();
+  /** Composition-root maintenance, called under the experiment lock after successful teardown. */
+  cleanupSucceededExperiment?: (
+    context: Pick<
+      RuntimeContext,
+      'experimentId' | 'dataDirectory' | 'facts' | 'signal'
+    >,
+  ) => Promise<void>;
   private readonly registrations = new Map<string, Registration>();
   private readonly policyFiles = new Map<string, string>();
   private readonly references = new Map<string, number>();

@@ -139,6 +139,7 @@ export class CleanupLifecycle {
     notification: Promise<unknown>,
     diagnostics: () => Promise<unknown>,
     releaseOnFailure = false,
+    afterDisposal?: () => Promise<void>,
   ): Promise<void> {
     if (this.state !== 'idle') throw new Error('Cleanup already started');
     const work = async (): Promise<void> => {
@@ -175,7 +176,7 @@ export class CleanupLifecycle {
         }
         throw failure;
       }
-      await this.finish();
+      await this.finish('succeeded', afterDisposal);
     };
     this.retryPreparation = work;
     return this.attempt(work);
@@ -226,6 +227,7 @@ export class CleanupLifecycle {
 
   private async finish(
     status: 'succeeded' | 'reconciled' = 'succeeded',
+    afterDisposal?: () => Promise<void>,
   ): Promise<void> {
     await this.events.dispose();
     let previous;
@@ -244,6 +246,9 @@ export class CleanupLifecycle {
         status,
         finishedAt: new Date().toISOString(),
       });
+    // A process exit during maintenance leaves confirmed disposal and retryable
+    // maintenance receipts. The live process still holds the experiment lock.
+    await afterDisposal?.();
     await this.releaseResources();
     this.state = 'released';
   }

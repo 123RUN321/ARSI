@@ -55,11 +55,18 @@ export async function createAgentbench(
           await context.charge('evaluationRuns', 1);
           let result: unknown;
           try {
-            result = await runner({
-              configPath,
-              signal: context.signal,
-              env: process.env,
-            });
+            result = await runner(
+              {
+                configPath,
+                signal: context.signal,
+                env: process.env,
+              },
+              {
+                context,
+                kind: 'agentbundle',
+                workspaceRef: execution.workspaceRef,
+              },
+            );
           } catch (error) {
             const partial =
               error && typeof error === 'object' && 'result' in error
