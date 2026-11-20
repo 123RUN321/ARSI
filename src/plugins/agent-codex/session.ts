@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   projectMarker,
   roleNamePattern,
@@ -8,7 +9,9 @@ import {
 import type { AgentInput, JsonObject } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
-import { runCodexProcess } from './process.js';
+import { CodexProcessExitError, runCodexProcess } from './process.js';
+
+const startupBackoffMs = [250, 500];
 
 function nativeError(value: unknown): string {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
@@ -22,7 +25,7 @@ function nativeError(value: unknown): string {
 }
 
 /** Codex owns native tools, configuration and recovery. */
-export async function runSession(options: {
+interface SessionOptions {
   executable: string;
   directory: string;
   model?: string;
@@ -30,7 +33,36 @@ export async function runSession(options: {
   request: AgentInput;
   signal: AbortSignal;
   record: (type: string, data: unknown) => void;
-}): Promise<JsonObject> {
+}
+
+export async function runSession(options: SessionOptions): Promise<JsonObject> {
+  const { signal } = options;
+  for (let attempt = 0; ; attempt += 1) {
+    signal.throwIfAborted();
+    let turnSubmitted = false;
+    try {
+      return await runSessionAttempt(options, () => {
+        turnSubmitted = true;
+      });
+    } catch (error) {
+      signal.throwIfAborted();
+      const wait = startupBackoffMs[attempt];
+      if (turnSubmitted || wait === undefined) throw error;
+      options.record('startup_retry', {
+        attempt: attempt + 1,
+        delayMs: wait,
+        exitCode:
+          error instanceof CodexProcessExitError ? error.exitCode : null,
+      });
+      await delay(wait, undefined, { signal });
+    }
+  }
+}
+
+async function runSessionAttempt(
+  options: SessionOptions,
+  markTurnSubmitted: () => void,
+): Promise<JsonObject> {
   const { request, signal, record } = options;
   let threadId = '';
   let response = '';
@@ -172,6 +204,7 @@ export async function runSession(options: {
           provider: configuration.modelProvider ?? null,
           reasoningEffort: configuration.reasoningEffort ?? null,
         });
+        markTurnSubmitted();
         send({
           id: 3,
           method: 'turn/start',

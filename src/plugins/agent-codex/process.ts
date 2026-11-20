@@ -1,6 +1,12 @@
 import { spawn } from 'node:child_process';
 import { codexCommand } from './executable.js';
 
+export class CodexProcessExitError extends Error {
+  constructor(readonly exitCode: number | null) {
+    super(`Codex process exited with code ${exitCode}`);
+  }
+}
+
 /** Own the entire process group until exit, including cancellation and launch errors. */
 export async function runCodexProcess(
   executable: string,
@@ -107,8 +113,7 @@ export async function runCodexProcess(
       signal.removeEventListener('abort', cancel);
       if (signal.aborted) reject(signal.reason);
       else if (failure) reject(failure);
-      else if (code !== 0)
-        reject(new Error(`Codex process exited with code ${code}`));
+      else if (code !== 0) reject(new CodexProcessExitError(code));
       else resolve();
     });
     child.stdin.write(input);
