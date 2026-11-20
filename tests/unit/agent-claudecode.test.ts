@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { AgentOutputError } from '../../src/contracts/runtime/errors.js';
 import { createAgentClaudeCode } from '../../src/plugins/agent-claudecode/service.js';
 import { agentFixture } from '../fixtures/agent-execution.js';
 import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
@@ -71,25 +72,27 @@ test('Claude translates text, thinking and correlated tool results while returni
   );
 });
 
-test('Claude rejects invalid final output without correction or a second launch', async (t) => {
-  let launches = 0;
-  const f = await agentFixture(async (_spec, consume) => {
-    launches++;
-    await consume(
-      JSON.stringify({
-        type: 'result',
-        is_error: false,
-        subtype: 'success',
-        structured_output: { wrong: true },
-      }),
-      () => {},
+for (const output of [undefined, null, [], 'text', { wrong: true }]) {
+  test(`Claude classifies invalid output ${JSON.stringify(output)} without a second launch`, async (t) => {
+    let launches = 0;
+    const f = await agentFixture(async (_spec, consume) => {
+      launches++;
+      await consume(
+        JSON.stringify({
+          type: 'result',
+          is_error: false,
+          subtype: 'success',
+          structured_output: output,
+        }),
+        () => {},
+      );
+    });
+    t.after(() => f.close());
+    const agent = await createAgentClaudeCode(
+      { executable: process.execPath },
+      f.context,
     );
+    await assert.rejects(f.execute(agent), AgentOutputError);
+    assert.equal(launches, 1);
   });
-  t.after(() => f.close());
-  const agent = await createAgentClaudeCode(
-    { executable: process.execPath },
-    f.context,
-  );
-  await assert.rejects(f.execute(agent), /agent output|Agent output/);
-  assert.equal(launches, 1);
-});
+}

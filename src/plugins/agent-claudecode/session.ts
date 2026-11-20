@@ -5,6 +5,7 @@ import type {
   AgentProcessLauncher,
 } from '../../contracts/index.js';
 import type { AgentInput, JsonObject } from '../../contracts/index.js';
+import { AgentOutputError } from '../../contracts/runtime/errors.js';
 import { object } from '../../shared/json.js';
 import type { ResolvedAgentClaudeCodeConfig } from './schema.js';
 import { runNativeJsonProcess as runClaudeProcess } from '../shared/native-agent/json-process.js';
@@ -65,9 +66,20 @@ export async function runSession(options: {
           throw new Error(
             `Claude Code task failed (${typeof event.subtype === 'string' ? event.subtype : 'unknown status'})`,
           );
-        if (event.structured_output === undefined)
-          throw new Error('Claude Code returned no structured output');
-        result = object(event.structured_output);
+        const output = event.structured_output;
+        if (output === undefined)
+          throw new AgentOutputError(
+            'Claude Code returned no structured output',
+          );
+        if (
+          output === null ||
+          typeof output !== 'object' ||
+          Array.isArray(output)
+        )
+          throw new AgentOutputError(
+            'Claude Code structured output must be a JSON object',
+          );
+        result = output;
       }
     },
     options.launch,
