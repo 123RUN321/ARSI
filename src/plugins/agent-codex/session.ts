@@ -50,7 +50,18 @@ export async function runSession(options: SessionOptions): Promise<JsonObject> {
       runSessionAttempt(options, () => {
         submitted = true;
       }),
-    (error) => !submitted && !('status' in error && error.status === 'unknown'),
+    (error) => {
+      if (submitted || ('status' in error && error.status === 'unknown'))
+        return false;
+      options.record({
+        runId: 'main',
+        event: {
+          type: 'observation.gap',
+          reason: 'Retrying Codex startup before turn submission.',
+        },
+      });
+      return true;
+    },
   );
 }
 

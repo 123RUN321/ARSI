@@ -13,7 +13,7 @@ from tempfile import TemporaryDirectory
 from api import Api, ApiError, BridgeError, same_account
 from git_ops import CommitIdentityMismatch, Git, MASTER_BRANCH, MASTER_REF, Remote, repository, sha
 from import_plan import plan_import
-from review_comments import CommentDelivery, first_comments
+from review_comments import CommentDelivery, preview_comments
 from state_store import GitStore, checkpoint
 
 
@@ -74,10 +74,10 @@ def workflow_range():
     """A rerun reads the original event file and checkout revision."""
     event_name = os.environ['GITHUB_EVENT_NAME']
     after = sha(os.environ['GITHUB_SHA'])
-    if event_name in ('schedule', 'workflow_dispatch'):
+    if event_name == 'workflow_dispatch':
         return None, after
     if event_name != 'push':
-        raise BridgeError('Expected a push, schedule or workflow_dispatch event')
+        raise BridgeError('Expected a push or workflow_dispatch event')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8'))
     if event['ref'] != os.environ['GITHUB_REF'] or event['after'] != after or event.get('deleted'):
         raise BridgeError('Push ref and after must match the checked-out revision')
@@ -395,9 +395,13 @@ class Bridge:
     def finish_pull(self, store, progress, original, number=None):
         path, merged = self.prepare_pull(store, progress, number, original)
         pending = store.progress['pending']  # PR creation may have fallen back to the robot.
+        if original is not None:
+            delivery = CommentDelivery(self, store, path)
+            if merged:
+                delivery.recover()
+            else:
+                delivery.run(original)
         if not merged:
-            if original is not None:
-                CommentDelivery(self, store, path).run(original)
             self.verify_pending_refs(pending)
             try:
                 self.target_api.call('PUT', path + '/merge', {
@@ -423,9 +427,7 @@ class Bridge:
         plan = plan_import(self, store, batch, master, original=original, preview=check, alignment=alignment)
         if check:
             if original is not None:
-                roots, skipped, replies = first_comments(self.github_api, github_pull)
-                print(f'REVIEW preview | {len(roots)} candidate roots, {skipped} without a supported line, '
-                      f'{replies} replies ignored')
+                preview_comments(self, github_pull)
             return plan.preview_master(self, master, source), plan.count
         head = plan.head
         branch = f'bridge/github-{source[:12]}-{head[:20]}'
@@ -450,7 +452,12 @@ class Bridge:
         if self.git.is_ancestor(pending['head'], master):
             path = f'/pulls/{number}' if number is not None else None
             self.verify_landed_merge(pending, master, path)
-            if not check and number is not None:
+            if check and original is not None and number is not None:
+                records = store.review_comments.get(str(number), {})
+                outstanding = sum(isinstance(record, dict) for record in records.values())
+                print(f'REVIEW preview GitHub PR #{original["number"]} | GitCode PR already merged, '
+                      f'unconfirmed writes={outstanding}')
+            elif not check and number is not None:
                 self.prepare_pull(store, progress, number, original)
                 CommentDelivery(self, store, path).recover()
             return master, 0
@@ -478,6 +485,9 @@ class Bridge:
             ref = self.git.tip(self.target, self.git.branch_ref(pending['branch']))
             if ref != plan.head and (ref is not None or number is not None):
                 raise BridgeError('The destination sync branch differs from the prepared commits')
+            if original is not None:
+                path = f'/pulls/{number}' if number is not None else None
+                preview_comments(self, pending['github_pull'], path, store.review_comments.get(str(number)))
             return plan.preview_master(self, master, source), plan.count
         if base_changed:
             # The identical staged head still merges cleanly to the pinned source tree on the new base.
