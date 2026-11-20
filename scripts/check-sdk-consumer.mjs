@@ -43,7 +43,7 @@ try {
  await assert.rejects(evaluator.doctor({configPath:invalidDoctorConfig,
   networkConfigPath:process.env.EVALUATOR_NETWORK_CONFIG,
   env:process.env,signal:new AbortController().signal}),/benchmark|services/i);
- await assert.rejects(evaluator.cleanupImages({configPath:invalidDoctorConfig}),/benchmark|services/i);
+ await assert.rejects(evaluator.cleanup({configPath:invalidDoctorConfig}),/benchmark|services/i);
  const plugin=\`
 import {appendFileSync} from 'node:fs';
 import {createBundleSdk} from \${JSON.stringify(import.meta.resolve('agent-bundle-core'))};
