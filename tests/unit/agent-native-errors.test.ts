@@ -1,0 +1,121 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
+import { agentFixture } from '../fixtures/agent-execution.js';
+import { createAgentClaudeCode } from '../../src/plugins/agent-claudecode/service.js';
+import { createAgentDsh } from '../../src/plugins/agent-dsh/service.js';
+import { createAgentOpenCode } from '../../src/plugins/agent-opencode/service.js';
+
+for (const [name, create, events, pattern] of [
+  [
+    'Claude Code',
+    createAgentClaudeCode,
+    [{ type: 'result', is_error: true, subtype: 'error_during_execution' }],
+    /task failed/,
+  ],
+  [
+    'Claude Code',
+    createAgentClaudeCode,
+    [
+      {
+        type: 'result',
+        is_error: false,
+        subtype: 'success',
+        permission_denials: [{}],
+      },
+    ],
+    /requires permission/,
+  ],
+  [
+    'Claude Code',
+    createAgentClaudeCode,
+    [{ type: 'result', is_error: false, subtype: 'success' }],
+    /no structured output/,
+  ],
+  ['DSH', createAgentDsh, [], /no final result/],
+  [
+    'DSH',
+    createAgentDsh,
+    [
+      { type: 'session', sessionId: 's' },
+      {
+        type: 'final',
+        sessionId: 's',
+        reason: { kind: 'aborted' },
+        text: '{"answer":"ok"}',
+      },
+    ],
+    /did not complete/,
+  ],
+  [
+    'DSH',
+    createAgentDsh,
+    [
+      { type: 'session', sessionId: 's' },
+      {
+        type: 'final',
+        sessionId: 'other',
+        reason: { kind: 'completed' },
+        text: '{"answer":"ok"}',
+      },
+    ],
+    /Invalid DSH final session/,
+  ],
+  [
+    'DSH',
+    createAgentDsh,
+    [{ type: 'error', message: 'native error' }],
+    /native error/,
+  ],
+  [
+    'OpenCode',
+    createAgentOpenCode,
+    [{ type: 'text', part: { messageID: 'm', text: '{"answer":"ok"}' } }],
+    /no successfully completed/,
+  ],
+  [
+    'OpenCode',
+    createAgentOpenCode,
+    [{ type: 'step_finish', part: { messageID: 'm', reason: 'error' } }],
+    /no successfully completed/,
+  ],
+  ['OpenCode', createAgentOpenCode, [{ type: 'error' }], /execution failed/],
+] as const) {
+  test(`${name} rejects native failure without another launch: ${pattern.source}`, async (t) => {
+    let launches = 0;
+    const f = await agentFixture(async (_spec, consume) => {
+      launches++;
+      for (const event of events)
+        await consume(JSON.stringify(event), () => {});
+    });
+    t.after(() => f.close());
+    const agent = await create({ executable: process.execPath }, f.context);
+    await assert.rejects(f.execute(agent), pattern);
+    assert.equal(launches, 1);
+    if (name === 'DSH')
+      await assert.rejects(
+        access(join(f.context.directory, 'dsh-launch.json')),
+        {
+          code: 'ENOENT',
+        },
+      );
+  });
+}
+
+for (const [name, create] of [
+  ['Claude Code', createAgentClaudeCode],
+  ['DSH', createAgentDsh],
+  ['OpenCode', createAgentOpenCode],
+] as const) {
+  test(`${name} preserves launch failures and rejects invalid configuration`, async (t) => {
+    const f = await agentFixture(async () => {
+      throw new Error('Native launch failed');
+    });
+    t.after(() => f.close());
+    for (const invalid of [{ executable: '' }, { unsupported: true }])
+      await assert.rejects(create(invalid, f.context), /config/);
+    const agent = await create({ executable: process.execPath }, f.context);
+    await assert.rejects(f.execute(agent), /Native launch failed/);
+  });
+}

@@ -721,6 +721,7 @@ export async function runGepa(options: {
               plugin: 'agent.pi',
               config: {
                 model: 'fixture',
+                executionTimeoutMs: 30000,
                 base_url: options.realAgentEndpoint,
                 api_key: '${GEPA_LOCAL_FIXTURE_KEY}',
                 maxTokens: 4096,
@@ -728,7 +729,6 @@ export async function runGepa(options: {
                 thinkingLevel: 'off',
                 retries: 0,
                 timeoutMs: 10000,
-                executionTimeoutMs: 30000,
               },
             }
           : { plugin: 'test.gepa-agent', config: {} },

@@ -75,7 +75,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       throw new Error('Experiment no longer accepts business calls');
     if (caller.experimentId !== id)
       throw new Error('Call belongs to another experiment');
-    const rawInput = input;
     let definition: OperationDefinition;
     let agentInput: JsonObject | undefined;
     let project: string | undefined;
@@ -151,7 +150,6 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       typeof policyReceipt?.callId === 'string'
         ? policyReceipt.callId
         : identity(input);
-    const legacyId = identity(rawInput);
     const existing = active.get(callId);
     if (existing) return existing;
     const checkedOutput = (value: unknown): JsonValue => {
@@ -190,22 +188,17 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       }
 
       let prior: JsonObject | undefined;
-      // Prior direct calls hashed input before defaults. Inspect that receipt too,
-      // so upgrading a running experiment cannot repeat its external effects.
-      for (const ref of new Set([callId, legacyId])) {
-        try {
-          prior = await options.facts.read('calls', ref);
-          break;
-        } catch (error) {
-          if (
-            !(
-              error instanceof Error &&
-              'code' in error &&
-              error.code === 'ENOENT'
-            )
+      try {
+        prior = await options.facts.read('calls', callId);
+      } catch (error) {
+        if (
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'ENOENT'
           )
-            throw error;
-        }
+        )
+          throw error;
       }
       if (prior?.status === 'succeeded') return checkedOutput(prior.output);
       ctx.signal.throwIfAborted();
@@ -269,6 +262,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
         const receipt: JsonObject = {
           ...info,
           pluginId: binding.plugin,
+          contractId: definition.contract.id,
           status: 'running',
           input,
           ...(projectArtifactRef === undefined
@@ -318,6 +312,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             }
           }
         });
+        const parentSignal = ctx.signal;
         let output: JsonValue;
         let memoryFailed = false;
         try {
@@ -356,7 +351,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             explicit === 'unknown'
               ? 'unknown'
               : explicit === 'cancelled' ||
-                  (ctx.signal.aborted &&
+                  (parentSignal.aborted &&
                     !(
                       childFailures.has(callId) &&
                       childFailures.get(callId) === error

@@ -582,9 +582,9 @@ try {
  const reviewer=await packageResource(fileURLToPath(new URL('plugins/reflection-agent/reviewer.md',installed)));
  assert.ok((await readFile(reviewer,'utf8')).trim());
  const {createProjectSubagentTool}=await import(new URL('plugins/agent-pi/subagent.js',installed));
- const projectContext=context.extend({directory:${JSON.stringify(outside)},artifacts:runtime.manager.artifacts});
- const cwd=await prepareAgentProject(projectContext,'Delegate an inspection.',{},[],[{name:'reviewer',description:'Inspect evidence',prompt:reviewer}]);
- assert.equal((await createProjectSubagentTool({cwd,goal:'inspect',outputSchema:{}},projectContext)).name,'subagent','installed delegation tool loads without source checkout resources');
+ const projectContext=context.extend({callId:'consumer',directory:${JSON.stringify(outside)},artifacts:runtime.manager.artifacts,workspaces:runtime.manager.workspaces});
+ const project=await prepareAgentProject(projectContext,'Delegate an inspection.',{},[],[{name:'reviewer',description:'Inspect evidence',prompt:reviewer}]);
+ assert.equal((await createProjectSubagentTool(project,async()=>({findings:'consumer'}))).name,'subagent','installed delegation tool loads without source checkout resources');
  for(const goal of ['generic','proposer','proposer-office','memory','selector']){
   const goalFile=fileURLToPath(new URL('plugins/reflection-agent/goals/'+goal+'/prompt.md',installed));
   const configFile=resolve(${JSON.stringify(outside)},'reflection-'+goal+'.json');
@@ -638,8 +638,9 @@ try {
  });
  const contract=defineContract({id:'contract.consumer-worker',input_schema:{type:'object'},output_schema:{type:'object'}});
  runtime.registry.registerOperation({
-  id:'consumer.worker',contract,configSchema:{type:'object'},
+  id:'consumer.worker',contract,configSchema:{type:'object',additionalProperties:false},
   async create(_config,factoryCtx){
+   assert.deepEqual(_config,{});
    creations++;
    factoryCtx.event.on('consumer/notice',function(event,ctx){
     assert.equal(this.tag,'package');assert.equal(ctx.bindingId,'worker');
@@ -694,7 +695,8 @@ console.log('Installed resources and managed ctx.event subscriptions, publishing
     `
 import type { Context, Events } from '@deepseek-ai/cordis';
 import { Registry } from 'arsi';
-import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput } from 'arsi/contracts';
+import { defineContract, RuntimeContext, type JsonObject, type Operation, type OperationDefinition, type EventPipeline, type OperatorbenchInput, type OperatorbenchOutput, type OperatorProposerInput, type OperatorProposerOutput, type OperatorSummarizerInput, type OperatorSummarizerOutput, type MetricSelectorOutput, type BindingDeclaration } from 'arsi/contracts';
+export const configuredBinding: BindingDeclaration = { plugin: 'consumer.worker', config: {} };
 declare module 'arsi/contracts' {
  interface RuntimeContext { traceId?: string; }
 }

@@ -21,7 +21,7 @@ test(
     const shim = join(root, 'fixture.cmd');
     await writeFile(
       shim,
-      '@ECHO off\r\n"node" "%dp0%\\package\\cli.js" %*\r\n',
+      '@ECHO off\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n"%_prog%" "%dp0%\\package\\cli.js" %*\r\n',
     );
     // npm also installs an extensionless POSIX shell launcher beside the .cmd.
     await writeFile(join(root, 'fixture'), '#!/bin/sh\nexit 99\n');

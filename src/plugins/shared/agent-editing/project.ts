@@ -95,7 +95,7 @@ export async function prepareAgentProject(
       await write(`roles/${role.name}.md`, body);
       await write(
         `.claude/agents/${role.name}.md`,
-        `---\n${stringify({ name: role.name, description: role.description, tools: ['Read', 'Glob', 'Grep', 'Skill'] })}---\n${body}\n`,
+        `---\n${stringify({ name: role.name, description: role.description })}---\n${body}\n`,
       );
       await write(
         `.codex/agents/${role.name}.toml`,

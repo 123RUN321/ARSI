@@ -19,7 +19,7 @@
 
 ## 2. 内置事件一览
 
-内置事件由框架在对应执行位置自动发布，插件直接订阅即可。下表说明监听函数第一个参数 `event` 的完整字段：每个事件都包含所属分组的通用参数，再加上事件表列出的专用参数。未标 `?` 的字段均必填；`?` 表示可以省略，`string | null` 表示字段存在但值可为 `null`。所有字段只读，类型定义见[事件契约](../../../src/contracts/runtime/events.ts)。
+下述生命周期和事实通知由框架自动发布，插件直接订阅即可；Agent 对话观察使用下文单独说明的调用内路径。下表说明监听函数第一个参数 `event` 的完整字段：每个事件都包含所属分组的通用参数，再加上事件表列出的专用参数。未标 `?` 的字段均必填；`?` 表示可以省略，`string | null` 表示字段存在但值可为 `null`。所有字段只读，类型定义见[事件契约](../../../src/contracts/runtime/events.ts)。
 
 普通监听接收 `(event, ctx)`，`rsi/before-call` 接收 `(event, next, ctx)`。`ctx` 是本次监听的 `RuntimeContext`；`next: () => Promise<CallDecision>` 用于继续后续监听并取得准入决策，详见[监听内置事件](#3-监听内置事件)。`ctx` 和 `next` 都不是 `event` 的字段。
 
@@ -64,6 +64,23 @@
 | `rsi/call-failed`    | 失败回执保存后，报告插件原始错误前               | `parallel`  | 无。                                                                  |
 | `rsi/call-cancelled` | 取消回执保存后，报告调用取消前                   | `parallel`  | 无。                                                                  |
 | `rsi/call-unknown`   | 插件执行结果未确认的回执保存后                   | `parallel`  | 无。                                                                  |
+
+### Agent 对话观察
+
+| 事件 | 发布时机 | 分发方式 | 参数 |
+| --- | --- | --- | --- |
+| `rsi/agent-observation` | Agent 后端获得观察数据时 | `emit` | `runId: string`：运行 ID，主 Agent 为 `main`。<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`：原生标识。<br>`event: AgentEvent`：统一观察数据，见[协议定义](../../../src/contracts/models/agent-record.ts)。 |
+
+在 Runtime 管理的 Agent 的 `execute(input, ctx)` 中，通过当前 `ctx` 发布：
+
+```ts
+ctx.event.emit('rsi/agent-observation', {
+  runId: 'main',
+  event: { type: 'message.appended', messageId: 'reply-1', text: 'Hello' },
+});
+```
+
+框架自动将观察数据保存到本次调用的 `ctx.directory` 下的 `agent/events.jsonl`，供 Dashboard 查询。
 
 ### Policy 执行
 

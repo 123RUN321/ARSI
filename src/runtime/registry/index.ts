@@ -1,3 +1,5 @@
+import { managedAgentOperation } from '../services/agent-execution/task.js';
+import { agentContract } from '../../contracts/plugin-types/agent.js';
 import { Context } from '@deepseek-ai/cordis';
 import type {
   JsonObject,
@@ -97,9 +99,15 @@ export class Registry {
     )
       throw new Error(`Duplicate ID ${definition.id}`);
     const contract = this.registerContract(definition.contract);
-    const create = async (config: JsonObject, services: RuntimeContext) => {
+    const create = async (
+      config: JsonObject,
+      services: RuntimeContext,
+    ): Promise<Operation> => {
       validate(definition.configSchema, config, 'plugin config');
-      return definition.create(config as C, services);
+      const operation = await definition.create(config as C, services);
+      return contract.id === agentContract.id
+        ? managedAgentOperation(operation)
+        : operation;
     };
     const { doctor, ...capabilities } = definition;
     const registered: OperationDefinition = {

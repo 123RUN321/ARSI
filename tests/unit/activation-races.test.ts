@@ -177,7 +177,10 @@ test('restored activation publishes its binding and revision together to existin
   await f.facts.write('activations', 'activation-race', {
     activationId: 'activation-restored',
     bindings: {
-      worker: { plugin: 'activation.worker', config: { version: 2 } },
+      worker: {
+        plugin: 'activation.worker',
+        config: { version: 2 },
+      },
     },
     revisions: { worker: 'revision-restored' },
   });

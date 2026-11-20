@@ -13,6 +13,7 @@ const call = (
 ): CallSummary => ({
   callId,
   pluginId,
+  contractId: pluginId === 'agent.pi' ? 'contract.agent' : null,
   parentCallId,
   path,
   bindingId: pluginId.split('.')[0]!,
@@ -88,4 +89,14 @@ test('call labels use bindings and verified evaluation stages, preserving Reflec
     callLabels({ ...reflection, triggerPath: null }, []).round,
     null,
   );
+});
+
+test('third-party Agents are identified by contract rather than implementation name', () => {
+  const parent = call('parent', 'proposer.agent', 'root', 'loop/0/propose');
+  const agent = {
+    ...call('child', 'vendor.custom-backend', 'parent', 'call-parent'),
+    contractId: 'contract.agent',
+  };
+  assert.equal(ownerCallId(agent, [parent, agent]), 'parent');
+  assert.equal(callLabels(agent, [parent, agent]).title, 'Proposer');
 });

@@ -1,88 +1,151 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { traceRows } from '../../web/features/experiments/trace-model.js';
+import type { AgentEvent } from '../../src/contracts/index.js';
 import type { CallTrace } from '../../src/contracts/observation.js';
 function event(
   sequence: number,
-  type: string,
-  data: unknown,
+  value: AgentEvent,
+  runId = 'main',
   at: string | null = null,
 ): CallTrace['items'][number] {
   return {
     sequence,
-    type,
     at,
-    content: { text: JSON.stringify(data), truncated: false },
+    type: value.type,
+    runId,
+    event: value,
+    native: null,
+    payloadRef: null,
   };
 }
-test('trace pairs parallel tools by ID and retains model content and chronological steps', () => {
-  const events = [
-    event(0, 'message_end', {
-      message: {
-        content: [
-          { type: 'thinking', thinking: 'Think' },
-          { type: 'text', text: 'Answer' },
-        ],
-      },
+test('parallel tools pair by run and ID, and final messages replace their deltas', () => {
+  const rows = traceRows([
+    event(1, {
+      type: 'tool.started',
+      toolCallId: 'a',
+      name: 'Read',
+      input: { path: 'a' },
     }),
+    event(2, {
+      type: 'tool.started',
+      toolCallId: 'b',
+      name: 'Read',
+      input: { path: 'b' },
+    }),
+    event(3, {
+      type: 'tool.completed',
+      toolCallId: 'b',
+      output: 'B',
+      status: 'succeeded',
+    }),
+    event(4, {
+      type: 'tool.completed',
+      toolCallId: 'a',
+      output: 'A',
+      status: 'failed',
+    }),
+    event(5, { type: 'message.appended', messageId: 'm', text: 'hel' }),
+    event(6, { type: 'message.appended', messageId: 'm', text: 'lo' }),
+    event(7, {
+      type: 'message.completed',
+      messageId: 'm',
+      role: 'assistant',
+      text: 'hello',
+    }),
+    event(
+      8,
+      {
+        type: 'tool.completed',
+        toolCallId: 'a',
+        output: 'child',
+        status: 'succeeded',
+      },
+      'child',
+    ),
+  ]);
+  assert.equal(rows[0].result, 'A');
+  assert.equal(rows[0].status, 'Failed');
+  assert.equal(rows[1].result, 'B');
+  assert.equal(rows[2].body, 'hello');
+  assert.equal(rows[3].result, 'child');
+  assert.equal(rows.length, 4);
+});
+
+test('tool durations use matching run timestamps and leave missing starts unknown', () => {
+  const rows = traceRows([
     event(
       1,
-      'tool_execution_start',
-      { toolCallId: 'a', toolName: 'read', args: { path: 'a' } },
-      '2026-11-03T00:00:00Z',
+      { type: 'tool.started', toolCallId: 'a', name: 'Read', input: {} },
+      'main',
+      '2026-11-17T00:00:00.000Z',
     ),
-    event(2, 'tool_execution_start', {
-      toolCallId: 'b',
-      toolName: 'read',
-      args: { path: 'b' },
-    }),
-    event(3, 'tool_execution_end', {
-      toolCallId: 'b',
-      toolName: 'read',
-      result: 'bad',
-      isError: true,
-    }),
+    event(
+      2,
+      { type: 'tool.started', toolCallId: 'a', name: 'Read', input: {} },
+      'child',
+      '2026-11-17T00:00:01.000Z',
+    ),
+    event(
+      3,
+      {
+        type: 'tool.completed',
+        toolCallId: 'a',
+        output: '',
+        status: 'succeeded',
+      },
+      'main',
+      '2026-11-17T00:00:02.500Z',
+    ),
     event(
       4,
-      'tool_execution_end',
-      { toolCallId: 'a', toolName: 'read', result: 'ok' },
-      '2026-11-03T00:00:02Z',
+      {
+        type: 'tool.completed',
+        toolCallId: 'a',
+        output: '',
+        status: 'succeeded',
+      },
+      'child',
+      '2026-11-17T00:00:04.000Z',
     ),
-    event(5, 'message_end', {
-      message: { content: [{ type: 'toolCall', name: 'read' }] },
-    }),
-    event(6, 'tool_execution_start', {
-      toolCallId: 'c',
-      toolName: 'read',
-      args: { path: 'c' },
-    }),
-  ];
-  const rows = traceRows(events);
-  assert.equal(rows.length, 4);
-  assert.equal(rows[0].thinking, 'Think');
-  assert.equal(rows[0].body, 'Answer');
-  assert.equal(rows[1].result, 'ok');
-  assert.equal(rows[1].duration, 2);
-  assert.equal(rows[2].result, 'bad');
-  assert.equal(rows[2].status, 'Failed');
-  assert.equal(rows[3].step, 2);
-  assert.equal(rows[3].status, 'Result not loaded');
-  assert.equal(traceRows(events.slice(0, 3))[1].status, 'Result not loaded');
-});
-test('trace preserves unmatched results, invalid previews and missing timing without invention', () => {
-  const rows = traceRows([
-    event(0, 'tool_execution_start', { toolName: 'read' }),
-    event(1, 'tool_execution_end', { toolName: 'read', result: 'ok' }),
-    {
-      sequence: 2,
-      type: 'message_end',
-      at: null,
-      content: { text: '{"message":', truncated: true },
-    },
+    event(
+      5,
+      {
+        type: 'tool.completed',
+        toolCallId: 'orphan',
+        output: '',
+        status: 'succeeded',
+      },
+      'main',
+      '2026-11-17T00:00:05.000Z',
+    ),
   ]);
-  assert.equal(rows.length, 3);
-  assert.equal(rows[1].args, undefined);
-  assert.equal(rows[1].duration, null);
-  assert.equal(rows[2].status, 'Unavailable');
-  assert.equal(rows[2].truncated, true);
+  assert.deepEqual(
+    rows.map((row) => row.duration),
+    [2.5, 3, null],
+  );
+});
+
+test('lazy tool bodies retain pairing, completion status and both payload references', () => {
+  const start = event(1, {
+    type: 'tool.started',
+    toolCallId: 't',
+    name: 'Read',
+    input: null,
+  });
+  const end = event(2, {
+    type: 'tool.completed',
+    toolCallId: 't',
+    output: null,
+    status: 'succeeded',
+    durationMs: 2500,
+  });
+  start.payloadRef = 'input-ref';
+  end.payloadRef = 'output-ref';
+  const rows = traceRows([start, end]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'tool');
+  assert.equal(rows[0].status, 'Succeeded');
+  assert.equal(rows[0].duration, 2.5);
+  assert.deepEqual(rows[0].payloadRefs, ['input-ref', 'output-ref']);
 });

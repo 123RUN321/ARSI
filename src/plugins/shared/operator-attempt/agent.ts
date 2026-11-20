@@ -4,7 +4,7 @@ import {
   type RuntimeContext,
 } from '../../../contracts/index.js';
 import { digest, object } from '../../../shared/json.js';
-import { validate } from '../../../shared/schema.js';
+import { AgentOutputError } from '../../../contracts/runtime/errors.js';
 import { prepareAgentProject } from '../agent-editing/project.js';
 import {
   type OperatorAgentStage,
@@ -97,16 +97,10 @@ export async function requestOperatorAgent(
     });
   } catch (error) {
     context.signal.throwIfAborted();
+    if (error instanceof AgentOutputError)
+      throw new OperatorModelOutputError(error.message, { cause: error });
     throw error;
   }
   context.signal.throwIfAborted();
-  try {
-    validate(request.outputSchema, result, `Operator ${stage} response`);
-  } catch (error) {
-    throw new OperatorModelOutputError(
-      error instanceof Error ? error.message : String(error),
-      { cause: error },
-    );
-  }
   return object(result);
 }

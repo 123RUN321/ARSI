@@ -19,7 +19,7 @@ This guide explains how to subscribe to built-in events, publish custom events, 
 
 ## 2. Built-in events
 
-The framework publishes built-in events at the execution points below. Plugins subscribe to them directly. The tables document every field of the listener's first argument, `event`: each event contains its group's common parameters plus the event-specific parameters listed in its row. Fields are required unless marked with `?`; `?` means a field may be omitted, while `string | null` means the field is present but may hold `null`. All fields are read-only; see the [event contract](../../../src/contracts/runtime/events.ts) for the type definitions.
+The framework publishes the lifecycle and fact notifications below for plugins to subscribe to. Agent conversation observation uses the separate call-local path described below. The tables document every field of the listener's first argument, `event`: each event contains its group's common parameters plus the event-specific parameters listed in its row. Fields are required unless marked with `?`; `?` means a field may be omitted, while `string | null` means the field is present but may hold `null`. All fields are read-only; see the [event contract](../../../src/contracts/runtime/events.ts) for the type definitions.
 
 Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `(event, next, ctx)`. `ctx` is the current listener's `RuntimeContext`; `next: () => Promise<CallDecision>` continues subsequent listeners and returns the admission decision, as described in [Subscribe to built-in events](#3-subscribe-to-built-in-events). Neither `ctx` nor `next` is a field of `event`.
 
@@ -64,6 +64,23 @@ Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `
 | `rsi/call-failed`    | After the failure receipt is saved, before reporting the original call error.                   | `parallel`  | None.                                                                                                             |
 | `rsi/call-cancelled` | After the cancellation receipt is saved, before reporting cancellation.                         | `parallel`  | None.                                                                                                             |
 | `rsi/call-unknown`   | After a receipt is saved for a call whose outcome is unconfirmed.                               | `parallel`  | None.                                                                                                             |
+
+### Agent conversation observation
+
+| Event | Publication point | Dispatch | Parameters |
+| --- | --- | --- | --- |
+| `rsi/agent-observation` | Agent backend observations become available. | `emit` | `runId: string`: Run ID (`main` for the main Agent).<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`: Native identifiers.<br>`event: AgentEvent`: Normalized observation; see the [protocol](../../../src/contracts/models/agent-record.ts). |
+
+In a Runtime-managed Agent's `execute(input, ctx)`, publish through the current `ctx`:
+
+```ts
+ctx.event.emit('rsi/agent-observation', {
+  runId: 'main',
+  event: { type: 'message.appended', messageId: 'reply-1', text: 'Hello' },
+});
+```
+
+The framework automatically saves the observation to `agent/events.jsonl` under this call's `ctx.directory` for Dashboard queries.
 
 ### Policy execution
 

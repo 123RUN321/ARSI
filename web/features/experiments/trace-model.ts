@@ -1,7 +1,9 @@
+import type { JsonValue, JsonObject } from '../../../src/contracts/json.js';
 import type { CallTrace } from '../../../src/contracts/observation.js';
 
 export interface TraceRow {
   id: string;
+  runId: string;
   step: number;
   kind: 'model' | 'tool' | 'event';
   title: string;
@@ -11,16 +13,16 @@ export interface TraceRow {
   duration: number | null;
   thinking?: string;
   body?: string;
-  args?: unknown;
-  result?: unknown;
-  truncated: boolean;
+  args?: JsonValue;
+  result?: JsonValue;
+  payloadRefs?: string[];
 }
-export function eventObject(value: unknown): Record<string, unknown> {
+export function eventObject(value: JsonValue | undefined): JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value))
     : {};
 }
-export function eventText(value: unknown): string {
+export function eventText(value: JsonValue | undefined): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value))
     return value.map(eventText).filter(Boolean).join('\n\n');
@@ -31,109 +33,113 @@ export function eventText(value: unknown): string {
       ? eventText(item.content)
       : '';
 }
-/** Pair tools by their recorded ID, never by name or adjacency. */
+/** Native adapters provide stable IDs. The UI projects these events without backend branches. */
 export function traceRows(events: CallTrace['items']): TraceRow[] {
   const rows: TraceRow[] = [];
+  const messages = new Map<string, TraceRow>();
   const tools = new Map<string, TraceRow>();
   let step = 0;
-  for (const event of [...events].sort((a, b) => a.sequence - b.sequence)) {
-    let data: Record<string, unknown>;
-    try {
-      data = eventObject(JSON.parse(event.content?.text ?? '{}'));
-    } catch {
-      rows.push({
-        id: String(event.sequence),
-        step,
-        kind: 'event',
-        title: 'Incomplete event',
-        summary: 'Recorded preview is truncated',
-        status: 'Unavailable',
-        at: event.at,
-        duration: null,
-        truncated: true,
-      });
-      continue;
-    }
+  for (const record of [...events].sort((a, b) => a.sequence - b.sequence)) {
+    const event = eventObject(record.event);
+    const runId = record.runId;
     const row: TraceRow = {
-      id: String(event.sequence),
+      id: String(record.sequence),
+      runId,
       step,
       kind: 'event',
-      title: event.type.replaceAll('_', ' '),
+      title: record.type,
       summary: '',
       status: 'Recorded',
-      at: event.at,
+      at: record.at,
       duration: null,
-      truncated: !!event.content?.truncated,
     };
-    if (event.type === 'message_end') {
-      step++;
-      const message = eventObject(data.message);
-      const blocks = Array.isArray(message.content)
-        ? message.content.map(eventObject)
-        : [];
-      const thinking = blocks
-        .filter((b) => b.type === 'thinking')
-        .map((b) => (typeof b.thinking === 'string' ? b.thinking : ''))
-        .filter(Boolean)
-        .join('\n\n');
-      const body = blocks.length
-        ? blocks
-            .filter((b) => b.type === 'text')
-            .map(eventText)
-            .join('\n\n')
-        : eventText(data.message);
-      row.step = step;
-      row.kind = 'model';
-      row.title = body ? 'Response' : thinking ? 'Thinking' : 'Model';
-      row.thinking = thinking;
-      row.body = body;
-      row.summary = body || thinking || 'Tool calls';
-      row.status = 'Completed';
-      if (
-        !body &&
-        !thinking &&
-        blocks.some((b) => b.type === 'toolCall') &&
-        !row.truncated
-      )
-        continue;
-    } else if (event.type.startsWith('tool_execution')) {
-      const key = typeof data.toolCallId === 'string' ? data.toolCallId : null;
-      const previous = key ? tools.get(key) : undefined;
-      const target =
-        event.type === 'tool_execution_end' && previous ? previous : row;
-      target.kind = 'tool';
-      target.title = typeof data.toolName === 'string' ? data.toolName : 'Tool';
-      if (event.type === 'tool_execution_start') {
-        target.args = data.args;
-        target.status = 'Result not loaded';
-        if (key) tools.set(key, target);
-      } else {
-        target.result = data.result;
-        target.status = data.isError === true ? 'Failed' : 'Succeeded';
-        if (previous && previous.at && event.at) {
-          const ms = Date.parse(event.at) - Date.parse(previous.at);
-          if (Number.isFinite(ms) && ms >= 0) target.duration = ms / 1000;
-        }
-        if (key) tools.delete(key);
+    const key = (id: JsonValue | undefined): string => `${runId}:${String(id)}`;
+    if (
+      event.type === 'message.appended' ||
+      event.type === 'message.completed'
+    ) {
+      const messageKey = key(event.messageId);
+      let target = messages.get(messageKey);
+      if (!target) {
+        target = row;
+        target.kind = 'model';
+        target.step = ++step;
+        target.title = event.role === 'user' ? 'Task input' : 'Response';
+        if (runId !== 'main') target.title += ` · ${runId}`;
+        messages.set(messageKey, target);
+        rows.push(target);
       }
-      target.truncated ||= row.truncated;
+      if (record.payloadRef)
+        (target.payloadRefs ??= []).push(record.payloadRef);
+      target.body =
+        event.type === 'message.appended'
+          ? (target.body ?? '') + eventText(event.text)
+          : eventText(event.text);
+      if (typeof event.thinking === 'string') target.thinking = event.thinking;
+      target.summary =
+        target.body ||
+        target.thinking ||
+        (target.payloadRefs?.length
+          ? 'Select to load the complete recorded content'
+          : 'Recorded message');
+      target.status =
+        event.type === 'message.completed' ? 'Completed' : 'Streaming';
+    } else if (
+      event.type === 'tool.started' ||
+      event.type === 'tool.completed'
+    ) {
+      const toolKey = key(event.toolCallId);
+      let target = tools.get(toolKey);
+      if (!target) {
+        target = row;
+        target.kind = 'tool';
+        target.title = typeof event.name === 'string' ? event.name : 'Tool';
+        tools.set(toolKey, target);
+        rows.push(target);
+      }
+      if (record.payloadRef)
+        (target.payloadRefs ??= []).push(record.payloadRef);
+      if (typeof event.name === 'string') target.title = event.name;
+      if (event.type === 'tool.started') {
+        target.args = event.input;
+        target.status = 'Running';
+      } else {
+        if (typeof event.durationMs === 'number') {
+          target.duration = event.durationMs / 1000;
+        } else if (target.status === 'Running' && target.at && record.at) {
+          const elapsed = Date.parse(record.at) - Date.parse(target.at);
+          if (Number.isFinite(elapsed) && elapsed >= 0)
+            target.duration = elapsed / 1000;
+        }
+        target.result = event.output;
+        target.status =
+          event.status === 'failed'
+            ? 'Failed'
+            : event.status === 'succeeded'
+              ? 'Succeeded'
+              : 'Unknown';
+      }
       const args = eventObject(target.args);
       target.summary =
-        typeof args.path === 'string'
-          ? args.path
-          : typeof args.command === 'string'
-            ? args.command
-            : target.args !== undefined
-              ? JSON.stringify(target.args)
-              : eventText(data.result) || 'Recorded result';
-      if (target === previous) continue;
+        typeof args.command === 'string'
+          ? args.command
+          : typeof args.path === 'string'
+            ? args.path
+            : eventText(target.result) || JSON.stringify(target.args ?? {});
     } else {
-      row.body = eventText(data.response) || eventText(data.message);
-      row.summary = row.body || 'Execution event';
-      if (event.type === 'error' || event.type === 'validation_failed')
+      row.body = JSON.stringify(event, null, 2);
+      row.summary =
+        event.type === 'observation.gap'
+          ? String(event.reason)
+          : event.type === 'run.started'
+            ? `${runId}${typeof event.parentRunId === 'string' ? ` ← ${event.parentRunId}` : ''}`
+            : event.type === 'run.finished'
+              ? String(event.status)
+              : 'Execution event';
+      if (event.type === 'run.finished' && event.status === 'failed')
         row.status = 'Failed';
+      rows.push(row);
     }
-    rows.push(row);
   }
   return rows;
 }

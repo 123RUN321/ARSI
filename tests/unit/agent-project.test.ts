@@ -159,7 +159,7 @@ test('project preparation rejects a redirected parent before creating any child 
   }
 });
 
-test('managed projects preserve Claude instructions, skill resources and native read-only roles in the snapshot', async () => {
+test('managed projects preserve Claude instructions, skill resources and native roles in the snapshot', async () => {
   const f = await fixture();
   try {
     const skill = join(f.root, 'skill');
@@ -203,8 +203,7 @@ test('managed projects preserve Claude instructions, skill resources and native 
       'utf8',
     );
     assert.match(nativeRole, /Report findings only/);
-    assert.match(nativeRole, /Read/);
-    assert.doesNotMatch(nativeRole, /Bash|Write|Edit/);
+    assert.doesNotMatch(nativeRole, /^tools:/m);
     const snapshot = parseFileTree(
       await f.artifacts.readJson(`artifact:${basename(dirname(project))}`),
     );

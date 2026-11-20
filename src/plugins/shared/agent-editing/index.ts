@@ -17,7 +17,6 @@ import type {
 import { parseFileTree } from '../../../contracts/index.js';
 import { inside } from '../../../runtime/storage/index.js';
 import { canonical, object, string, strings } from '../../../shared/json.js';
-import { validate } from '../../../shared/schema.js';
 import { prepareAgentProject, type AgentRole } from './project.js';
 import type { AgentEditingConfig } from './schema.js';
 export { agentConfigSchema, type AgentEditingConfig } from './schema.js';
@@ -212,7 +211,6 @@ Read context/input.json for the target, edit constraints, memory, observations a
   };
   const agentRef = config.agentRef ?? 'agent.default';
   const result = await context.invokeAgent(agentRef, request);
-  validate(outputSchema, result, 'Agent edit output');
   const plans = Array.isArray(result.proposals)
     ? result.proposals.map((plan) => object(plan))
     : [result];

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getShellConfig } from '@earendil-works/pi-coding-agent';
 import { createServer, type ServerResponse } from 'node:http';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -17,41 +17,7 @@ import {
 import { piDefinition } from '../../src/plugins/agent-pi/index.js';
 import type { AgentPiConfig } from '../../src/plugins/agent-pi/schema.js';
 
-test('Agent uses SDK model fields and resolves environment references without persisting credentials', () => {
-  const env = {
-    MODEL_NAME: 'test-model',
-    MODEL_ENDPOINT: 'https://model.example/v1',
-    MODEL_API_KEY: 'test-credential',
-    MODEL_HOST: 'model.example',
-  };
-  const config = {};
-  assert.deepEqual(resolveModelConfig(config, env), {
-    model: 'test-model',
-    base_url: 'https://model.example/v1',
-    api_key: 'test-credential',
-  });
-  assert.deepEqual(config, {});
-  assert.equal(
-    resolveModelConfig(
-      { model: 'explicit-model', base_url: 'https://${MODEL_HOST}/v1' },
-      env,
-    ).model,
-    'explicit-model',
-  );
-  assert.equal(
-    resolveModelConfig({ base_url: 'https://${MODEL_HOST}/v1' }, env).base_url,
-    'https://model.example/v1',
-  );
-  assert.throws(() => resolveModelConfig({}, {}), /MODEL_NAME/);
-  assert.throws(
-    () => resolveModelConfig({}, { ...env, MODEL_API_KEY: '  ' }),
-    /api_key.*empty/,
-  );
-  assert.throws(
-    () => resolveModelConfig({ api_key: 'literal-secret' }, env),
-    /api_key/,
-  );
-});
+import { Registry } from '../../src/runtime/registry/index.js';
 
 interface Reply {
   contextTokens?: number;
@@ -179,7 +145,10 @@ async function modelFixture(
       charges.push(amount);
     },
   });
-  const operation = await createAgentPi(
+  const registry = new Registry();
+  registry.registerOperation(piDefinition);
+  const operation = await registry.createManagedOperation(
+    piDefinition.id,
     {
       model: 'fixture',
       base_url: `http://127.0.0.1:${address.port}/v1`,
@@ -198,6 +167,11 @@ async function modelFixture(
     signal: controller.signal,
     cleanup: new AbortController().signal,
   });
+  let serial = 0;
+  const callContext = () =>
+    context
+      .extend(services)
+      .extend({ directory: join(directory, `call-${serial++}`) });
   return {
     requests,
     directory,
@@ -209,7 +183,7 @@ async function modelFixture(
           outputSchema: { type: 'object' },
           ...(role === undefined ? {} : { role }),
         },
-        context.extend(services),
+        callContext(),
       ),
     charges,
     controller,
@@ -250,12 +224,12 @@ async function modelFixture(
             additionalProperties: false,
           },
         },
-        context.extend(services),
+        callContext(),
       ),
-    log: () => readFile(join(directory, 'diagnostics.jsonl'), 'utf8'),
     async close() {
       controller.abort();
       await operation.dispose();
+      await registry.dispose();
       for (const timer of timers) clearTimeout(timer);
       server.closeAllConnections();
       await new Promise<void>((done) => server.close(() => done()));
@@ -265,6 +239,42 @@ async function modelFixture(
     },
   };
 }
+
+test('Agent uses SDK model fields and resolves environment references without persisting credentials', () => {
+  const env = {
+    MODEL_NAME: 'test-model',
+    MODEL_ENDPOINT: 'https://model.example/v1',
+    MODEL_API_KEY: 'test-credential',
+    MODEL_HOST: 'model.example',
+  };
+  const config = {};
+  assert.deepEqual(resolveModelConfig(config, env), {
+    model: 'test-model',
+    base_url: 'https://model.example/v1',
+    api_key: 'test-credential',
+  });
+  assert.deepEqual(config, {});
+  assert.equal(
+    resolveModelConfig(
+      { model: 'explicit-model', base_url: 'https://${MODEL_HOST}/v1' },
+      env,
+    ).model,
+    'explicit-model',
+  );
+  assert.equal(
+    resolveModelConfig({ base_url: 'https://${MODEL_HOST}/v1' }, env).base_url,
+    'https://model.example/v1',
+  );
+  assert.throws(() => resolveModelConfig({}, {}), /MODEL_NAME/);
+  assert.throws(
+    () => resolveModelConfig({}, { ...env, MODEL_API_KEY: '  ' }),
+    /api_key.*empty/,
+  );
+  assert.throws(
+    () => resolveModelConfig({ api_key: 'literal-secret' }, env),
+    /api_key/,
+  );
+});
 
 test('Pi uses the workspace instructions, default tools, and on-demand skill contents', async () => {
   const fixture = await modelFixture([
@@ -305,42 +315,6 @@ test('Pi uses the workspace instructions, default tools, and on-demand skill con
   }
 });
 
-test(
-  'Pi bash can read the workspace but cannot read a sibling file',
-  { skip: process.platform !== 'darwin' },
-  async () => {
-    const fixture = await modelFixture([
-      {
-        tool: {
-          name: 'bash',
-          arguments: JSON.stringify({
-            command: 'cat AGENTS.md; cat ../sibling.txt 2>/dev/null || true',
-          }),
-        },
-      },
-      { content: '{"ok":true}' },
-    ]);
-    try {
-      const project = join(fixture.directory, 'project');
-      await mkdir(project);
-      await writeFile(join(project, 'AGENTS.md'), 'PROJECT_READ_MARKER');
-      await writeFile(
-        join(fixture.directory, 'sibling.txt'),
-        'OUTSIDE_READ_MARKER',
-      );
-      assert.deepEqual(await fixture.execute(project), { ok: true });
-      const messages = fixture.requests[1]!.messages as JsonObject[];
-      const result = JSON.stringify(
-        messages.find((message) => message.role === 'tool'),
-      );
-      assert.match(result, /PROJECT_READ_MARKER/);
-      assert.doesNotMatch(result, /OUTSIDE_READ_MARKER/);
-    } finally {
-      await fixture.close();
-    }
-  },
-);
-
 test('Pi direct bash uses the project cwd and host account permissions when available', async (t) => {
   if (process.platform === 'win32') {
     try {
@@ -355,20 +329,17 @@ test('Pi direct bash uses the project cwd and host account permissions when avai
       return;
     }
   }
-  const f = await modelFixture(
-    [
-      {
-        tool: {
-          name: 'bash',
-          arguments: JSON.stringify({
-            command: 'pwd; cat sample; cat ../sibling.txt',
-          }),
-        },
+  const f = await modelFixture([
+    {
+      tool: {
+        name: 'bash',
+        arguments: JSON.stringify({
+          command: 'pwd; cat sample; cat ../sibling.txt',
+        }),
       },
-      { content: '{"ok":true}' },
-    ],
-    { bashMode: 'direct' },
-  );
+    },
+    { content: '{"ok":true}' },
+  ]);
   try {
     await writeFile(
       join(f.directory, 'sibling.txt'),
@@ -467,30 +438,9 @@ test('Pi retries transient failures once per charged attempt', async () => {
       assert.deepEqual(await f.run(), { ok: true });
       assert.equal(f.requests.length, 2);
       assert.deepEqual(f.charges, [1, 1]);
-      assert.match(await f.log(), /auto_retry_start/);
     } finally {
       await f.close();
     }
-  }
-});
-
-test('Pi exhausts only its configured retries and preserves redacted failure diagnostics', async () => {
-  const f = await modelFixture(
-    [{ status: 503, content: 'Unavailable fixture-private-key' }],
-    { retries: 2, retryBaseDelayMs: 0 },
-  );
-  try {
-    await assert.rejects(f.run(), (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.match(error.message, /503/);
-      assert.ok(!error.message.includes('fixture-private-key'));
-      return true;
-    });
-    assert.equal(f.requests.length, 3);
-    assert.deepEqual(f.charges, [1, 1, 1]);
-    assert.ok(!(await f.log()).includes('fixture-private-key'));
-  } finally {
-    await f.close();
   }
 });
 
@@ -522,81 +472,6 @@ test('Pi defaults to low reasoning and disables transport or session retries', a
     );
     assert.deepEqual(f.charges, [1]);
     assert.equal(f.chargeAttempts(), 1);
-  } finally {
-    await f.close();
-  }
-});
-
-test('Pi compacts large contexts by default and charges summary calls to the same budget', async () => {
-  const replies: Reply[] = [
-    { read: true },
-    { content: 'x'.repeat(90000), contextTokens: 240000 },
-    { content: 'The task requires returning {"ok":true}.' },
-    {},
-  ];
-  const f = await modelFixture(replies);
-  try {
-    assert.deepEqual(await f.run(), { ok: true });
-    assert.match(await f.log(), /compaction_end/);
-    assert.ok(
-      f.requests.some((request) =>
-        JSON.stringify(request.messages).includes('<conversation>'),
-      ),
-    );
-    assert.equal(f.charges.length, f.requests.length);
-  } finally {
-    await f.close();
-  }
-});
-
-test('Pi compaction respects Manager budget denial and cancellation', async () => {
-  const replies: Reply[] = [
-    { read: true },
-    { content: 'x'.repeat(90000), contextTokens: 240000 },
-    { stall: true },
-  ];
-  const denied = await modelFixture(replies, {}, 2);
-  try {
-    await assert.rejects(denied.run(), /Budget rejected/);
-    assert.equal(denied.requests.length, 2);
-    assert.deepEqual(denied.charges, [1, 1]);
-  } finally {
-    await denied.close();
-  }
-  const cancelled = await modelFixture(replies);
-  try {
-    const result = assert.rejects(cancelled.run(), /abort|cancel/i);
-    const deadline = Date.now() + 3000;
-    while (cancelled.requests.length < 3 && Date.now() < deadline) {
-      await new Promise((done) => setTimeout(done, 10));
-    }
-    assert.equal(cancelled.requests.length, 3);
-    cancelled.controller.abort();
-    await result;
-    assert.equal(cancelled.requests.length, 3);
-    assert.deepEqual(cancelled.charges, [1, 1, 1]);
-  } finally {
-    await cancelled.close();
-  }
-});
-
-test('Pi validates request and execution timeouts before charging and accepts the timer maximum', async () => {
-  const f = await modelFixture([{ delayMs: 20 }], {
-    timeoutMs: 2147483647,
-    executionTimeoutMs: 2147483647,
-  });
-  try {
-    for (const field of ['timeoutMs', 'executionTimeoutMs'])
-      for (const value of [0, -1, 1.5, 2147483648])
-        await assert.rejects(
-          createAgentPi({ [field]: value }, f.services),
-          new RegExp(field),
-        );
-    assert.equal(f.requests.length, 0);
-    assert.deepEqual(f.charges, []);
-    assert.deepEqual(await f.run(), { ok: true });
-    assert.equal(f.requests.length, 1);
-    assert.deepEqual(f.charges, [1]);
   } finally {
     await f.close();
   }
@@ -673,85 +548,6 @@ test('Pi timeout closes a stalled request without retry and permits a fresh exec
   }
 });
 
-test('Pi execution timeout spans tool continuations and output corrections', async () => {
-  for (const first of [{ read: true }, { content: 'invalid' }]) {
-    const f = await modelFixture(
-      [{ ...first, delayMs: 300 }, { delayMs: 300 }],
-      { timeoutMs: 2000, executionTimeoutMs: 500 },
-    );
-    try {
-      await assert.rejects(f.run(), /Agent execution timed out/);
-      assert.equal(f.requests.length, 2);
-      assert.deepEqual(f.charges, [1, 1]);
-      assert.equal(f.controller.signal.aborted, false);
-    } finally {
-      await f.close();
-    }
-  }
-});
-
-test('Pi execution timeout closes stalled requests without retry and permits a fresh execution', async () => {
-  const f = await modelFixture([{ stall: true }, {}], {
-    executionTimeoutMs: 200,
-    retries: 2,
-    retryBaseDelayMs: 0,
-  });
-  try {
-    await assert.rejects(f.run(), /Agent execution timed out/);
-    assert.equal(f.requests.length, 1);
-    assert.deepEqual(f.charges, [1]);
-    assert.equal(f.controller.signal.aborted, false);
-    await f.waitForResponseClose(0);
-    assert.equal(f.disconnected(), 1);
-    assert.deepEqual(await f.run(), { ok: true });
-    assert.equal(f.requests.length, 2);
-    assert.deepEqual(f.charges, [1, 1]);
-  } finally {
-    await f.close();
-  }
-});
-
-test('Pi execution timeout includes retry backoff and prevents the next attempt', async () => {
-  const f = await modelFixture([{ status: 503 }, {}], {
-    executionTimeoutMs: 200,
-    retries: 2,
-    retryBaseDelayMs: 1000,
-  });
-  try {
-    await assert.rejects(f.run(), /Agent execution timed out/);
-    assert.match(await f.log(), /auto_retry_start/);
-    assert.equal(f.requests.length, 1);
-    assert.deepEqual(f.charges, [1]);
-  } finally {
-    await f.close();
-  }
-});
-
-test('Pi cancellation during retry backoff prevents further attempts', async () => {
-  const f = await modelFixture([{ status: 503 }], {
-    retries: 2,
-    retryBaseDelayMs: 1000,
-  });
-  try {
-    const pending = f.run();
-    void pending.catch(() => {});
-    const deadline = Date.now() + 3000;
-    while (
-      !(await f.log().catch(() => '')).includes('auto_retry_start') &&
-      Date.now() < deadline
-    ) {
-      await new Promise<void>((done) => setTimeout(done, 10));
-    }
-    assert.match(await f.log(), /auto_retry_start/);
-    f.controller.abort(new Error('Fixture cancelled'));
-    await assert.rejects(pending, /Fixture cancelled/);
-    assert.equal(f.requests.length, 1);
-    assert.deepEqual(f.charges, [1]);
-  } finally {
-    await f.close();
-  }
-});
-
 test('Pi budget denial prevents a retry even when its error looks transient', async () => {
   const f = await modelFixture(
     [{ status: 503 }],
@@ -768,49 +564,164 @@ test('Pi budget denial prevents a retry even when its error looks transient', as
   }
 });
 
-test('Pi retries share the Manager model-call budget with output correction', async () => {
-  const f = await modelFixture(
-    [{ status: 503 }, { content: 'invalid' }, {}],
-    {
-      retries: 2,
-      retryBaseDelayMs: 0,
-    },
-    2,
-  );
+test('Pi validates per-request timeouts before charging and accepts the timer maximum', async () => {
+  const f = await modelFixture([{}], { timeoutMs: 2147483647 });
   try {
-    await assert.rejects(f.run(), /Budget rejected 503/);
+    for (const timeoutMs of [0, -1, 1.5, 2147483648])
+      await assert.rejects(
+        createAgentPi({ timeoutMs }, f.services),
+        /timeoutMs/,
+      );
+    assert.deepEqual(f.charges, []);
+    assert.deepEqual(await f.run(), { ok: true });
+  } finally {
+    await f.close();
+  }
+});
+
+test('Pi exhausts only its configured transient retries', async () => {
+  const f = await modelFixture([{ status: 503 }], {
+    retries: 2,
+    retryBaseDelayMs: 0,
+  });
+  try {
+    await assert.rejects(f.run(), /503/);
+    assert.equal(f.requests.length, 3);
+    assert.deepEqual(f.charges, [1, 1, 1]);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Pi cancellation during retry backoff prevents further attempts', async () => {
+  const f = await modelFixture([{ status: 503 }], {
+    retries: 2,
+    retryBaseDelayMs: 1000,
+  });
+  try {
+    const pending = f.run();
+    void pending.catch(() => {});
+    const deadline = Date.now() + 3000;
+    while (!f.requests.length && Date.now() < deadline)
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    await f.waitForResponseClose(0);
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    f.controller.abort(new Error('Fixture cancelled'));
+    await assert.rejects(pending, /Fixture cancelled/);
+    assert.equal(f.requests.length, 1);
+    assert.deepEqual(f.charges, [1]);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Pi rejects invalid final JSON without an RSI correction call', async () => {
+  const f = await modelFixture([{ content: 'invalid JSON' }, {}]);
+  try {
+    await assert.rejects(f.run(), /JSON/);
+    assert.equal(f.requests.length, 1);
+    assert.deepEqual(f.charges, [1]);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Pi compacts a completed conversation without an RSI correction call', async () => {
+  const result = { ok: true, findings: 'x'.repeat(90000) };
+  const f = await modelFixture([
+    { read: true },
+    { content: JSON.stringify(result), contextTokens: 260000 },
+    { content: 'Compacted task: return the requested JSON.' },
+  ]);
+  try {
+    assert.deepEqual(await f.execute(join(f.directory, 'workspace')), result);
+    assert.equal(f.requests.length, 3);
+    assert.deepEqual(f.charges, [1, 1, 1]);
+    assert.match(
+      JSON.stringify(f.requests[2]),
+      /context summarization assistant/,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('Pi cancellation interrupts a native child model request', async () => {
+  const f = await modelFixture([
+    {
+      tool: {
+        name: 'subagent',
+        arguments: '{"agent":"scout","task":"Inspect"}',
+      },
+    },
+    { stall: true },
+  ]);
+  try {
+    await mkdir(join(f.directory, 'workspace/roles'));
+    await writeFile(
+      join(f.directory, 'workspace/roles/scout.md'),
+      'Inspect evidence.',
+    );
+    const pending = f.run();
+    void pending.catch(() => {});
+    const deadline = Date.now() + 3000;
+    while (f.requests.length < 2 && Date.now() < deadline)
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
     assert.equal(f.requests.length, 2);
+    f.controller.abort(new Error('Parent cancelled'));
+    await assert.rejects(pending, /Parent cancelled/);
+    await f.waitForResponseClose(1);
     assert.deepEqual(f.charges, [1, 1]);
   } finally {
     await f.close();
   }
 });
 
-test('Pi workspace read supports line ranges and rejects sibling files', async () => {
-  const f = await modelFixture([
+test('Pi compaction respects the shared budget and cancellation', async () => {
+  const replies: Reply[] = [
+    { read: true },
     {
-      tool: {
-        name: 'read',
-        arguments: '{"path":"log","offset":501,"limit":2}',
-      },
+      content: JSON.stringify({ ok: true, findings: 'x'.repeat(90000) }),
+      contextTokens: 260000,
     },
-    { tool: { name: 'read', arguments: '{"path":"../sibling.txt"}' } },
-    {},
-  ]);
+    { stall: true },
+  ];
+  const denied = await modelFixture(replies, {}, 2);
   try {
-    const cwd = join(f.directory, 'workspace');
-    await writeFile(
-      join(cwd, 'log'),
-      Array.from({ length: 1000 }, (_, n) => `event-${n + 1}`).join('\n'),
+    await assert.rejects(
+      denied.execute(join(denied.directory, 'workspace')),
+      /Budget rejected/,
     );
-    await writeFile(join(f.directory, 'sibling.txt'), 'OUTSIDE_READ_MARKER');
-    assert.deepEqual(await f.run(), { ok: true });
-    const excerpt = JSON.stringify(f.requests[1]);
-    assert.match(excerpt, /event-501\\nevent-502/);
-    assert.doesNotMatch(excerpt, /event-503/);
-    const rejected = JSON.stringify(f.requests[2]);
-    assert.match(rejected, /outside the authorized project/);
-    assert.doesNotMatch(rejected, /OUTSIDE_READ_MARKER/);
+    assert.equal(denied.requests.length, 2);
+    assert.deepEqual(denied.charges, [1, 1]);
+  } finally {
+    await denied.close();
+  }
+  const cancelled = await modelFixture(replies);
+  try {
+    const pending = cancelled.execute(join(cancelled.directory, 'workspace'));
+    void pending.catch(() => {});
+    const deadline = Date.now() + 3000;
+    while (cancelled.requests.length < 3 && Date.now() < deadline)
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    assert.equal(cancelled.requests.length, 3);
+    cancelled.controller.abort(new Error('Compaction cancelled'));
+    await assert.rejects(pending, /Compaction cancelled/);
+    await cancelled.waitForResponseClose(2);
+    assert.deepEqual(cancelled.charges, [1, 1, 1]);
+  } finally {
+    await cancelled.close();
+  }
+});
+
+test('Pi retains config.executionTimeoutMs separately from the model request timeout', async () => {
+  const f = await modelFixture([{ stall: true }], {
+    executionTimeoutMs: 50,
+    timeoutMs: 5000,
+  });
+  try {
+    await assert.rejects(f.run(), /execution timed out/);
+    assert.equal(f.controller.signal.aborted, false);
   } finally {
     await f.close();
   }

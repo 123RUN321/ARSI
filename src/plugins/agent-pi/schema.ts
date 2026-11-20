@@ -6,13 +6,11 @@ export type AgentPiConfig = {
   api_key?: string;
   maxTokens?: number;
   contextWindow?: number;
-  bashMode?: 'sandbox' | 'direct';
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   retries?: number;
   retryBaseDelayMs?: number;
   /** Per-model-request timeout in milliseconds. */
   timeoutMs?: number;
-  /** Total execution timeout, including tools, corrections, compaction and retry waits. */
   executionTimeoutMs?: number;
 };
 
@@ -33,7 +31,6 @@ export const configSchema: JsonSchema = {
     },
     maxTokens: { type: 'integer', minimum: 1 },
     contextWindow: { type: 'integer', minimum: 1, default: 262144 },
-    bashMode: { enum: ['sandbox', 'direct'], default: 'sandbox' },
     thinkingLevel: {
       enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
       default: 'low',
@@ -45,12 +42,8 @@ export const configSchema: JsonSchema = {
       maximum: 300000,
       default: 1000,
     },
+    executionTimeoutMs: { type: 'integer', minimum: 1, maximum: 2147483647 },
     timeoutMs: {
-      type: 'integer',
-      minimum: 1,
-      maximum: 2147483647,
-    },
-    executionTimeoutMs: {
       type: 'integer',
       minimum: 1,
       maximum: 2147483647,

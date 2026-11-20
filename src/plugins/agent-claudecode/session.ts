@@ -1,8 +1,14 @@
+import { observeNative } from '../shared/native-agent/observe.js';
+import { claudeObservations } from './observations.js';
+import type {
+  AgentObservation,
+  AgentProcessLauncher,
+} from '../../contracts/index.js';
 import type { AgentInput, JsonObject } from '../../contracts/index.js';
+import { AgentOutputError } from '../../contracts/runtime/errors.js';
 import { object } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
 import type { ResolvedAgentClaudeCodeConfig } from './schema.js';
-import { runClaudeProcess } from './process.js';
+import { runNativeJsonProcess as runClaudeProcess } from '../shared/native-agent/json-process.js';
 
 /** Native CLI owns model access, tools, structured-output generation and retries. */
 export async function runSession(options: {
@@ -10,9 +16,15 @@ export async function runSession(options: {
   directory: string;
   request: AgentInput;
   signal: AbortSignal;
-  record: (type: string, data: unknown) => void;
+  record: (event: AgentObservation) => void;
+  launch: AgentProcessLauncher;
 }): Promise<JsonObject> {
-  const { config, request, signal, record } = options;
+  const { config, request, record } = options;
+  const observe = observeNative(
+    claudeObservations(record),
+    record,
+    options.signal,
+  );
   let result: JsonObject | undefined;
   let completed = false;
   // Keep native model/auth settings; constrain task tools independently.
@@ -22,19 +34,7 @@ export async function runSession(options: {
     'stream-json',
     '--verbose',
     '--no-session-persistence',
-    '--permission-mode',
-    'dontAsk',
-    '--permission-prompts',
-    'none',
-    '--tools',
-    'Read,Glob,Grep,Skill,Agent',
-    '--disallowedTools',
-    'Write,Edit,NotebookEdit,Bash,PowerShell,mcp__*',
-    '--strict-mcp-config',
-    '--mcp-config',
-    '{"mcpServers":{}}',
-    '--settings',
-    JSON.stringify({ disableAllHooks: true, enabledPlugins: {} }),
+    '--forward-subagent-text',
     '--json-schema',
     JSON.stringify(request.outputSchema),
   ];
@@ -43,44 +43,18 @@ export async function runSession(options: {
   await runClaudeProcess(
     config.executable,
     args,
-    options.directory,
     JSON.stringify({
       goal: request.goal,
       instruction:
-        'Read CLAUDE.md and the project instructions. Use native Skills and Agent delegation when appropriate. Return only the requested structured result; RSI applies proposed edits.',
+        'Read CLAUDE.md and the project instructions. Use native Skills and Agent delegation when appropriate. Return proposed changes through the requested result Schema; leave task input files unchanged. Return only the requested structured result.',
     }),
-    signal,
     (line) => {
       const event = object(JSON.parse(line));
-      if (event.type === 'system' && event.subtype === 'init') {
-        record('session_started', {
-          model: event.model ?? null,
-          tools: event.tools ?? [],
-          version: event.claude_code_version ?? null,
-        });
-      } else if (event.type === 'assistant') {
-        const message = object(event.message);
-        if (Array.isArray(message.content))
-          for (const raw of message.content) {
-            const item = object(raw);
-            if (item.type === 'tool_use')
-              record('tool_use', {
-                name: item.name ?? null,
-                subagent:
-                  event.parent_tool_use_id !== null &&
-                  event.parent_tool_use_id !== undefined,
-              });
-          }
-      } else if (event.type === 'result') {
+      observe(event);
+      if (event.type === 'result' && event.parent_tool_use_id == null) {
         if (completed)
           throw new Error('Claude Code returned multiple terminal results');
         completed = true;
-        if (event.usage !== undefined)
-          record('token_usage', {
-            usage: event.usage,
-            models: event.modelUsage ?? null,
-          });
-        record('session_completed', { subtype: event.subtype ?? null });
         if (
           Array.isArray(event.permission_denials) &&
           event.permission_denials.length
@@ -92,13 +66,23 @@ export async function runSession(options: {
           throw new Error(
             `Claude Code task failed (${typeof event.subtype === 'string' ? event.subtype : 'unknown status'})`,
           );
-        if (event.structured_output === undefined)
-          throw new Error('Claude Code returned no structured output');
-        validate(request.outputSchema, event.structured_output, 'agent output');
-        result = object(event.structured_output);
-        record('validation_succeeded', {});
+        const output = event.structured_output;
+        if (output === undefined)
+          throw new AgentOutputError(
+            'Claude Code returned no structured output',
+          );
+        if (
+          output === null ||
+          typeof output !== 'object' ||
+          Array.isArray(output)
+        )
+          throw new AgentOutputError(
+            'Claude Code structured output must be a JSON object',
+          );
+        result = output;
       }
     },
+    options.launch,
   );
   if (!result) throw new Error('Claude Code returned no validated output');
   return result;

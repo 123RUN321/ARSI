@@ -17,11 +17,7 @@ export function callLabels(
 } {
   let owner = call;
   const seen = new Set<string>();
-  while (
-    owner.pluginId.startsWith('agent.') &&
-    owner.parentCallId &&
-    !seen.has(owner.callId)
-  ) {
+  while (isAgentCall(owner) && owner.parentCallId && !seen.has(owner.callId)) {
     seen.add(owner.callId);
     const parent = byId.get(owner.parentCallId);
     if (!parent) break;
@@ -41,10 +37,12 @@ export function callLabels(
     domainProposer: 'Domain Proposer',
     composer: 'Composer',
   };
-  let component = owner.pluginId.startsWith('proposer.')
-    ? (roles[owner.bindingId] ??
-      (owner.bindingId === 'proposer' ? 'Proposer' : owner.bindingId))
-    : (names[owner.pluginId.split('.')[0]!] ?? owner.bindingId);
+  let component = isAgentCall(owner)
+    ? 'Agent'
+    : owner.pluginId.startsWith('proposer.')
+      ? (roles[owner.bindingId] ??
+        (owner.bindingId === 'proposer' ? 'Proposer' : owner.bindingId))
+      : (names[owner.pluginId.split('.')[0]!] ?? owner.bindingId);
   const stage = stages.get(owner.callId);
   if (owner.pluginId.startsWith('evaluator.') && stage)
     component += ` · ${stage.variant === 'Invariant' ? 'Inv' : stage.variant}`;
@@ -74,7 +72,7 @@ export function ownerCallId(
   let current = call;
   const seen = new Set<string>();
   while (
-    current.pluginId.startsWith('agent.') &&
+    isAgentCall(current) &&
     current.parentCallId &&
     !seen.has(current.callId)
   ) {
@@ -84,4 +82,8 @@ export function ownerCallId(
     current = parent;
   }
   return current.callId;
+}
+
+export function isAgentCall(call: CallSummary | undefined): boolean {
+  return call?.contractId === 'contract.agent';
 }

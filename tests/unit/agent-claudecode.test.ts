@@ -1,224 +1,98 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
-import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
+import { AgentOutputError } from '../../src/contracts/runtime/errors.js';
 import { createAgentClaudeCode } from '../../src/plugins/agent-claudecode/service.js';
-import { configSchema } from '../../src/plugins/agent-claudecode/schema.js';
-import { parseConfig } from '../../src/shared/schema.js';
-import { object } from '../../src/shared/json.js';
+import { agentFixture } from '../fixtures/agent-execution.js';
+import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 
-const schema = {
-  type: 'object',
-  properties: { answer: { type: 'string' } },
-  required: ['answer'],
-  additionalProperties: false,
-};
-const success = {
-  type: 'result',
-  subtype: 'success',
-  is_error: false,
-  structured_output: { answer: 'ok' },
-  usage: { input_tokens: 5, output_tokens: 2 },
-  permission_denials: [],
-};
-async function fixture(spec: JsonObject, timeoutMs?: number) {
-  const directory = await mkdtemp(join(tmpdir(), 'rsi-claudecode-'));
-  await writeFile(join(directory, 'fixture.json'), JSON.stringify(spec));
-  const controller = new AbortController();
-  const context = new RuntimeContext().extend({
-    directory,
-    signal: controller.signal,
-    charge: async () => {
-      throw new Error('Invented usage');
-    },
+test('Claude translates text, thinking and correlated tool results while returning structured output', async (t) => {
+  const f = await agentFixture(async (spec, consume) => {
+    assert(spec.args.includes('stream-json'));
+    assert(spec.args.includes('--forward-subagent-text'));
+    for (const message of [
+      { type: 'assistant', message: null },
+      {
+        type: 'assistant',
+        message: {
+          id: 'm1',
+          content: [
+            { type: 'thinking', thinking: 'visible' },
+            { type: 'text', text: 'Working' },
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Read',
+              input: { path: 'candidate/input.txt' },
+            },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', content: 'original' },
+          ],
+        },
+      },
+      {
+        type: 'result',
+        is_error: false,
+        subtype: 'success',
+        structured_output: { answer: 'ok' },
+        usage: { input_tokens: 10 },
+      },
+    ])
+      await consume(JSON.stringify(message), () => {});
   });
+  t.after(() => f.close());
   const agent = await createAgentClaudeCode(
-    {
-      executable: resolve('tests/fixtures/claudecode-cli.cjs'),
-      model: 'test-model',
-      effort: 'low',
-      ...(timeoutMs === undefined ? {} : { timeoutMs }),
-    },
-    context,
+    { executable: process.execPath },
+    f.context,
   );
-  return {
-    directory,
-    controller,
-    agent,
-    run: () =>
-      agent.execute(
-        { goal: 'Inspect', cwd: directory, outputSchema: schema },
-        context,
-      ),
-    close: async () => {
-      await agent.dispose();
-      await rm(directory, { recursive: true, force: true });
-    },
-  };
-}
-
-test('Claude Code config rejects invalid fields and defaults the native executable', () => {
-  assert.deepEqual(parseConfig(configSchema, {}, 'config'), {
-    executable: 'claude',
-  });
-  for (const config of [
-    { model: ' ' },
-    { effort: 'invalid' },
-    { timeoutMs: 0 },
-    { extra: true },
-  ])
-    assert.throws(() => parseConfig(configSchema, config, 'config'));
-});
-
-test('Claude Code returns validated native output and records only supplied usage', async (t) => {
-  const f = await fixture({ events: [success] });
-  t.after(f.close);
-  assert.deepEqual(await f.run(), { answer: 'ok' });
-  assert.deepEqual(await f.run(), { answer: 'ok' });
-  const audit = object(
-    JSON.parse(await readFile(join(f.directory, 'audit.json'), 'utf8')),
-  );
-  const args = audit.args;
-  assert(Array.isArray(args));
-  for (const flag of ['--no-session-persistence', '--strict-mcp-config'])
-    assert(args.includes(flag));
-  assert(!args.includes('--restricted'));
-  assert(!args.includes('--setting-sources'));
-  assert.equal(
-    args[args.indexOf('--disallowedTools') + 1],
-    'Write,Edit,NotebookEdit,Bash,PowerShell,mcp__*',
-  );
-  assert.equal(args[args.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill,Agent');
-  assert.equal(args[args.indexOf('--permission-mode') + 1], 'dontAsk');
-  assert.equal(args[args.indexOf('--model') + 1], 'test-model');
-  assert.equal(args[args.indexOf('--effort') + 1], 'low');
-  const records = (
-    await readFile(join(f.directory, 'diagnostics.jsonl'), 'utf8')
-  )
-    .trim()
-    .split('\n')
-    .map((line) => object(JSON.parse(line)));
-  assert.equal(records.filter((r) => r.type === 'token_usage').length, 2);
-  assert.equal(
-    records.filter((r) => r.type === 'validation_succeeded').length,
-    2,
-  );
-});
-
-for (const [name, spec, error] of [
-  [
-    'missing structured result',
-    {
-      events: [
-        { ...success, structured_output: undefined, result: '{"answer":"ok"}' },
-      ],
-    },
-    /no structured output/,
-  ],
-  [
-    'invalid schema',
-    { events: [{ ...success, structured_output: { answer: 2 } }] },
-    /agent output/,
-  ],
-  [
-    'native failure',
-    {
-      events: [
-        { ...success, subtype: 'error_during_execution', is_error: true },
-      ],
-    },
-    /task failed/,
-  ],
-  [
-    'permission denied',
-    { events: [{ ...success, permission_denials: [{ tool_name: 'Write' }] }] },
-    /requires permission/,
-  ],
-  [
-    'duplicate terminal result',
-    { events: [success, success] },
-    /multiple terminal/,
-  ],
-  ['missing terminal result', { events: [] }, /no validated output/],
-  ['malformed stream', { invalid: true }, /JSON/],
-  [
-    'nonzero exit after result',
-    { events: [success], exitCode: 1 },
-    /exited with 1/,
-  ],
-] as const) {
-  test(`Claude Code rejects ${name}`, async (t) => {
-    const f = await fixture(JSON.parse(JSON.stringify(spec)));
-    t.after(f.close);
-    await assert.rejects(f.run(), error);
-  });
-}
-
-for (const kind of ['timeout', 'abort', 'dispose'] as const) {
-  test(`Claude Code ${kind} stops the CLI and descendants`, async (t) => {
-    const f = await fixture(
-      { hang: true },
-      kind === 'timeout' ? 1000 : undefined,
-    );
-    t.after(f.close);
-    const pending = f.run();
-    const rejected = assert.rejects(pending, /timed out|cancelled|disposed/);
-    let audit: JsonObject | undefined;
-    for (let i = 0; i < 100; i++) {
-      try {
-        audit = object(
-          JSON.parse(await readFile(join(f.directory, 'audit.json'), 'utf8')),
-        );
-        break;
-      } catch {
-        await delay(10);
-      }
-    }
-    assert(audit);
-    if (kind === 'abort') f.controller.abort(new Error('cancelled'));
-    if (kind === 'dispose') await f.agent.dispose();
-    await rejected;
-    for (const id of [audit.pid, audit.child]) {
-      assert.equal(typeof id, 'number');
-      // Reaping an orphan may lag behind the process group's closed pipes.
-      for (let i = 0; i < 100; i++) {
-        try {
-          process.kill(Number(id), 0);
-          await delay(10);
-        } catch {
-          break;
-        }
-      }
-      assert.throws(() => process.kill(Number(id), 0), /ESRCH/);
-    }
-    const records = await readFile(
-      join(f.directory, 'diagnostics.jsonl'),
-      'utf8',
-    );
-    assert.doesNotMatch(records, /"type":"token_usage"/);
-  });
-}
-
-test('Claude Code reports executable launch failures', async (t) => {
-  const f = await fixture({});
-  t.after(f.close);
-  const context = new RuntimeContext().extend({
-    directory: f.directory,
-    signal: f.controller.signal,
-  });
-  const agent = await createAgentClaudeCode(
-    { executable: join(f.directory, 'absent') },
-    context,
-  );
-  await assert.rejects(
-    agent.execute(
-      { goal: '', cwd: f.directory, outputSchema: schema },
-      context,
+  assert.deepEqual(await f.execute(agent), { answer: 'ok' });
+  const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  assert(
+    records.items.some(
+      (item) =>
+        item.event?.type === 'observation.gap' &&
+        item.event.reason.includes('object'),
     ),
-    /ENOENT/,
   );
-  await agent.dispose();
+  assert(
+    records.items.some(
+      (r) => r.event?.type === 'tool.completed' && r.event.toolCallId === 't1',
+    ),
+  );
+  assert(
+    records.items.some(
+      (r) =>
+        r.event?.type === 'message.completed' && r.event.thinking === 'visible',
+    ),
+  );
 });
+
+for (const output of [undefined, null, [], 'text', { wrong: true }]) {
+  test(`Claude classifies invalid output ${JSON.stringify(output)} without a second launch`, async (t) => {
+    let launches = 0;
+    const f = await agentFixture(async (_spec, consume) => {
+      launches++;
+      await consume(
+        JSON.stringify({
+          type: 'result',
+          is_error: false,
+          subtype: 'success',
+          structured_output: output,
+        }),
+        () => {},
+      );
+    });
+    t.after(() => f.close());
+    const agent = await createAgentClaudeCode(
+      { executable: process.execPath },
+      f.context,
+    );
+    await assert.rejects(f.execute(agent), AgentOutputError);
+    assert.equal(launches, 1);
+  });
+}

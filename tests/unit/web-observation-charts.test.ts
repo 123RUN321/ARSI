@@ -45,6 +45,7 @@ function call(callId: string): CallSummary {
     parentCallId: null,
     bindingId: 'custom',
     pluginId: 'custom.plugin',
+    contractId: 'contract.custom',
     path: null,
     status: 'succeeded',
     startedAt: '2026-10-29T00:00:00Z',

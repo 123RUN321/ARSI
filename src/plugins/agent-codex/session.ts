@@ -1,17 +1,24 @@
-import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import { observeNative } from '../shared/native-agent/observe.js';
+import { parseAgentResult } from '../shared/native-agent/result.js';
+import { codexObservations } from './observations.js';
+import type {
+  AgentObservation,
+  AgentProcessLauncher,
+} from '../../contracts/index.js';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import {
   projectMarker,
   roleNamePattern,
 } from '../shared/agent-editing/project.js';
-import type { AgentInput, JsonObject } from '../../contracts/index.js';
+import type {
+  AgentInput,
+  JsonObject,
+  JsonValue,
+} from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
-import { CodexProcessExitError, runCodexProcess } from './process.js';
-
-const startupBackoffMs = [250, 500];
+import { runCodexProcess } from './process.js';
 
 function nativeError(value: unknown): string {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
@@ -32,27 +39,35 @@ interface SessionOptions {
   reasoningEffort?: string;
   request: AgentInput;
   signal: AbortSignal;
-  record: (type: string, data: unknown) => void;
+  record: (event: AgentObservation) => void;
+  launch: AgentProcessLauncher;
 }
-
 export async function runSession(options: SessionOptions): Promise<JsonObject> {
   const { signal } = options;
-  for (let attempt = 0; ; attempt += 1) {
+  const backoffMs = [250, 500];
+  for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
-    let turnSubmitted = false;
+    let submitted = false;
     try {
       return await runSessionAttempt(options, () => {
-        turnSubmitted = true;
+        submitted = true;
       });
     } catch (error) {
       signal.throwIfAborted();
-      const wait = startupBackoffMs[attempt];
-      if (turnSubmitted || wait === undefined) throw error;
-      options.record('startup_retry', {
-        attempt: attempt + 1,
-        delayMs: wait,
-        exitCode:
-          error instanceof CodexProcessExitError ? error.exitCode : null,
+      const wait = backoffMs[attempt];
+      if (
+        submitted ||
+        wait === undefined ||
+        !(error instanceof Error) ||
+        ('status' in error && error.status === 'unknown')
+      )
+        throw error;
+      options.record({
+        runId: 'main',
+        event: {
+          type: 'observation.gap',
+          reason: 'Retrying Codex startup before turn submission.',
+        },
       });
       await delay(wait, undefined, { signal });
     }
@@ -61,17 +76,18 @@ export async function runSession(options: SessionOptions): Promise<JsonObject> {
 
 async function runSessionAttempt(
   options: SessionOptions,
-  markTurnSubmitted: () => void,
+  markSubmitted: () => void,
 ): Promise<JsonObject> {
-  const { request, signal, record } = options;
+  const { request, record } = options;
+  const observe = observeNative(
+    codexObservations(record),
+    record,
+    options.signal,
+  );
   let threadId = '';
   let response = '';
   let result: JsonObject | undefined;
   const platform = process.platform;
-  const permissions =
-    platform === 'win32' || platform === 'linux'
-      ? undefined
-      : `rsi-agent-${randomUUID()}`;
   const prompt = JSON.stringify({
     goal: request.goal,
     instruction:
@@ -81,16 +97,10 @@ async function runSessionAttempt(
     'approval_policy="never"',
     `project_root_markers=[${JSON.stringify(projectMarker)}]`,
   ];
-  if (permissions !== undefined) {
-    launchConfig.push(
-      `default_permissions=${JSON.stringify(permissions)}`,
-      `permissions.${permissions}.filesystem={":root"="deny",":minimal"="read",":workspace_roots"="read"${platform === 'darwin' ? ',"/System/Library/OpenSSL"="read"' : ''}}`,
-    );
-  } else if (platform === 'win32') {
+  if (platform === 'win32')
     launchConfig.push('sandbox_workspace_write.network_access=true');
-  }
   const startThread = (
-    send: (message: unknown) => void,
+    send: (message: JsonValue) => void,
     policy: JsonObject,
   ): void => {
     send({
@@ -137,7 +147,6 @@ async function runSessionAttempt(
     launchConfig.push('agents.max_depth=1', 'features.multi_agent=true');
   await runCodexProcess(
     options.executable,
-    options.directory,
     JSON.stringify({
       id: 1,
       method: 'initialize',
@@ -146,9 +155,9 @@ async function runSessionAttempt(
         capabilities: { experimentalApi: true },
       },
     }) + '\n',
-    signal,
     (line, send) => {
       const message = object(JSON.parse(line));
+      observe(message, threadId);
       if (message.error)
         throw new Error(
           `Codex app-server request failed${nativeError(message.error)}`,
@@ -162,12 +171,7 @@ async function runSessionAttempt(
             params: { cwd: options.directory },
           });
         } else {
-          startThread(
-            send,
-            permissions === undefined
-              ? { sandbox: 'danger-full-access' }
-              : { permissions },
-          );
+          startThread(send, {});
         }
       } else if (
         platform === 'win32' &&
@@ -199,12 +203,18 @@ async function runSessionAttempt(
       } else if (message.method === undefined && message.id === 2) {
         const configuration = object(message.result);
         threadId = string(object(configuration.thread).id);
-        record('session_started', {
-          model: configuration.model ?? null,
-          provider: configuration.modelProvider ?? null,
-          reasoningEffort: configuration.reasoningEffort ?? null,
+        record({
+          runId: 'main',
+          native: { sessionId: threadId },
+          event: {
+            type: 'session.started',
+            sessionId: threadId,
+            ...(typeof configuration.model === 'string'
+              ? { model: configuration.model }
+              : {}),
+          },
         });
-        markTurnSubmitted();
+        markSubmitted();
         send({
           id: 3,
           method: 'turn/start',
@@ -225,34 +235,6 @@ async function runSessionAttempt(
             throw new Error('Invalid Codex agent message');
           response = item.text;
         }
-        if (item.type === 'contextCompaction') record('context_compaction', {});
-      } else if (message.method === 'thread/tokenUsage/updated') {
-        const params = object(message.params);
-        if (typeof params.threadId === 'string' && params.threadId !== threadId)
-          return;
-        const usage = object(params.tokenUsage);
-        const counts = (value: unknown): JsonObject => {
-          const raw = object(value);
-          return Object.fromEntries(
-            [
-              'inputTokens',
-              'cachedInputTokens',
-              'outputTokens',
-              'reasoningOutputTokens',
-              'totalTokens',
-            ]
-              .filter((key) => typeof raw[key] === 'number')
-              .map((key) => [key, raw[key]!]),
-          );
-        };
-        record('token_usage', {
-          total: counts(usage.total),
-          last: counts(usage.last),
-          modelContextWindow:
-            typeof usage.modelContextWindow === 'number'
-              ? usage.modelContextWindow
-              : null,
-        });
       } else if (message.method === 'turn/completed') {
         const params = object(message.params);
         if (typeof params.threadId === 'string' && params.threadId !== threadId)
@@ -262,12 +244,7 @@ async function runSessionAttempt(
           throw new Error(
             `Codex turn ${string(turn.status)}${nativeError(turn.error)}`,
           );
-        const trimmed = response.trim();
-        const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(trimmed);
-        const output: unknown = JSON.parse(fenced?.[1] ?? trimmed);
-        validate(request.outputSchema, output, 'agent output');
-        result = object(output);
-        record('validation_succeeded', {});
+        result = parseAgentResult(response);
         return true;
       } else if (message.method && message.id !== undefined) {
         throw new Error(
@@ -275,6 +252,7 @@ async function runSessionAttempt(
         );
       }
     },
+    options.launch,
     launchConfig,
   );
   if (!result) throw new Error('Codex returned no validated output');

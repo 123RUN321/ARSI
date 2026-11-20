@@ -1,3 +1,4 @@
+import { agentProcessLauncher } from '../services/agent-execution/process.js';
 import { errorText } from '../../shared/errors.js';
 import { mkdir } from 'node:fs/promises';
 import { lock as acquireProcessLock } from 'proper-lockfile';
@@ -574,6 +575,19 @@ export class Manager {
         artifacts: manager.artifacts,
         facts: manager.facts,
         workspaces: manager.workspaces,
+        runAgentProcess(this: RuntimeContext, spec, onLine) {
+          if (
+            recipe.budget.modelCalls !== undefined ||
+            this.scope?.limits.modelCalls !== undefined
+          )
+            throw new Error(
+              'Native CLI execution cannot enforce the configured modelCalls budget',
+            );
+          return agentProcessLauncher({
+            project: this.agentProject ?? this.directory,
+            signal: this.signal,
+          })(spec, onLine);
+        },
         async charge(this: RuntimeContext, metric, amount) {
           return charge(metric, amount, this);
         },

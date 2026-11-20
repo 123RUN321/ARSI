@@ -1,3 +1,4 @@
+import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -6,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import { piDefinition } from '../../src/plugins/agent-pi/index.js';
-import { object } from '../../src/shared/json.js';
+import { object, string } from '../../src/shared/json.js';
 import { FileArtifacts } from '../../src/runtime/storage/index.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
 import { requestOperatorAgent } from '../../src/plugins/shared/operator-attempt/agent.js';
@@ -359,16 +360,36 @@ test('operator stage completes tool continuations and delegated review beyond 24
   const calls = (await fixture.manager.facts.list('calls')).filter(
     (call) => call.bindingId === 'agent',
   );
-  assert.equal(calls.length, 2);
-  assert.ok(calls.every((call) => call.status === 'succeeded'));
-  const delegate = calls.find(
-    (call) => object(call.input).role === 'operator-reviewer',
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.status, 'succeeded');
+  const records = await readAgentRecords(
+    join(
+      fixture.manager.directory,
+      'experiments',
+      'test',
+      'calls',
+      string(calls[0]!.callId),
+    ),
+    0,
+    1000,
+    true,
   );
-  assert.ok(delegate);
-  const parent = calls.find((call) => call.callId === delegate.parentCallId);
-  assert.ok(parent);
-  assert.equal(object(delegate.input).goal, 'Review the authorized source');
-  assert.equal(object(delegate.input).cwd, object(parent.input).cwd);
+  assert(
+    records.items.some(
+      (item) =>
+        item.runId !== 'main' &&
+        item.event?.type === 'run.started' &&
+        item.event.parentRunId === 'main',
+    ),
+  );
+  assert(
+    records.items.some(
+      (item) =>
+        item.runId !== 'main' &&
+        item.event?.type === 'message.completed' &&
+        item.event.text === 'Review the authorized source',
+    ),
+  );
 });
 
 test('lower Manager model budget stops an operator stage before its next external request', async (t) => {

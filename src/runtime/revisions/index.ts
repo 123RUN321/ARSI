@@ -291,7 +291,11 @@ export async function reflect(
           const binding = object(value);
           return [
             key,
-            { plugin: string(binding.plugin), config: object(binding.config) },
+            {
+              ...options.bindings[key]!,
+              plugin: string(binding.plugin),
+              config: object(binding.config),
+            },
           ];
         }),
       );

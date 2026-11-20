@@ -26,7 +26,7 @@ export { bindingDeclarationSchema, recipeDeclarationSchema } from './recipe.js';
 export type { Candidate } from './models/candidate.js';
 export * from './models/measurement.js';
 export * from './models/file-tree.js';
-export { OperationRejectedError } from './runtime/errors.js';
+export { OperationRejectedError, AgentOutputError } from './runtime/errors.js';
 export { RuntimeContext } from './runtime/context.js';
 export type { BudgetScope } from './runtime/execution.js';
 export type {
@@ -37,3 +37,6 @@ export type {
 } from './runtime/services.js';
 export * from './runtime/events.js';
 export * from './plugin-types/index.js';
+
+export * from './models/agent-record.js';
+export * from './runtime/agent-execution.js';

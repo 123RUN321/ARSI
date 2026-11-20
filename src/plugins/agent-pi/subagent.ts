@@ -1,7 +1,7 @@
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import type { AgentInput, RuntimeContext } from '../../contracts/index.js';
+import type { JsonObject } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { roleNamePattern } from '../shared/agent-editing/project.js';
@@ -18,29 +18,26 @@ export async function readProjectRole(
   return { path, content: await readFile(path, 'utf8') };
 }
 
-/** Role-based delegation shares the project while Manager owns the new session. */
+/** Native Pi delegation stays inside the SDK call and its shared model budget. */
 export async function createProjectSubagentTool(
-  parent: AgentInput,
-  context: RuntimeContext,
+  cwd: string,
+  invoke: (
+    role: string,
+    task: string,
+    signal?: AbortSignal,
+  ) => Promise<JsonObject>,
 ): Promise<ToolDefinition | undefined> {
-  const cwd = parent.cwd;
-  const roles = await readdir(join(cwd, 'roles'), {
+  const entries = await readdir(join(cwd, 'roles'), {
     withFileTypes: true,
   }).catch((error: unknown) => {
-    if (
-      !(error instanceof Error) ||
-      !('code' in error) ||
-      error.code !== 'ENOENT'
-    )
-      throw error;
-    return [];
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return [];
+    throw error;
   });
-  const names = roles
+  const names = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
-    .map((entry) => entry.name.slice(0, -3))
-    .filter((name) => new RegExp(roleNamePattern).test(name))
-    .sort();
-  if (names.length === 0) return undefined;
+    .map((entry) => entry.name.slice(0, -3));
+  if (!names.length) return undefined;
   const parameters = {
     type: 'object',
     properties: {
@@ -53,30 +50,18 @@ export async function createProjectSubagentTool(
   return {
     name: 'subagent',
     label: 'Run a specialist',
-    description:
-      'Ask a configured specialist to investigate a task in this project and return its findings.',
+    description: 'Run a configured specialist inside this task.',
     parameters,
-    async execute(_id, input, toolSignal) {
-      const signal = toolSignal
-        ? AbortSignal.any([context.signal, toolSignal])
-        : context.signal;
-      signal.throwIfAborted();
+    async execute(_id, input, signal) {
+      signal?.throwIfAborted();
       validate(parameters, input, 'subagent input');
       const task = object(input);
-      const result = await context
-        .extend({ signal })
-        .invokeAgent(context.bindingId, {
-          cwd,
-          role: string(task.agent),
-          goal: string(task.task),
-          outputSchema: {
-            type: 'object',
-            properties: { findings: { type: 'string' } },
-            required: ['findings'],
-            additionalProperties: false,
-          },
-        });
-      signal.throwIfAborted();
+      const result = await invoke(
+        string(task.agent),
+        string(task.task),
+        signal,
+      );
+      signal?.throwIfAborted();
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
         details: {},

@@ -1,3 +1,4 @@
+import { FileAgentRecorder } from '../../src/runtime/storage/agent-records.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -269,14 +270,21 @@ test('actual request, workspace, diagnostic trace and patch files are readable a
   });
   const callDirectory = join(f.root, 'experiments/experiment/calls/agent');
   await mkdir(callDirectory, { recursive: true });
-  await writeFile(
-    join(callDirectory, 'diagnostics.jsonl'),
-    JSON.stringify({
-      event: 'read_file',
-      path: 'source.md',
-      scores: { forbidden: 'grading trace marker' },
-    }),
-  );
+  const recorder = new FileAgentRecorder(callDirectory);
+  recorder.record({
+    runId: 'main',
+    event: {
+      type: 'tool.completed',
+      toolCallId: 'read',
+      name: 'read_file',
+      status: 'succeeded',
+      output: {
+        path: 'source.md',
+        scores: { forbidden: 'grading trace marker' },
+      },
+    },
+  });
+  recorder.close();
   const { snapshot } = await f.collect('r1', 3);
   const files = object(snapshot.files);
   assert.match(
@@ -988,5 +996,36 @@ test('an observed binding with no new current-version call exposes only its dire
     (object(next.snapshot.index).comparisons as JsonObject[])[0]!
       .afterExecution,
     'not-in-window',
+  );
+});
+
+test('Reflection reads the current retry conversation and its payloads', async (t) => {
+  const f = await fixture(t);
+  await f.call('proposal', 'proposer', 2);
+  await f.call('agent', 'agent', 1, {
+    parentCallId: 'proposal',
+    attemptId: 'retry',
+  });
+  const recorder = new FileAgentRecorder(
+    join(f.root, 'experiments/experiment/calls/agent/attempts/retry'),
+  );
+  recorder.record({
+    runId: 'main',
+    event: {
+      type: 'message.completed',
+      messageId: 'result',
+      role: 'assistant',
+      text: 'retry payload '.repeat(1000) + 'CURRENT_RETRY_TAIL',
+    },
+  });
+  recorder.close();
+  const { snapshot } = await f.collect('retried', 3);
+  assert.match(
+    string(
+      object(snapshot.files)[
+        'context/reflection/calls/proposal-trace-agent.jsonl'
+      ],
+    ),
+    /CURRENT_RETRY_TAIL/,
   );
 });

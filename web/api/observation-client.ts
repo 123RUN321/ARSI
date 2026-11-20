@@ -130,6 +130,7 @@ function parseCall(raw: unknown): CallSummary {
     bindingId: text(data.bindingId),
     triggerPath: data.triggerPath == null ? null : text(data.triggerPath),
     pluginId: text(data.pluginId),
+    contractId: nullable(data.contractId),
     path: nullable(data.path),
     status: text(data.status),
     startedAt: nullable(data.startedAt),
@@ -327,7 +328,10 @@ export function parseCallTrace(raw: unknown): CallTrace {
         sequence: item.sequence,
         at: nullable(item.at),
         type: text(item.type),
-        content: preview(item.content),
+        runId: text(item.runId),
+        native: jsonValue(item.native),
+        event: jsonValue(item.event),
+        payloadRef: nullable(item.payloadRef),
       };
     }),
   };
@@ -342,6 +346,8 @@ function choice<T extends string>(value: unknown, values: readonly T[]): T {
   if (result === undefined) throw new Error('Invalid Policy structure value');
   return result;
 }
+
+export const parseAgentPayload = jsonValue;
 
 function jsonValue(value: unknown): JsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean')

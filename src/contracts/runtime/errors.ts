@@ -5,3 +5,6 @@
 export class OperationRejectedError extends Error {
   override readonly name: string = 'OperationRejectedError';
 }
+
+/** A model result failed the caller's requested output contract. */
+export class AgentOutputError extends Error {}

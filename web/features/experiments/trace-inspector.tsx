@@ -1,5 +1,9 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { parseCallTrace } from '../../api/observation-client';
+import type { JsonValue } from '../../../src/contracts/json.js';
+import {
+  parseCallTrace,
+  parseAgentPayload,
+} from '../../api/observation-client';
 import { Feedback, Timestamp } from '../../components/observation-feedback';
 import { useObservation } from './use-observation';
 import { traceRows, eventText, type TraceRow } from './trace-model';
@@ -28,10 +32,20 @@ export function TraceInspector({
   useEffect(() => {
     if (result.data) setPages((old) => ({ ...old, [offset]: result.data! }));
   }, [result.data, offset]);
-  const rows = useMemo(
-    () => traceRows(Object.values(pages).flatMap((p) => p.items)),
-    [pages],
+  const [payloads, setPayloads] = useState<Record<string, JsonValue>>({});
+  const events = useMemo(
+    () =>
+      Object.values(pages)
+        .flatMap((p) => p.items)
+        .map((event) => {
+          if (!event.payloadRef || !payloads[event.payloadRef]) return event;
+          return { ...event, event: payloads[event.payloadRef] };
+        }),
+    [pages, payloads],
   );
+  const rows = useMemo(() => traceRows(events), [events]);
+  const [run, setRun] = useState('all');
+  const runs = [...new Set(rows.map((row) => row.runId))];
   const [filter, setFilter] = useState<Filter>('All');
   const [selection, setSelection] = useState<string | null>(null);
   const [tab, setTab] = useState('Overview');
@@ -39,12 +53,28 @@ export function TraceInspector({
   const [closed, setClosed] = useState(true);
   const visible = rows.filter(
     (r) =>
-      filter === 'All' ||
-      (filter === 'Model' && r.kind === 'model') ||
-      (filter === 'Tools' && r.kind === 'tool') ||
-      (filter === 'Errors' && r.status === 'Failed'),
+      (run === 'all' || r.runId === run) &&
+      (filter === 'All' ||
+        (filter === 'Model' && r.kind === 'model') ||
+        (filter === 'Tools' && r.kind === 'tool') ||
+        (filter === 'Errors' && r.status === 'Failed')),
   );
   const selected = visible.find((r) => r.id === selection) ?? visible[0];
+  const payloadRef = !closed
+    ? selected?.payloadRefs?.find((ref) => !Object.hasOwn(payloads, ref))
+    : null;
+  const payload = useObservation(
+    payloadRef && !payloads[payloadRef]
+      ? `/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}/agent/payloads/${encodeURIComponent(payloadRef)}`
+      : null,
+    parseAgentPayload,
+    null,
+  );
+  useEffect(() => {
+    const data = payload.data;
+    if (payloadRef && data !== undefined)
+      setPayloads((old) => ({ ...old, [payloadRef]: data }));
+  }, [payloadRef, payload.data]);
   const start = page * 50 < visible.length ? page * 50 : 0;
   const windowRows = visible.slice(start, start + 50);
   const list = useRef<HTMLDivElement>(null);
@@ -75,6 +105,24 @@ export function TraceInspector({
   return (
     <section className="trace-inspector" aria-label="Agent trace">
       <div className="inspector-toolbar">
+        <label>
+          Session{' '}
+          <select
+            aria-label="Agent session"
+            value={run}
+            onChange={(event) => {
+              setRun(event.target.value);
+              setPage(0);
+            }}
+          >
+            <option value="all">All sessions</option>
+            {runs.map((runId) => (
+              <option key={runId} value={runId}>
+                {runId}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="inspector-filters" aria-label="Event filters">
           {(['All', 'Model', 'Tools', 'Errors'] as const).map((value) => (
             <button
@@ -168,6 +216,9 @@ export function TraceInspector({
         </div>
         {!closed && selected ? (
           <aside className="inspector-detail" aria-label="Event details">
+            {payloadRef && !payloads[payloadRef] ? (
+              <Feedback {...payload} />
+            ) : null}
             <header>
               <div>
                 <strong>{selected.title}</strong>
@@ -374,7 +425,6 @@ function EventContent({
           {!row.body && !row.thinking ? <p>{row.summary}</p> : null}
         </>
       )}
-      {row.truncated ? <p className="muted">Event preview truncated.</p> : null}
     </>
   );
 }

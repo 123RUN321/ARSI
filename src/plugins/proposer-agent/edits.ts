@@ -47,7 +47,7 @@ export const proposerEditOutputSchema: JsonSchema = {
             additionalProperties: false,
             required: ['op', 'path', 'content'],
             properties: {
-              op: { type: 'string', const: op },
+              op: { type: 'string' as const, const: op },
               path,
               content: { type: 'string' as const },
             },

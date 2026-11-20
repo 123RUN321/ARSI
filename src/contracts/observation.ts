@@ -34,6 +34,7 @@ export interface CallSummary {
   parentCallId: string | null;
   bindingId: string;
   pluginId: string;
+  contractId?: string | null;
   path: string | null;
   status: string;
   startedAt: string | null;
@@ -102,13 +103,16 @@ export interface ArtifactPreview {
   unavailable: string | null;
 }
 
-/** Ordered, bounded previews of recorded agent events. */
+/** Ordered structured Agent events; large content is referenced separately. */
 export interface CallTrace
   extends Page<{
     sequence: number;
     at: string | null;
     type: string;
-    content: JsonPreview | null;
+    runId: string;
+    native: import('./json.js').JsonValue | null;
+    event: import('./json.js').JsonValue | null;
+    payloadRef: string | null;
   }> {
   unavailable: string | null;
   incomplete: boolean;

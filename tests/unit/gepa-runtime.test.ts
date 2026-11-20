@@ -798,7 +798,7 @@ test('malformed reflective outputs fail before committing or evaluating a propos
         proposals: {},
         agentOutput,
       },
-      /Agent edit output/,
+      /Agent output/,
     );
   }
 });

@@ -1,7 +1,10 @@
-import { randomUUID } from 'node:crypto';
 import { object } from '../../shared/json.js';
 import { launchEnvironment } from './session.js';
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
+import type {
+  DoctorContext,
+  DoctorResult,
+  JsonValue,
+} from '../../contracts/index.js';
 import { runDoctorCheck } from '../../shared/doctor-check.js';
 import {
   checkNativeAgent,
@@ -15,7 +18,7 @@ export async function checkOpenCodeAgent(
     context,
     'opencode',
     ['run', '--help'],
-    ['--standalone', '--format', '--agent', '--model', '--archived'],
+    ['--standalone', '--format', '--model', '--archived'],
   );
   if (result.checks[0].status !== 'passed') return result;
   result.checks.splice(
@@ -45,33 +48,25 @@ export async function checkOpenCodeAgent(
     await runDoctorCheck(
       'configuration',
       async (signal) => {
-        const agent = `rsi-doctor-${randomUUID()}`;
         const stdout = await runNativeAgentCommand(
           context,
           'opencode',
           ['debug', 'config', '--standalone'],
           signal,
           [0],
-          launchEnvironment(agent, context.directory),
+          launchEnvironment(context.directory),
         );
         try {
-          const entries: unknown = JSON.parse(stdout);
+          const entries: JsonValue = JSON.parse(stdout);
           if (
             !Array.isArray(entries) ||
-            !entries.some((entry: unknown) => {
-              const info = object(entry).info;
-              if (info === undefined) return false;
-              const agents = object(info).agents;
-              return (
-                agents !== undefined && Object.hasOwn(object(agents), agent)
-              );
-            })
+            !entries.some(
+              (entry: JsonValue) => object(entry).info !== undefined,
+            )
           )
-            throw new Error('missing agent');
+            throw new Error('missing native configuration');
         } catch {
-          throw new Error(
-            'OpenCode could not compose the native configuration with the RSI task agent.',
-          );
+          throw new Error('OpenCode could not load its native configuration.');
         }
       },
       { signal: context.signal },

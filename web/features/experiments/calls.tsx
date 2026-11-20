@@ -1,7 +1,7 @@
 import { ViewBoundary } from '../../components/view-boundary';
 import { TraceInspector } from './trace-inspector';
 import { PluginCallSummary } from './plugin-call-summary';
-import { callLabels, ownerCallId } from './call-labels';
+import { callLabels, ownerCallId, isAgentCall } from './call-labels';
 import { useCallRecords, useRoundLabels } from './round-labels';
 import { type HarnessStage } from './round-label-model';
 import React from 'react';
@@ -91,6 +91,48 @@ function Instructions({
   );
 }
 
+function AgentTaskResult({
+  id,
+  callId,
+  finished,
+}: {
+  id: string;
+  callId: string;
+  finished: boolean;
+}): React.JSX.Element {
+  const [open, setOpen] = React.useState(false);
+  const result = useObservation(
+    open
+      ? `/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}`
+      : null,
+    parseCallDetail,
+    finished ? null : 4000,
+    finished,
+  );
+  return (
+    <details
+      className="call-instructions"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>Agent task / result</summary>
+      {open ? (
+        <>
+          <Feedback {...result} />
+          {result.data ? (
+            <>
+              {result.data.error ? (
+                <p className="error-notice">{result.data.error}</p>
+              ) : null}
+              <Preview label="Task" value={result.data.input} />
+              <Preview label="Structured result" value={result.data.output} />
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </details>
+  );
+}
+
 function CallPayload({
   id,
   callId,
@@ -107,14 +149,12 @@ function CallPayload({
   const summary = calls.find((item) => item.callId === callId);
   const finished = !!summary?.finishedAt;
   const children = calls.filter(
-    (item) =>
-      item.pluginId === 'agent.pi' && ownerCallId(item, calls) === callId,
+    (item) => isAgentCall(item) && ownerCallId(item, calls) === callId,
   );
   const [agentId, setAgentId] = React.useState(children[0]?.callId ?? '');
-  const agent =
-    summary?.pluginId === 'agent.pi'
-      ? summary
-      : (children.find((item) => item.callId === agentId) ?? children[0]);
+  const agent = isAgentCall(summary)
+    ? summary
+    : (children.find((item) => item.callId === agentId) ?? children[0]);
   const summaryPayload =
     !!summary && /^(selector|application)\./.test(summary.pluginId);
   const result = useObservation(
@@ -195,15 +235,14 @@ function CallPayload({
               {children.map((item) => {
                 const isSubagent = calls.some(
                   (parent) =>
-                    parent.callId === item.parentCallId &&
-                    parent.pluginId.startsWith('agent.'),
+                    parent.callId === item.parentCallId && isAgentCall(parent),
                 );
                 const siblings = children.filter(
                   (child) =>
                     calls.some(
                       (parent) =>
                         parent.callId === child.parentCallId &&
-                        parent.pluginId.startsWith('agent.'),
+                        isAgentCall(parent),
                     ) === isSubagent,
                 );
                 const label = isSubagent ? 'Sub-agent' : 'Main agent';
@@ -241,6 +280,13 @@ function CallPayload({
                 callId={agent.callId}
                 finished={!!agent.finishedAt}
               />
+              {current.callId !== agent.callId ? (
+                <AgentTaskResult
+                  id={id}
+                  callId={agent.callId}
+                  finished={!!agent.finishedAt}
+                />
+              ) : null}
             </div>
           ) : null}
           <details
