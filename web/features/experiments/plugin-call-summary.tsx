@@ -7,6 +7,7 @@ import { route } from '../../app/routing';
 import { Status } from '../../components/observation-feedback';
 import { useRoundLabels } from './round-labels';
 import { scoreLabel } from './record-identifiers';
+import { metricLabel, primaryMetric } from './measurement-score';
 import { eventObject } from './trace-model';
 
 export function previewObject(
@@ -48,10 +49,11 @@ export function PluginCallSummary({
         <h4>Evaluations</h4>
         {measurements.length ? (
           measurements.map((m) => {
-            const score =
-              m.metrics.find((x) => x.name === 'meanReward') ??
-              m.metrics.find((x) => x.name === 'score') ??
-              m.metrics.find((x) => x.name === 'reward.reward');
+            const score = primaryMetric(
+              m.metrics.filter(({ name }) =>
+                ['score', 'meanReward', 'reward.reward'].includes(name),
+              ),
+            );
             return (
               <div key={m.ref} className="evaluation-summary">
                 <div>
@@ -68,7 +70,7 @@ export function PluginCallSummary({
                 <span>{labels.candidate(m.candidateRef)}</span>
                 {score ? (
                   <div>
-                    {score.name === 'meanReward' ? 'Average score' : 'Score'} ·{' '}
+                    {metricLabel(score)} ·{' '}
                     {Object.values(score.values)
                       .filter((v): v is number => typeof v === 'number')
                       .map(scoreLabel)

@@ -1,4 +1,4 @@
-import { primaryScore, roundAverage } from './measurement-score';
+import { primaryMetric, primaryScore, roundAverage } from './measurement-score';
 import React from 'react';
 import type {
   MeasurementSummary,
@@ -74,15 +74,18 @@ export function HarnessResultsView({
     variant === 'Delivered'
       ? delivered.has(item.ref)
       : labels.harness(item.ref)?.variant === variant;
+  const metric = primaryMetric(
+    [...groups.values()].flat().flatMap((item) => item.metrics),
+  );
   const averages = columns.map((variant) => {
     const rounds = [...groups.values()].map((items) =>
       items.filter((item) => matches(item, variant)),
     );
     return {
       variant,
-      value: roundAverage(rounds),
+      value: roundAverage(rounds, metric),
       count: rounds.filter((items) =>
-        items.some((item) => primaryScore(item) !== null),
+        items.some((item) => primaryScore(item, metric) !== null),
       ).length,
     };
   });
@@ -173,7 +176,7 @@ export function HarnessResultsView({
                                       stage={labels.harness(item.ref)!.variant}
                                     />
                                   );
-                                const score = primaryScore(item);
+                                const score = primaryScore(item, metric);
                                 return (
                                   <div key={item.ref}>
                                     <a

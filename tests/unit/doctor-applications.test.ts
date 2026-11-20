@@ -2,6 +2,7 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtemp,
+  realpath,
   mkdir,
   readFile,
   readdir,
@@ -46,7 +47,9 @@ function shortenDoctorDeadline(t: TestContext, timeoutMs: number): void {
 }
 
 async function fixture(t: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), 'rsi-doctor-applications-'));
+  const root = await mkdtemp(
+    join(await realpath(tmpdir()), 'rsi-doctor-applications-'),
+  );
   const baseline = join(root, 'baseline');
   await mkdir(baseline);
   await writeFile(

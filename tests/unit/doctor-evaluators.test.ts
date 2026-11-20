@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
@@ -26,7 +33,9 @@ const nativeReport = () => ({
 });
 
 async function fixture(t: test.TestContext) {
-  const directory = await mkdtemp(join(tmpdir(), 'rsi-doctor-sdk-'));
+  const directory = await mkdtemp(
+    join(await realpath(tmpdir()), 'rsi-doctor-sdk-'),
+  );
   const networkConfigPath = join(directory, 'network.yaml');
   await writeFile(networkConfigPath, '{}\n');
   const previous = {
