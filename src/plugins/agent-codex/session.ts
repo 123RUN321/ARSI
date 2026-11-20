@@ -1,4 +1,4 @@
-import { retryStartup } from '../../shared/startup-retry.js';
+import { setTimeout as delay } from 'node:timers/promises';
 import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import { codexObservations } from './observations.js';
@@ -43,16 +43,25 @@ interface SessionOptions {
   launch: AgentProcessLauncher;
 }
 export async function runSession(options: SessionOptions): Promise<JsonObject> {
-  let submitted = false;
-  return retryStartup(
-    options.signal,
-    () =>
-      runSessionAttempt(options, () => {
+  const { signal } = options;
+  const backoffMs = [250, 500];
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted();
+    let submitted = false;
+    try {
+      return await runSessionAttempt(options, () => {
         submitted = true;
-      }),
-    (error) => {
-      if (submitted || ('status' in error && error.status === 'unknown'))
-        return false;
+      });
+    } catch (error) {
+      signal.throwIfAborted();
+      const wait = backoffMs[attempt];
+      if (
+        submitted ||
+        wait === undefined ||
+        !(error instanceof Error) ||
+        ('status' in error && error.status === 'unknown')
+      )
+        throw error;
       options.record({
         runId: 'main',
         event: {
@@ -60,9 +69,9 @@ export async function runSession(options: SessionOptions): Promise<JsonObject> {
           reason: 'Retrying Codex startup before turn submission.',
         },
       });
-      return true;
-    },
-  );
+      await delay(wait, undefined, { signal });
+    }
+  }
 }
 
 async function runSessionAttempt(

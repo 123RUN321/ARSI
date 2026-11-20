@@ -1,4 +1,3 @@
-import { retryStartup } from '../../shared/startup-retry.js';
 import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import {
@@ -220,19 +219,17 @@ export async function createPiSession(
           );
           if (tool) tools.push(tool);
         }
-        ({ session } = await retryStartup(signal, () =>
-          createAgentSession({
-            cwd,
-            agentDir,
-            model,
-            modelRuntime: runtime,
-            thinkingLevel,
-            customTools: tools,
-            resourceLoader,
-            sessionManager: SessionManager.inMemory(cwd),
-            settingsManager,
-          }),
-        ));
+        ({ session } = await createAgentSession({
+          cwd,
+          agentDir,
+          model,
+          modelRuntime: runtime,
+          thinkingLevel,
+          customTools: tools,
+          resourceLoader,
+          sessionManager: SessionManager.inMemory(cwd),
+          settingsManager,
+        }));
         unsubscribe = session.subscribe((event) => {
           if (
             (event.type === 'message_end' &&
