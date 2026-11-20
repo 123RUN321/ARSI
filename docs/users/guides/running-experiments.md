@@ -112,8 +112,6 @@ arsi dashboard --port <port>
 
 Run from an experiment workspace that already contains `.rsi/`. The web dashboard displays experiments, summaries, candidates, diffs, measurements, calls, Agent traces, results, and charts, as shown below.
 
-For the main evaluation score, the dashboard prefers an available `score` and can fall back to `meanReward`. Harness stage comparisons use the same metric across the compared stages.
-
 Measurement details show each recorded item's full identifier, subject kind, status, coverage, and metrics. Failed, cancelled, and unknown items show no valid score rather than a numeric result. Missing item evidence is reported explicitly; a successful zero score remains zero.
 Metrics that share a display label include their recorded metric names so distinct values remain identifiable.
 

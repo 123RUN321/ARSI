@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -16,7 +16,9 @@ import { object, string } from '../../src/shared/json.js';
 import { measurementFixture } from '../helpers/manager-fixture.js';
 
 test('Reflection preserves root overrides and resumes from locked definitions without repeating completed steps', async (t) => {
-  const root = await mkdtemp(join(tmpdir(), 'rsi-reflection-scopes-'));
+  const root = await mkdtemp(
+    join(await realpath(tmpdir()), 'rsi-reflection-scopes-'),
+  );
   const registry = new Registry();
   const manager = new Manager({ registry, rootDirectory: root });
   t.after(async () => {

@@ -41,7 +41,7 @@ const file = (path: string, value: string, mode = 0o644): FileTreeFile => ({
   base64: Buffer.from(value).toString('base64'),
 });
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'rsi-apply-'));
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'rsi-apply-'));
   const project = join(root, 'project'),
     directory = join(root, 'runtime'),
     guidance = join(project, 'guidance');

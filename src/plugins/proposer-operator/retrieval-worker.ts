@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -6,8 +6,10 @@ import type { Readable } from 'node:stream';
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import type { EmbeddingConfig } from './schema.js';
 
+const runFile = promisify(execFile);
 const CLEANUP_GRACE_MS = 1000;
 const ERROR_MESSAGE_TAIL_BYTES = 16 * 1024;
 
@@ -32,6 +34,18 @@ async function groupHasLiveProcesses(pid: number): Promise<boolean> {
       }
     }
     return false;
+  }
+  if (process.platform === 'darwin') {
+    // An orphaned zombie can keep its group visible to kill(0) until launchd reaps it.
+    const { stdout } = await runFile('/bin/ps', ['-ax', '-o', 'pgid=,stat='], {
+      timeout: CLEANUP_GRACE_MS,
+    });
+    return stdout.split('\n').some((row) => {
+      const [group, status] = row.trim().split(/\s+/);
+      return (
+        Number(group) === pid && Boolean(status && !status.startsWith('Z'))
+      );
+    });
   }
   try {
     process.kill(-pid, 0);

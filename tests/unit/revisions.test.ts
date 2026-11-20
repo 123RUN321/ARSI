@@ -1,6 +1,13 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import {
+  mkdtemp,
+  realpath,
+  mkdir,
+  writeFile,
+  readFile,
+  rm,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import filesystem from 'node:fs/promises';
@@ -29,7 +36,7 @@ import {
 } from '../../src/runtime/revisions/resources.js';
 import { canonical, object, string } from '../../src/shared/json.js';
 async function fixture(t: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), 'rsi-revisions-'));
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'rsi-revisions-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const directory = join(root, '.rsi');
   const facts = new FileFacts(join(directory, 'facts'));
