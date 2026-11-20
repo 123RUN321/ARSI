@@ -26,6 +26,7 @@ test('HTTP catalog exposes the registered kernel plugins and operator search Pol
       'application.inference',
       'application.kernel',
       'evaluator.agentbench',
+      'evaluator.gym',
       'evaluator.inferencebench',
       'evaluator.operatorbench',
       'memory.agent',
@@ -42,6 +43,7 @@ test('HTTP catalog exposes the registered kernel plugins and operator search Pol
     ]);
     assert.deepEqual(catalog.policies.sort(), [
       'policy.gepa',
+      'policy.gym-rsi',
       'policy.harness2',
       'policy.operator-search',
       'policy.parameter-agent',
