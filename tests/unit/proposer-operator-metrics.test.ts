@@ -1,3 +1,5 @@
+import { object } from '../../src/shared/json.js';
+import { projectMetricProfile } from '../../src/plugins/shared/operator-attempt/metric-evidence.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -169,4 +171,38 @@ test('diagnosis guide cites a measured value accepted by the evidence checker', 
     assert.throws(() =>
       parse({ ...diagnosis, evidence: [{ path, value: 0 }] }, profile),
     );
+});
+
+test('metric profile projection summarizes all observations without mixing block and sub-block counters', () => {
+  const profile = projectMetricProfile({
+    status: 'completed',
+    kernels: [
+      {
+        name: 'kernel',
+        metrics: {
+          '8': { 'aiv_time(us)': 99 },
+          ...Object.fromEntries(
+            Array.from({ length: 8 }, (_, id) => [
+              `${id}|vector`,
+              { 'aiv_time(us)': id + 1 },
+            ]),
+          ),
+        },
+      },
+    ],
+  });
+  const kernel = (profile.kernels as JsonObject[])[0]!;
+  const summary = object(kernel.observed);
+  const groups = object(summary.groups);
+  assert.equal(summary.blockCount, 9);
+  assert.deepEqual(
+    object(object(groups['sub-block:vector']).metrics)['aiv_time(us)'],
+    {
+      samples: 8,
+      p50: 4,
+      p90: 8,
+    },
+  );
+  assert.equal(object(object(kernel.metrics)['7|vector'])['aiv_time(us)'], 8);
+  assert.ok(Object.keys(object(kernel.metrics)).length < 9);
 });

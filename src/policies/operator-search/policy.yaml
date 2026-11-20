@@ -42,6 +42,9 @@ state:
   metricParent: ${{ input.candidateRef }}
   metricIncumbent: null
   candidateDiagnosticMeasurementRef: null
+  rejectedProfiles: []
+  rejectedProfileCandidate: null
+  nearMissRatio: null
   phase: static
   metricRound: null
 output_schema:
@@ -349,6 +352,7 @@ steps:
                 noChange: false
                 decisionRef: null
                 candidateDiagnosticMeasurementRef: null
+                nearMissRatio: null
               type: state
             - id: metrics_propose
               use: proposer
@@ -396,6 +400,9 @@ steps:
                         steps.metrics_evaluate.output.measurementRef) }}
                       feasible: ${{ steps.metrics_select.output.candidateFeasible }}
                       accepted: ${{ steps.metrics_select.output.accepted }}
+                      nearMissRatio:
+                        ${{ if(steps.metrics_select.output.candidateFeasible,
+                        steps.metrics_select.output.candidateValue / steps.metrics_select.output.incumbentValue, null) }}
                       decisionRef:
                         ${{ if(steps.metrics_select.output.candidateFeasible,
                         steps.metrics_select.output.decisionRef, null) }}
@@ -454,6 +461,9 @@ steps:
                                   steps.metrics_repair_evaluate.output.measurementRef) }}
                                 feasible: ${{ steps.metrics_repair_select.output.candidateFeasible }}
                                 accepted: ${{ steps.metrics_repair_select.output.accepted }}
+                                nearMissRatio:
+                                  ${{ if(steps.metrics_repair_select.output.candidateFeasible,
+                                  steps.metrics_repair_select.output.candidateValue / steps.metrics_repair_select.output.incumbentValue, null) }}
                                 decisionRef:
                                   ${{ if(steps.metrics_repair_select.output.candidateFeasible,
                                   steps.metrics_repair_select.output.decisionRef, null) }}
@@ -512,6 +522,37 @@ steps:
                     type: if
               else:
                 steps: []
+              type: if
+            - id: profile_near_miss
+              if:
+                ${{ !state.accepted && state.nearMissRatio != null && state.nearMissRatio <= 1.05 &&
+                (state.nearMissRatio < 1 || !some(state.rejectedProfiles, 'nonFaster', true)) &&
+                state.roundCount < config.maxRounds &&
+                state.noImprovementCount + 1 < config.maxNoImprovement &&
+                length(state.rejectedProfiles) < config.maxRejectedProfiles &&
+                !some(state.rejectedProfiles, 'candidateRef', state.currentCandidate) }}
+              then:
+                steps:
+                  - id: remember_near_miss_candidate
+                    state:
+                      rejectedProfileCandidate:
+                        candidateRef: ${{ state.currentCandidate }}
+                        nonFaster: ${{ state.nearMissRatio >= 1 }}
+                    type: state
+                  - id: collect_near_miss
+                    use: evaluator
+                    with:
+                      action: profile
+                      candidateRef: ${{ state.currentCandidate }}
+                      caseIds: ${{ config.caseIds }}
+                      assessmentMeasurementRef: ${{ state.currentMeasurement }}
+                    type: invoke
+                  - id: remember_near_miss
+                    state:
+                      candidateDiagnosticMeasurementRef: ${{ steps.collect_near_miss.output.measurementRef }}
+                      diagnosticRefs: ${{ append(state.diagnosticRefs, steps.collect_near_miss.output.measurementRef) }}
+                      rejectedProfiles: ${{ append(state.rejectedProfiles, state.rejectedProfileCandidate) }}
+                    type: state
               type: if
             - id: metric_outcome
               state:

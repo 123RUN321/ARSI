@@ -22,6 +22,13 @@ state the uncertainty. Pipe utilization is diagnostic, not a measured speedup or
 a theoretical roofline attainment. Timing and candidate selection belong to the
 Evaluator and Policy.
 
+The profile may show representative rows and observed distributions grouped by
+block or sub-block. Use sample counts to qualify coverage, and use measured rows
+for numeric evidence pointers. A slow or small row alone does not identify a tail.
+A history entry may include candidate and incumbent profile distributions even
+when its candidate was not promoted. Compare matching groups and units, and
+account for changes in launch geometry before interpreting differences.
+
 ## Use history without turning uncertainty into a ban
 
 Program-owned `facts` and `measurementRefs` record formal Evaluator results. Each

@@ -38,7 +38,10 @@ import {
   MetricsRetrievalUnavailable,
   retrieveMetricsKnowledge,
 } from './resources.js';
-import { metricEvidenceGuide } from '../shared/operator-attempt/metric-evidence.js';
+import {
+  metricEvidenceGuide,
+  projectMetricProfile,
+} from '../shared/operator-attempt/metric-evidence.js';
 import { operatorSnapshot } from './source-snapshot.js';
 
 export async function prepareMetrics(
@@ -118,9 +121,10 @@ export async function prepareMetrics(
     input.staticHistoryRef === null
       ? null
       : await readHistory(input.staticHistoryRef, context);
+  const profileView = projectMetricProfile(diagnostic);
   const metricContext = {
     phase: 'metrics',
-    profile: diagnostic,
+    profile: profileView,
     history:
       config.historyWindow === 0
         ? []
@@ -137,8 +141,8 @@ export async function prepareMetrics(
         ...(await operatorSnapshot(parent, config, baseline, context)),
         input: {
           stage: 'diagnose-metrics',
-          evidenceGuide: metricEvidenceGuide(diagnostic),
-          profile: diagnostic,
+          evidenceGuide: metricEvidenceGuide(profileView),
+          profile: profileView,
           history: metricContext.history,
           staticHistory: metricContext.staticHistory,
           hardwareContext: hardware?.text ?? null,
@@ -149,7 +153,7 @@ export async function prepareMetrics(
       config.modelRequestTimeoutMs,
     );
     try {
-      analysis.diagnosis = parseMetricsDiagnosis(response, diagnostic);
+      analysis.diagnosis = parseMetricsDiagnosis(response, profileView);
     } catch (error) {
       throw new OperatorModelOutputError(
         error instanceof Error ? error.message : String(error),
@@ -194,7 +198,7 @@ export async function prepareMetrics(
     generationContext: {
       phase: 'metrics',
       analysis,
-      profile: diagnostic,
+      profile: profileView,
       history: metricContext.history,
       staticHistory: metricContext.staticHistory,
       hardwareContext: hardware?.text ?? null,

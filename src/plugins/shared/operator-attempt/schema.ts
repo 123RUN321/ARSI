@@ -265,6 +265,7 @@ export type MetricsSummary = SummaryContent & {
   parentCandidateRef: string;
   incumbentMeasurementRef: string;
   candidateDiagnosticMeasurementRef: string | null;
+  candidateProfileFeedback?: JsonObject;
   facts: AttemptFacts & {
     improvement: number | null;
     selectedCandidateRef: string;
@@ -316,7 +317,7 @@ export const metricsAnalysisSchema = recordSchema({
   retrievalRef: { anyOf: [ref, { type: 'null' }] },
   retrievalStatus: { enum: ['skipped', 'available', 'unavailable'] },
 });
-export const metricsSummarySchema = recordSchema({
+const metricsSummaryProperties: JsonObject = {
   schemaVersion: { const: 'rsi.operator-metrics-summary/v1' },
   actionSummary: { type: 'string' },
   experimentId: ref,
@@ -327,6 +328,7 @@ export const metricsSummarySchema = recordSchema({
   candidateRefs: refs(0),
   ...summaryReferenceProperties,
   candidateDiagnosticMeasurementRef: { anyOf: [ref, { type: 'null' }] },
+  candidateProfileFeedback: { type: 'object' },
   facts: recordSchema({
     ...assessmentFactProperties,
     improvement: { type: ['number', 'null'] },
@@ -335,7 +337,13 @@ export const metricsSummarySchema = recordSchema({
   }),
   summaryStatus: { enum: ['available', 'unavailable'] },
   ...summaryResponseProperties,
-});
+};
+export const metricsSummarySchema = recordSchema(
+  metricsSummaryProperties,
+  Object.keys(metricsSummaryProperties).filter(
+    (key) => key !== 'candidateProfileFeedback',
+  ),
+);
 export const metricsHistorySchema = recordSchema({
   schemaVersion: { const: 'rsi.operator-metrics-history/v1' },
   experimentId: ref,

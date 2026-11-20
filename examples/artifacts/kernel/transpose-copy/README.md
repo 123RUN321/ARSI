@@ -125,6 +125,10 @@ stops the metrics stage. Diagnosis may return `no-new-hypothesis` to stop withou
 retrieval or generation. Three consecutive empty metric proposals also stop by
 default; any candidate resets that separate count. Both modes independently reassess the selected source
 at the end.
+While another metrics round remains, `maxRejectedProfiles` allows up to two additional
+profiles per run by default. Candidates must pass verification and be within 5%
+of the incumbent latency on the slower side. At most one candidate that did not
+improve latency receives a profile. The measured summaries enter the next round’s history. Set the limit to zero for timing-only feedback.
 
 Generation submits a plausible testable candidate without first proving a speedup;
 formal evaluation and selection decide its outcome. History guidance items contain

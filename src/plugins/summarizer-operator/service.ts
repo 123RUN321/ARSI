@@ -38,6 +38,10 @@ import {
   type OperatorSummary,
 } from '../shared/operator-attempt/schema.js';
 import { configSchema, type OperatorSummarizerConfig } from './schema.js';
+import {
+  candidateMetricFeedback,
+  projectMetricProfile,
+} from '../shared/operator-attempt/metric-evidence.js';
 
 function validateActions(
   input: OperatorSummarizerInput,
@@ -312,26 +316,30 @@ export const createOperatorSummarizer: OperationDefinition<
       );
       let candidateProfile: JsonObject | null = null;
       if (input.candidateDiagnosticMeasurementRef !== null) {
-        if (!facts.accepted)
+        if (facts.wasTransformCorrect !== true)
           throw new Error(
-            'Non-promoted metric candidate cannot claim new diagnostics',
+            'Metric candidate diagnostics require a verified correct attempt',
           );
-        const selected = await readOperatorCandidate(
-          facts.selectedCandidateRef,
+        const measured = await readOperatorCandidate(
+          input.candidateRefs.at(-1)!,
           context,
         );
         candidateProfile = await profile(
           input.candidateDiagnosticMeasurementRef,
-          selected,
+          measured,
           await readAssessment(
             input.measurementRefs.at(-1)!,
-            selected.ref,
+            measured.ref,
             context,
           ),
           context,
           false,
         );
       }
+      const feedback =
+        candidateProfile === null
+          ? null
+          : candidateMetricFeedback(diagnostic, candidateProfile);
       const content = await explain(
         input,
         parent.ref,
@@ -339,8 +347,8 @@ export const createOperatorSummarizer: OperationDefinition<
         {
           analysis,
           facts,
-          profile: diagnostic,
-          candidateProfile,
+          profile: projectMetricProfile(diagnostic),
+          candidateProfile: feedback,
         },
         context,
       );
@@ -354,6 +362,7 @@ export const createOperatorSummarizer: OperationDefinition<
           incumbentMeasurementRef: input.incumbentMeasurementRef,
           candidateDiagnosticMeasurementRef:
             input.candidateDiagnosticMeasurementRef,
+          ...(feedback === null ? {} : { candidateProfileFeedback: feedback }),
         },
         prior.history,
         context,

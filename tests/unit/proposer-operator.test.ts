@@ -153,12 +153,7 @@ async function setup(
                     reasoning: 'Use the visible scalar work as one hypothesis',
                     rootCause: 'Scalar overhead is a hypothesis',
                     recommendedFix: 'Hoist invariant scalar work',
-                    evidence: [
-                      {
-                        path: '/kernels/0/metrics/0/aiv_vec_ratio',
-                        value: 0.7,
-                      },
-                    ],
+                    evidence: [object(input.evidenceGuide).example],
                   };
           if (stage === 'diagnose')
             return {
@@ -1170,6 +1165,14 @@ test('metric repairs use the failed candidate and deliver the complete user hard
           candidateMeasurementRef: assessed.measurementRef,
         }),
       );
+      const rejectedProfile = object(
+        await context.invoke('evaluator', {
+          action: 'profile',
+          candidateRef: repaired.candidateRef,
+          caseIds: ['fixed'],
+          assessmentMeasurementRef: assessed.measurementRef,
+        }),
+      );
       const summary = object(
         await context.invoke('summarizer', {
           action: 'summarize',
@@ -1183,7 +1186,7 @@ test('metric repairs use the failed candidate and deliver the complete user hard
           candidateRefs: [proposed.candidateRef, repaired.candidateRef],
           measurementRefs: [failed.measurementRef, assessed.measurementRef],
           decisionRef: selection.decisionRef,
-          candidateDiagnosticMeasurementRef: null,
+          candidateDiagnosticMeasurementRef: rejectedProfile.measurementRef,
           outcome: 'verified-no-gain',
         }),
       );
@@ -1199,6 +1202,30 @@ test('metric repairs use the failed candidate and deliver the complete user hard
         JSON.stringify(object(summaryRequest.input).evidence),
         /KERNEL_CONTRACT_FAILED/,
       );
+      await context.invoke('proposer', {
+        action: 'propose',
+        phase: 'metrics',
+        parentCandidateRef: entry,
+        incumbentMeasurementRef: baselineRef,
+        diagnosticMeasurementRef: diagnostic.measurementRef,
+        round: 2,
+        historyRef: summary.historyRef,
+        staticHistoryRef: null,
+        goal: 'Use measured candidate feedback',
+      });
+      const next = requests
+        .filter(({ input }) => input.stage === 'diagnose-metrics')
+        .at(-1);
+      assert.ok(next && Array.isArray(next.input.history));
+      const record = object(next.input.history[0]);
+      assert.equal(object(record.facts).selectedCandidateRef, entry);
+      assert.equal(
+        record.candidateDiagnosticMeasurementRef,
+        rejectedProfile.measurementRef,
+      );
+      const feedback = object(record.candidateProfileFeedback);
+      assert.equal(feedback.status, 'completed');
+      assert.match(JSON.stringify(feedback), /aiv_vec_ratio/);
       return summary;
     },
     false,

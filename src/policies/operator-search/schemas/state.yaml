@@ -120,6 +120,32 @@ properties:
       - string
       - 'null'
     minLength: 1
+  nearMissRatio:
+    type: [number, 'null']
+  rejectedProfiles:
+    type: array
+    items:
+      type: object
+      properties:
+        candidateRef:
+          type: string
+          minLength: 1
+        nonFaster:
+          type: boolean
+      required: [candidateRef, nonFaster]
+      additionalProperties: false
+  rejectedProfileCandidate:
+    anyOf:
+      - type: object
+        properties:
+          candidateRef:
+            type: string
+            minLength: 1
+          nonFaster:
+            type: boolean
+        required: [candidateRef, nonFaster]
+        additionalProperties: false
+      - type: 'null'
   phase:
     type: string
     minLength: 1
@@ -161,6 +187,9 @@ required:
   - metricParent
   - metricIncumbent
   - candidateDiagnosticMeasurementRef
+  - nearMissRatio
+  - rejectedProfiles
+  - rejectedProfileCandidate
   - phase
   - metricRound
 additionalProperties: false
