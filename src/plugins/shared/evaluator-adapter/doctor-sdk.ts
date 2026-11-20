@@ -1,4 +1,8 @@
-import { diagnoseExperiment, type DoctorOptions } from 'arsi-evaluator';
+import {
+  Evaluator,
+  type DoctorOptions,
+  type DoctorReport,
+} from 'arsi-evaluator';
 
 export type SdkDoctorOptions = Required<
   Pick<DoctorOptions, 'configPath' | 'networkConfigPath' | 'env' | 'signal'>
@@ -6,4 +10,6 @@ export type SdkDoctorOptions = Required<
 
 export type SdkDoctorRunner = (options: SdkDoctorOptions) => Promise<unknown>;
 
-export const sdkDoctor = diagnoseExperiment;
+export function sdkDoctor(options: DoctorOptions): Promise<DoctorReport> {
+  return new Evaluator().doctor(options);
+}

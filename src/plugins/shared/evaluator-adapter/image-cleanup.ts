@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import {
-  cleanupImages,
+  Evaluator,
   loadConfig,
   type ImageCleanupOptions,
 } from 'arsi-evaluator';
@@ -215,7 +215,8 @@ export function evaluatorImageDisposer(
 export async function cleanupEvaluatorImages(
   context: CleanupContext,
   ownerKind: ImageCleanupSource['kind'],
-  run: (options: ImageCleanupOptions) => Promise<unknown> = cleanupImages,
+  run: (options: ImageCleanupOptions) => Promise<unknown> = (options) =>
+    new Evaluator().cleanupImages(options),
 ): Promise<void> {
   const kind = `evaluator-images-${context.experimentId}`;
   const receipts =
