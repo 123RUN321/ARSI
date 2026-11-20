@@ -8,12 +8,12 @@ import {
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RuntimeContext, type JsonObject } from '../../src/index.js';
-import { createGymRelease } from '../../src/plugins/release-gym/service.js';
+import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
+import { createGymPromotion } from '../../src/plugins/evaluator-gym/promotion/service.js';
 import {
-  releaseConfigSchema,
-  type GymReleaseConfig,
-} from '../../src/plugins/release-gym/schema.js';
+  promotionConfigSchema,
+  type GymPromotionConfig,
+} from '../../src/plugins/evaluator-gym/promotion/schema.js';
 import { validate } from '../../src/shared/schema.js';
 
 const CANDIDATE_DIGEST = `sha256:${'c'.repeat(64)}`;
@@ -234,13 +234,11 @@ function harness(): {
   context: RuntimeContext;
   artifacts: Map<string, JsonObject>;
   charges: string[];
-  instances: Array<{ ref: string; instanceKey?: string }>;
-  facts: Map<string, JsonObject>;
+  instances: { ref: string }[];
 } {
   const artifacts = new Map<string, JsonObject>();
-  const facts = new Map<string, JsonObject>();
   const charges: string[] = [];
-  const instances: Array<{ ref: string; instanceKey?: string }> = [];
+  const instances: { ref: string }[] = [];
   const context = new RuntimeContext().extend({
     experimentId: 'experiment',
     callId: 'release',
@@ -262,15 +260,10 @@ function harness(): {
       materialize: async () => {},
     },
     facts: {
-      read: async (kind: string, id: string) => {
-        const value = facts.get(`${kind}/${id}`);
-        if (value === undefined)
-          throw Object.assign(new Error('missing fact'), { code: 'ENOENT' });
-        return structuredClone(value);
+      read: async () => {
+        throw new Error('unused');
       },
-      write: async (kind: string, id: string, value: JsonObject) => {
-        facts.set(`${kind}/${id}`, structuredClone(value));
-      },
+      write: async () => {},
       list: async () => [],
     },
     workspaces: {
@@ -318,15 +311,9 @@ function harness(): {
       ref: string,
       capability: string,
       use: (execution: JsonObject) => Promise<T>,
-      options?: { instanceKey?: string },
     ): Promise<T> => {
       assert.equal(capability, 'agentbundle');
-      instances.push({
-        ref,
-        ...(options?.instanceKey === undefined
-          ? {}
-          : { instanceKey: options.instanceKey }),
-      });
+      instances.push({ ref });
       const directory = await mkdtemp(join(tmpdir(), 'release-bundle-'));
       return use({
         directory,
@@ -335,10 +322,10 @@ function harness(): {
       });
     },
   });
-  return { context, artifacts, charges, instances, facts };
+  return { context, artifacts, charges, instances };
 }
 
-function config(baseUrl: string): GymReleaseConfig {
+function config(baseUrl: string): GymPromotionConfig {
   return {
     baseUrl,
     promotionDefaults: {
@@ -350,24 +337,24 @@ function config(baseUrl: string): GymReleaseConfig {
   };
 }
 
-function withSeed(value: GymReleaseConfig, seed: number): GymReleaseConfig {
+function withSeed(value: GymPromotionConfig, seed: number): GymPromotionConfig {
   return {
     ...value,
     promotionDefaults: { ...value.promotionDefaults, seed },
   };
 }
 
-test('release.gym compares candidate and incumbent holdout reports without task pinning', async () => {
+test('gym promotion compares candidate and incumbent holdout reports without task pinning', async () => {
   const gym = await gymFixture({
     [CANDIDATE_DIGEST]: 0.8,
     [INCUMBENT_DIGEST]: 0.5,
   });
   try {
     const { context, artifacts, charges, instances } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -395,10 +382,10 @@ test('release.gym compares candidate and incumbent holdout reports without task 
     }
     assert.deepEqual(charges, ['evaluationRuns', 'evaluationRuns']);
     assert.deepEqual(instances, [
-      { ref: 'candidate:final', instanceKey: 'candidate' },
-      { ref: 'candidate:incumbent', instanceKey: 'incumbent' },
+      { ref: 'candidate:final' },
+      { ref: 'candidate:incumbent' },
     ]);
-    const record = artifacts.get(output.releaseRef)!;
+    const record = artifacts.get(output.promotionRef)!;
     assert.equal(record.decision, 'promote');
     assert.ok(Math.abs(Number(object(record.comparison).delta) - 0.3) < 1e-12);
   } finally {
@@ -406,17 +393,17 @@ test('release.gym compares candidate and incumbent holdout reports without task 
   }
 });
 
-test('release.gym carries each candidate directory and kind to every promotion', async () => {
+test('gym promotion carries each candidate directory and kind to every promotion', async () => {
   const gym = await gymFixture({
     [CANDIDATE_DIGEST]: 0.8,
     [INCUMBENT_DIGEST]: 0.5,
   });
   try {
     const { context, instances } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -434,22 +421,22 @@ test('release.gym carries each candidate directory and kind to every promotion',
       assert.equal(Object.hasOwn(entry.body, 'task_ids'), false);
     }
     assert.deepEqual(instances, [
-      { ref: 'candidate:final', instanceKey: 'candidate' },
-      { ref: 'candidate:incumbent', instanceKey: 'incumbent' },
+      { ref: 'candidate:final' },
+      { ref: 'candidate:incumbent' },
     ]);
   } finally {
     await gym.close();
   }
 });
 
-test('release.gym skips holdout when the candidate did not advance', async () => {
+test('gym promotion skips holdout when the candidate did not advance', async () => {
   const gym = await gymFixture({ [CANDIDATE_DIGEST]: 1 });
   try {
     const { context, artifacts, charges, instances } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:final' },
@@ -460,7 +447,7 @@ test('release.gym skips holdout when the candidate did not advance', async () =>
     assert.equal(gym.posted.length, 0);
     assert.deepEqual(charges, []);
     assert.deepEqual(instances, []);
-    const record = artifacts.get(output.releaseRef)!;
+    const record = artifacts.get(output.promotionRef)!;
     assert.equal(record.decision, 'keep-incumbent');
     assert.equal(record.holdoutSkipped, true);
     assert.equal(record.comparison, null);
@@ -470,17 +457,17 @@ test('release.gym skips holdout when the candidate did not advance', async () =>
   }
 });
 
-test('release.gym keeps the incumbent on a tie and rejects environment drift', async () => {
+test('gym promotion keeps the incumbent on a tie and rejects environment drift', async () => {
   const tie = await gymFixture({
     [CANDIDATE_DIGEST]: 0.7,
     [INCUMBENT_DIGEST]: 0.7,
   });
   try {
     const { context } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(tie.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -500,10 +487,10 @@ test('release.gym keeps the incumbent on a tie and rejects environment drift', a
   );
   try {
     const { context } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(drift.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -516,17 +503,17 @@ test('release.gym keeps the incumbent on a tie and rejects environment drift', a
   }
 });
 
-test('release.gym rejects a failed candidate without spending an incumbent holdout', async () => {
+test('gym promotion rejects a failed candidate without spending an incumbent holdout', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { failureDigest: CANDIDATE_DIGEST },
   );
   try {
     const { context, charges } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -540,7 +527,7 @@ test('release.gym rejects a failed candidate without spending an incumbent holdo
   }
 });
 
-test('release.gym rejects incomplete report metrics before comparing candidates', async () => {
+test('gym promotion rejects incomplete report metrics before comparing candidates', async () => {
   const cases: Array<{ options: FixtureOptions; pattern: RegExp }> = [
     { options: { rollouts: 0 }, pattern: /no attempted rollouts/ },
   ];
@@ -551,10 +538,10 @@ test('release.gym rejects incomplete report metrics before comparing candidates'
     );
     try {
       const { context } = harness();
-      const release = await createGymRelease(
+      const release = await createGymPromotion(
         config(gym.baseUrl),
         context,
-        releaseConfigSchema,
+        promotionConfigSchema,
       );
       const output = await release.execute(
         {
@@ -572,17 +559,17 @@ test('release.gym rejects incomplete report metrics before comparing candidates'
   }
 });
 
-test('release.gym does not scale current Gym rates twice when rollouts fail', async () => {
+test('gym promotion does not scale current Gym rates twice when rollouts fail', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { rollouts: 4, candidateRolloutsFailed: 1, candidatePassRate: 0.8 },
   );
   try {
     const { context, artifacts } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -590,7 +577,7 @@ test('release.gym does not scale current Gym rates twice when rollouts fail', as
     );
     assert.equal(output.decision, 'promote');
     assert.equal(gym.posted.length, 2);
-    const comparison = object(artifacts.get(output.releaseRef)!.comparison);
+    const comparison = object(artifacts.get(output.promotionRef)!.comparison);
     assert.equal(comparison.metric, 'successRate');
     assert.ok(Math.abs(Number(comparison.candidateValue) - 0.8) < 1e-12);
     assert.ok(Math.abs(Number(comparison.incumbentValue) - 0.5) < 1e-12);
@@ -600,7 +587,7 @@ test('release.gym does not scale current Gym rates twice when rollouts fail', as
   }
 });
 
-test('release.gym scales legacy pass rates that omit rollouts_attempted', async () => {
+test('gym promotion scales legacy pass rates that omit rollouts_attempted', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     {
@@ -614,17 +601,17 @@ test('release.gym scales legacy pass rates that omit rollouts_attempted', async 
   );
   try {
     const { context, artifacts } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
       context,
     );
     assert.equal(output.decision, 'promote');
-    const comparison = object(artifacts.get(output.releaseRef)!.comparison);
+    const comparison = object(artifacts.get(output.promotionRef)!.comparison);
     assert.ok(Math.abs(Number(comparison.candidateValue) - 0.75) < 1e-12);
     assert.ok(Math.abs(Number(comparison.incumbentValue) - 0.5) < 1e-12);
   } finally {
@@ -632,7 +619,7 @@ test('release.gym scales legacy pass rates that omit rollouts_attempted', async 
   }
 });
 
-test('release.gym compares reports reused across a seed change', async () => {
+test('gym promotion compares reports reused across a seed change', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { reuseCompletedReports: true },
@@ -643,16 +630,16 @@ test('release.gym compares reports reused across a seed change', async () => {
       candidateRef: 'candidate:final',
       incumbentRef: 'candidate:incumbent',
     };
-    const first = await createGymRelease(
+    const first = await createGymPromotion(
       withSeed(config(gym.baseUrl), 43),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     await first.execute(input, context);
-    const second = await createGymRelease(
+    const second = await createGymPromotion(
       withSeed(config(gym.baseUrl), 44),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await second.execute(input, context);
     assert.equal(output.decision, 'promote');
@@ -663,17 +650,17 @@ test('release.gym compares reports reused across a seed change', async () => {
   }
 });
 
-test('release.gym attaches to an existing promotion on HTTP 409', async () => {
+test('gym promotion attaches to an existing promotion on HTTP 409', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { conflictOnce: true },
   );
   try {
     const { context } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -689,7 +676,7 @@ test('release.gym attaches to an existing promotion on HTTP 409', async () => {
   }
 });
 
-test('release.gym rejects Gym trust warnings before spending an incumbent holdout', async () => {
+test('gym promotion rejects Gym trust warnings before spending an incumbent holdout', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     {
@@ -700,10 +687,10 @@ test('release.gym rejects Gym trust warnings before spending an incumbent holdou
   );
   try {
     const { context, charges } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -718,17 +705,17 @@ test('release.gym rejects Gym trust warnings before spending an incumbent holdou
   }
 });
 
-test('release.gym rejects a permanent HTTP failure', async () => {
+test('gym promotion rejects a permanent HTTP failure', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { candidateSubmitStatus: 400 },
   );
   try {
     const { context } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const input = {
       candidateRef: 'candidate:final',
@@ -740,17 +727,17 @@ test('release.gym rejects a permanent HTTP failure', async () => {
   }
 });
 
-test('release.gym does not charge again when Gym reuses completed reports', async () => {
+test('gym promotion does not charge again when Gym reuses completed reports', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { reuseCompletedReports: true },
   );
   try {
     const { context, charges } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       config(gym.baseUrl),
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const input = {
       candidateRef: 'candidate:final',
@@ -767,24 +754,24 @@ test('release.gym does not charge again when Gym reuses completed reports', asyn
   }
 });
 
-test('release.gym can compare dense mean reward independently of pass rate', async () => {
+test('gym promotion can compare dense mean reward independently of pass rate', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { candidatePassRate: 0.5, incumbentPassRate: 0.5 },
   );
   try {
     const { context, artifacts } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       { ...config(gym.baseUrl), metric: 'meanReward' },
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
       context,
     );
     assert.equal(output.decision, 'promote');
-    const comparison = object(artifacts.get(output.releaseRef)!.comparison);
+    const comparison = object(artifacts.get(output.promotionRef)!.comparison);
     assert.equal(comparison.metric, 'meanReward');
     assert.ok(Math.abs(Number(comparison.candidateValue) - 0.8) < 1e-12);
     assert.ok(Math.abs(Number(comparison.incumbentValue) - 0.5) < 1e-12);
@@ -793,17 +780,17 @@ test('release.gym can compare dense mean reward independently of pass rate', asy
   }
 });
 
-test('release.gym does not require the unselected Gym metric', async () => {
+test('gym promotion does not require the unselected Gym metric', async () => {
   const gym = await gymFixture(
     { [CANDIDATE_DIGEST]: 0.8, [INCUMBENT_DIGEST]: 0.5 },
     { candidatePassRate: null, incumbentPassRate: null },
   );
   try {
     const { context } = harness();
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       { ...config(gym.baseUrl), metric: 'meanReward' },
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     const output = await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },
@@ -815,11 +802,11 @@ test('release.gym does not require the unselected Gym metric', async () => {
   }
 });
 
-test('release config cannot express split or task ids', () => {
+test('promotion config cannot express split or task ids', () => {
   assert.throws(
     () =>
       validate(
-        releaseConfigSchema,
+        promotionConfigSchema,
         {
           baseUrl: 'http://127.0.0.1:8399',
           promotionDefaults: {
@@ -830,17 +817,17 @@ test('release config cannot express split or task ids', () => {
             taskIds: ['hidden'],
           },
         },
-        'release config',
+        'promotion config',
       ),
     /additional properties/,
   );
 });
 
-test('release config rejects max_rollouts because holdout is always complete', () => {
+test('promotion config rejects max_rollouts because holdout is always complete', () => {
   assert.throws(
     () =>
       validate(
-        releaseConfigSchema,
+        promotionConfigSchema,
         {
           baseUrl: 'http://127.0.0.1:8399',
           promotionDefaults: {
@@ -850,13 +837,13 @@ test('release config rejects max_rollouts because holdout is always complete', (
             budget: { maxRollouts: 1 },
           },
         },
-        'release config',
+        'promotion config',
       ),
     /additional properties/,
   );
 });
 
-test('release.gym sends only the promotion timeout budget', async () => {
+test('gym promotion sends only the promotion timeout budget', async () => {
   const gym = await gymFixture({
     [CANDIDATE_DIGEST]: 0.8,
     [INCUMBENT_DIGEST]: 0.5,
@@ -864,7 +851,7 @@ test('release.gym sends only the promotion timeout budget', async () => {
   try {
     const { context } = harness();
     const settings = config(gym.baseUrl);
-    const release = await createGymRelease(
+    const release = await createGymPromotion(
       {
         ...settings,
         promotionDefaults: {
@@ -873,7 +860,7 @@ test('release.gym sends only the promotion timeout budget', async () => {
         },
       },
       context,
-      releaseConfigSchema,
+      promotionConfigSchema,
     );
     await release.execute(
       { candidateRef: 'candidate:final', incumbentRef: 'candidate:incumbent' },

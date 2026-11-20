@@ -1,7 +1,7 @@
 schemaVersion: rsi.recipe/v1
 id: dsh-gym-gaia-train-full
 description: Evolve a DSH AgentBundle candidate on Gym's train_full split, then
-  run Gym's holdout release gate against the original incumbent. Search never
+  run Gym's holdout promotion gate against the original incumbent. Search never
   evaluates or receives holdout tasks.
 application:
   plugin: application.agentbundle
@@ -68,11 +68,11 @@ policy:
         - 04a04a9b-226c-43fd-b319-d5e89743676f
         - 14569e28-c88c-43e4-8c32-097d35b9a67d
       # Gym owns the real holdout gate. RSI must never receive holdout task IDs.
-      testTaskIds: []
 bindings:
   evaluator:
     plugin: evaluator.gym
     config:
+      mode: evaluate
       baseUrl: ${GYM_BASE_URL}
       requestDefaults:
         adapter: dsh_candidate
@@ -92,9 +92,10 @@ bindings:
         # The profile's full tier has num_repeats 1, so train executes 36 rollouts.
         maxRollouts: 36
         timeoutS: 7200
-  release:
-    plugin: release.gym
+  promotion:
+    plugin: evaluator.gym
     config:
+      mode: promote
       baseUrl: ${GYM_BASE_URL}
       promotionDefaults:
         adapter: dsh_candidate

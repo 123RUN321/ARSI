@@ -19,6 +19,12 @@ import { defineContract } from '../../src/contracts/contract.js';
 import { Registry } from '../../src/runtime/registry/index.js';
 import { Binding } from '../../src/runtime/loaders/binding.js';
 import { registerBuiltins } from '../../src/runtime/builtins.js';
+import { agentbundleDefinition } from '../../src/plugins/application-agentbundle/index.js';
+import { piDefinition } from '../../src/plugins/agent-pi/index.js';
+import { proposerDefinition } from '../../src/plugins/proposer-agent/index.js';
+import { memoryDefinition } from '../../src/plugins/memory-agent/index.js';
+import { gymDefinition } from '../../src/plugins/evaluator-gym/index.js';
+import { metricSelectorDefinition } from '../../src/plugins/selector-metrics/index.js';
 
 const contract = defineContract({
   id: 'contract.binding-test',
@@ -515,23 +521,34 @@ test('bundled Recipes preserve time budgets without injecting call or token limi
   }
 });
 
-test('Gym GAIA Recipe separates train_full search from holdout release', async (t) => {
+test('Gym GAIA Recipe separates train_full search from holdout promotion', async (t) => {
   const registry = new Registry();
   t.after(() => registry.dispose());
-  await registerBuiltins(registry);
+  registry.registerOperation(agentbundleDefinition);
+  registry.registerOperation(piDefinition);
+  registry.registerOperation(proposerDefinition);
+  registry.registerOperation(memoryDefinition);
+  registry.registerOperation(metricSelectorDefinition);
+  registry.registerOperation(gymDefinition);
+  registry.registerPolicy(
+    'policy.gym-rsi',
+    resolve('src/policies/gym-rsi/policy.yaml'),
+  );
   const recipe = await Recipe.load(
     resolve('examples/harness/dsh-gym-gaia/recipe.yaml'),
     registry,
   );
   const evaluator = recipe.bindings.evaluator!;
-  const release = recipe.bindings.release!;
+  const promotion = recipe.bindings.promotion!;
   assert.equal(recipe.policy.id, 'policy.gym-rsi');
   assert.equal(evaluator.pluginId, 'evaluator.gym');
-  assert.equal(release.pluginId, 'release.gym');
+  assert.equal(promotion.pluginId, 'evaluator.gym');
+  assert.equal(evaluator.config.mode, 'evaluate');
+  assert.equal(promotion.config.mode, 'promote');
   assert.equal(object(evaluator.config.requestDefaults).split, 'train_full');
   assert.equal(Object.hasOwn(recipe.policyConfig, 'release'), false);
   const dataset = object(recipe.policyConfig.dataset);
-  assert.deepEqual(dataset.testTaskIds, []);
+  assert.equal(Object.hasOwn(dataset, 'testTaskIds'), false);
   assert.equal(
     new Set([
       ...(dataset.trainTaskIds as string[]),
@@ -541,7 +558,7 @@ test('Gym GAIA Recipe separates train_full search from holdout release', async (
       (dataset.validationTaskIds as string[]).length,
   );
   assert.equal(
-    object(release.config.promotionDefaults).benchmark,
+    object(promotion.config.promotionDefaults).benchmark,
     'gaia_text_validation',
   );
 });

@@ -1,5 +1,5 @@
-﻿import type { FactStore, JsonObject } from '../../contracts/index.js';
-import { digest, object, string } from '../../shared/json.js';
+import type { FactStore, JsonObject } from '../../../contracts/index.js';
+import { digest, object, string } from '../../../shared/json.js';
 
 export type GymSubmissionStatus =
   | 'prepared'

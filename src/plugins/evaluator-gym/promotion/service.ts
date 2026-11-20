@@ -1,27 +1,19 @@
 import type {
   JsonObject,
   Operation,
-  ReleaseInput,
-  ReleaseOutput,
   RuntimeContext,
-} from '../../contracts/index.js';
-import { object, string } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
-import { expandGymEnvironment } from '../shared/gym/config.js';
-import {
-  gymReleaseAttemptKey,
-  writeGymReleaseAttempt,
-  type GymReleaseAttemptStatus,
-} from './attempt.js';
+} from '../../../contracts/index.js';
+import { object, string } from '../../../shared/json.js';
+import { validate } from '../../../shared/schema.js';
+import { expandGymEnvironment } from '../internal/config.js';
 import {
   GymPromotionClient,
-  GymPromotionError,
   type GymPromotionOutcome,
   type GymPromotionReport,
 } from './client.js';
-import type { GymReleaseConfig, GymReleaseMetric } from './schema.js';
+import type { GymPromotionConfig, GymReleaseMetric } from './schema.js';
 
-interface ResolvedReleaseConfig extends GymReleaseConfig {
+interface ResolvedPromotionConfig extends GymPromotionConfig {
   minDelta: number;
   metric: GymReleaseMetric;
 }
@@ -34,6 +26,17 @@ interface RoleResult {
 
 type RoleName = 'candidate' | 'incumbent';
 
+type GymPromotionInput = {
+  candidateRef: string;
+  incumbentRef: string;
+};
+
+type GymPromotionOutput = {
+  decision: 'promote' | 'keep-incumbent' | 'reject';
+  reason: string;
+  promotionRef: string;
+};
+
 interface Comparison {
   decision: 'promote' | 'keep-incumbent' | 'reject';
   reason: string;
@@ -44,10 +47,10 @@ interface Comparison {
   incumbentValue: number | null;
 }
 
-export function resolveReleaseConfig(
-  config: GymReleaseConfig,
+export function resolvePromotionConfig(
+  config: GymPromotionConfig,
   environment: Readonly<Record<string, string | undefined>> = process.env,
-): ResolvedReleaseConfig {
+): ResolvedPromotionConfig {
   return {
     ...config,
     baseUrl: expandGymEnvironment(config.baseUrl, 'baseUrl', environment),
@@ -56,20 +59,20 @@ export function resolveReleaseConfig(
   };
 }
 
-export async function createGymRelease(
-  config: GymReleaseConfig,
+export async function createGymPromotion(
+  config: GymPromotionConfig,
   _context: RuntimeContext,
   schema: JsonObject,
-): Promise<Operation<ReleaseInput, ReleaseOutput>> {
-  validate(schema, config, 'gym release config');
-  const settings = resolveReleaseConfig(config);
+): Promise<Operation<GymPromotionInput, GymPromotionOutput>> {
+  validate(schema, config, 'gym promotion config');
+  const settings = resolvePromotionConfig(config);
   const client = new GymPromotionClient({
     baseUrl: settings.baseUrl,
     ...(settings.poll === undefined ? {} : settings.poll),
   });
 
   return {
-    async execute(input, context): Promise<ReleaseOutput> {
+    async execute(input, context): Promise<GymPromotionOutput> {
       const source = object(input, 'gym release input');
       const candidateRef = string(
         source.candidateRef,
@@ -81,124 +84,80 @@ export async function createGymRelease(
       );
       context.signal.throwIfAborted();
 
-      const attemptKey = gymReleaseAttemptKey(
-        candidateRef,
-        incumbentRef,
-        releaseFingerprint(settings),
-      );
-      const promotionRoles: RoleName[] = [];
-      const persistAttempt = (
-        status: GymReleaseAttemptStatus,
-        retryable: boolean,
-        error: string | null,
-      ) =>
-        writeGymReleaseAttempt(context.facts, {
-          schemaVersion: 'rsi.gym-release-attempt/v1',
-          key: attemptKey,
-          candidateRef,
-          incumbentRef,
-          status,
-          retryable,
-          promotionRoles: [...promotionRoles],
-          error,
-          updatedAt: new Date().toISOString(),
-        });
-
-      await persistAttempt('running', true, null);
-      try {
-        if (candidateRef === incumbentRef) {
-          const reason =
-            'candidate did not advance beyond validation; holdout was not run';
-          const releaseRef = await context.artifacts.putJson({
-            schemaVersion: 'rsi.gym-release/v1',
-            generatedAt: new Date().toISOString(),
-            decision: 'keep-incumbent',
-            reason,
-            reasons: [],
-            metric: settings.metric,
-            minDelta: settings.minDelta,
-            candidate: skippedRole('candidate', candidateRef, settings),
-            incumbent: skippedRole('incumbent', incumbentRef, settings),
-            comparison: null,
-            holdoutSkipped: true,
-          });
-          await persistAttempt('completed', false, null);
-          return { decision: 'keep-incumbent', reason, releaseRef };
-        }
-        const candidate = await evaluateRole(
-          'candidate',
-          candidateRef,
-          settings,
-          client,
-          context,
-          async () => {
-            if (!promotionRoles.includes('candidate'))
-              promotionRoles.push('candidate');
-            await persistAttempt('submitting', true, null);
-          },
-        );
-        const candidateIssues = reportIssues(candidate, 'candidate', settings);
-        const incumbent =
-          candidateIssues.length === 0
-            ? await evaluateRole(
-                'incumbent',
-                incumbentRef,
-                settings,
-                client,
-                context,
-                async () => {
-                  if (!promotionRoles.includes('incumbent'))
-                    promotionRoles.push('incumbent');
-                  await persistAttempt('submitting', true, null);
-                },
-              )
-            : null;
-        const comparison = compare(
-          candidate,
-          incumbent,
-          candidateIssues,
-          settings,
-        );
-
-        const record = {
+      if (candidateRef === incumbentRef) {
+        const reason =
+          'candidate did not advance beyond validation; holdout was not run';
+        const promotionRef = await context.artifacts.putJson({
           schemaVersion: 'rsi.gym-release/v1',
           generatedAt: new Date().toISOString(),
-          decision: comparison.decision,
-          reason: comparison.reason,
-          reasons: comparison.reasons,
-          metric: comparison.metric,
+          decision: 'keep-incumbent',
+          reason,
+          reasons: [],
+          metric: settings.metric,
           minDelta: settings.minDelta,
-          candidate: summarize(candidate, 'candidate', settings),
-          incumbent:
-            incumbent === null
-              ? null
-              : summarize(incumbent, 'incumbent', settings),
-          comparison:
-            comparison.delta === null
-              ? null
-              : {
-                  metric: comparison.metric,
-                  candidateValue: comparison.candidateValue,
-                  incumbentValue: comparison.incumbentValue,
-                  delta: comparison.delta,
-                  minDelta: settings.minDelta,
-                },
-        };
-        const releaseRef = await context.artifacts.putJson(record);
-
-        await persistAttempt('completed', false, null);
-        return {
-          decision: comparison.decision,
-          reason: comparison.reason,
-          releaseRef,
-        };
-      } catch (error) {
-        const retryable = failureRetryable(error, promotionRoles);
-        await persistAttempt('failed', retryable, errorText(error)).catch(
-          () => undefined,
-        );
-        throw error;
+          candidate: skippedRole('candidate', candidateRef, settings),
+          incumbent: skippedRole('incumbent', incumbentRef, settings),
+          comparison: null,
+          holdoutSkipped: true,
+        });
+        return { decision: 'keep-incumbent', reason, promotionRef };
       }
+      const candidate = await evaluateRole(
+        'candidate',
+        candidateRef,
+        settings,
+        client,
+        context,
+      );
+      const candidateIssues = reportIssues(candidate, 'candidate', settings);
+      const incumbent =
+        candidateIssues.length === 0
+          ? await evaluateRole(
+              'incumbent',
+              incumbentRef,
+              settings,
+              client,
+              context,
+            )
+          : null;
+      const comparison = compare(
+        candidate,
+        incumbent,
+        candidateIssues,
+        settings,
+      );
+
+      const record = {
+        schemaVersion: 'rsi.gym-release/v1',
+        generatedAt: new Date().toISOString(),
+        decision: comparison.decision,
+        reason: comparison.reason,
+        reasons: comparison.reasons,
+        metric: comparison.metric,
+        minDelta: settings.minDelta,
+        candidate: summarize(candidate, 'candidate', settings),
+        incumbent:
+          incumbent === null
+            ? null
+            : summarize(incumbent, 'incumbent', settings),
+        comparison:
+          comparison.delta === null
+            ? null
+            : {
+                metric: comparison.metric,
+                candidateValue: comparison.candidateValue,
+                incumbentValue: comparison.incumbentValue,
+                delta: comparison.delta,
+                minDelta: settings.minDelta,
+              },
+      };
+      const promotionRef = await context.artifacts.putJson(record);
+
+      return {
+        decision: comparison.decision,
+        reason: comparison.reason,
+        promotionRef,
+      };
     },
     async dispose(): Promise<void> {},
   };
@@ -207,71 +166,58 @@ export async function createGymRelease(
 async function evaluateRole(
   role: RoleName,
   ref: string,
-  settings: ResolvedReleaseConfig,
+  settings: ResolvedPromotionConfig,
   client: GymPromotionClient,
   context: RuntimeContext,
-  onPromotion: () => Promise<void>,
 ): Promise<RoleResult> {
   context.signal.throwIfAborted();
-  return context.withInstance(
-    ref,
-    'agentbundle',
-    async (execution) => {
-      context.signal.throwIfAborted();
-      const digest = string(
-        execution.bundleDigest,
-        `${role} execution.bundleDigest`,
+  return context.withInstance(ref, 'agentbundle', async (execution) => {
+    context.signal.throwIfAborted();
+    const digest = string(
+      execution.bundleDigest,
+      `${role} execution.bundleDigest`,
+    );
+    const directory =
+      typeof execution.directory === 'string' ? execution.directory : null;
+    const bundleKind =
+      typeof execution.bundleKind === 'string' &&
+      execution.bundleKind.length > 0
+        ? execution.bundleKind
+        : null;
+    if (directory === null || bundleKind === null)
+      throw new Error(
+        `${role} evaluation requires the acquired bundle directory and kind so the Gym adapter can install the candidate`,
       );
-      const directory =
-        typeof execution.directory === 'string' ? execution.directory : null;
-      const bundleKind =
-        typeof execution.bundleKind === 'string' &&
-        execution.bundleKind.length > 0
-          ? execution.bundleKind
-          : null;
-      if (directory === null || bundleKind === null)
-        throw new Error(
-          `${role} evaluation requires the acquired bundle directory and kind so the Gym adapter can install the candidate`,
-        );
-      await onPromotion();
-      const defaults = settings.promotionDefaults;
-      const outcome = await client.promote(
-        {
-          candidateId: ref,
-          candidateDigest: digest,
-          candidateDir: directory,
-          candidateKind: bundleKind,
-          adapter: defaults.adapter,
-          benchmark: defaults.benchmark,
-          seed: defaults.seed,
-          ...(defaults.datasetVersion === undefined
-            ? {}
-            : { datasetVersion: defaults.datasetVersion }),
-          ...(defaults.budget === undefined ? {} : { budget: defaults.budget }),
+    const defaults = settings.promotionDefaults;
+    const outcome = await client.promote(
+      {
+        candidateId: ref,
+        candidateDigest: digest,
+        candidateDir: directory,
+        candidateKind: bundleKind,
+        adapter: defaults.adapter,
+        benchmark: defaults.benchmark,
+        seed: defaults.seed,
+        ...(defaults.datasetVersion === undefined
+          ? {}
+          : { datasetVersion: defaults.datasetVersion }),
+        ...(defaults.budget === undefined ? {} : { budget: defaults.budget }),
+      },
+      context.signal,
+      {
+        onAccepted: async ({ reused }) => {
+          if (!reused) await context.charge('evaluationRuns', 1);
         },
-        context.signal,
-        {
-          onAccepted: async ({ reused }) => {
-            if (!reused) await context.charge('evaluationRuns', 1);
-          },
-        },
-      );
-      return { ref, digest, outcome };
-    },
-    { instanceKey: role },
-  );
-}
-
-function failureRetryable(error: unknown, roles: readonly RoleName[]): boolean {
-  if (error instanceof GymPromotionError)
-    return error.details.submitted || error.details.outcomeUnknown;
-  return roles.length > 0;
+      },
+    );
+    return { ref, digest, outcome };
+  });
 }
 
 function reportIssues(
   role: RoleResult,
   label: string,
-  settings: ResolvedReleaseConfig,
+  settings: ResolvedPromotionConfig,
 ): string[] {
   const issues: string[] = [];
   if (role.outcome.state !== 'completed')
@@ -376,7 +322,7 @@ function compare(
   candidate: RoleResult,
   incumbent: RoleResult | null,
   candidateIssues: string[],
-  settings: ResolvedReleaseConfig,
+  settings: ResolvedPromotionConfig,
 ): Comparison {
   const candidateReport = candidate.outcome.report;
   const candidateValue = effectiveMetric(candidateReport, settings.metric);
@@ -515,7 +461,7 @@ function identityMismatches(
 function summarize(
   role: RoleResult,
   label: string,
-  settings: ResolvedReleaseConfig,
+  settings: ResolvedPromotionConfig,
 ): JsonObject {
   const report = role.outcome.report;
   return {
@@ -561,7 +507,7 @@ function summarize(
 function skippedRole(
   role: RoleName,
   ref: string,
-  settings: ResolvedReleaseConfig,
+  settings: ResolvedPromotionConfig,
 ): JsonObject {
   return {
     role,
@@ -576,21 +522,4 @@ function skippedRole(
     metric: settings.metric,
     minDelta: settings.minDelta,
   };
-}
-
-function releaseFingerprint(settings: ResolvedReleaseConfig): JsonObject {
-  return {
-    baseUrl: settings.baseUrl,
-    adapter: settings.promotionDefaults.adapter,
-    benchmark: settings.promotionDefaults.benchmark,
-    seed: settings.promotionDefaults.seed,
-    datasetVersion: settings.promotionDefaults.datasetVersion ?? null,
-    timeoutS: settings.promotionDefaults.budget?.timeoutS ?? null,
-    minDelta: settings.minDelta,
-    metric: settings.metric,
-  };
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

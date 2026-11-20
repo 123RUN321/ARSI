@@ -1,8 +1,8 @@
-import type { JsonObject } from '../../contracts/index.js';
+import type { JsonObject } from '../../../contracts/index.js';
 
 export type GymReleaseMetric = 'successRate' | 'meanReward';
 
-export type GymReleaseConfig = {
+export type GymPromotionConfig = {
   baseUrl: string;
   promotionDefaults: {
     adapter: string;
@@ -18,7 +18,7 @@ export type GymReleaseConfig = {
 
 const text = { type: 'string', minLength: 1 };
 
-export const releaseConfigSchema: JsonObject = {
+export const promotionConfigSchema: JsonObject = {
   type: 'object',
   additionalProperties: false,
   properties: {

@@ -83,7 +83,6 @@ declare module './context.js' {
       candidateRef: string,
       capability: string,
       use: (execution: JsonObject) => Promise<T>,
-      options?: { instanceKey?: string },
     ): Promise<T>;
   }
 }

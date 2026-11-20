@@ -8,8 +8,11 @@ import {
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RuntimeContext } from '../../src/index.js';
-import type { JsonObject, JsonValue } from '../../src/index.js';
+import {
+  RuntimeContext,
+  type JsonObject,
+  type JsonValue,
+} from '../../src/contracts/index.js';
 import {
   evaluationFeedbackSchema,
   metricDefinitionSchema,
@@ -20,11 +23,11 @@ import { validate } from '../../src/shared/schema.js';
 import {
   createGym,
   resolveGymConfig,
-} from '../../src/plugins/evaluator-gym/service.js';
+} from '../../src/plugins/evaluator-gym/evaluate/service.js';
 import {
   gymConfigSchema,
   type GymConfig,
-} from '../../src/plugins/evaluator-gym/schema.js';
+} from '../../src/plugins/evaluator-gym/evaluate/schema.js';
 
 const BUNDLE_DIGEST = `sha256:${'c'.repeat(64)}`;
 const ENVIRONMENT_DIGEST = `sha256:${'b'.repeat(64)}`;

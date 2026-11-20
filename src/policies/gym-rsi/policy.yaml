@@ -17,6 +17,10 @@ state_schema:
       type:
         - string
         - 'null'
+    initialMeasurement:
+      type:
+        - string
+        - 'null'
     round:
       type: integer
       minimum: 0
@@ -32,38 +36,34 @@ state_schema:
       type:
         - object
         - 'null'
-    testMeasurement:
-      type:
-        - string
-        - 'null'
     initial:
       type: string
       minLength: 1
-    release:
+    promotion:
       type:
         - object
         - 'null'
   required:
     - incumbent
     - measurement
+    - initialMeasurement
     - round
     - wikiRef
     - score
     - observations
-    - testMeasurement
     - initial
-    - release
+    - promotion
   additionalProperties: false
 state:
   incumbent: ${{ input.candidateRef }}
   measurement: null
+  initialMeasurement: null
   round: 0
   wikiRef: null
   score: null
   observations: null
-  testMeasurement: null
   initial: ${{ input.candidateRef }}
-  release: null
+  promotion: null
 output_schema:
   $ref: ./schemas/optimization-result.yaml
 require:
@@ -74,11 +74,11 @@ require:
   memoryUpdater:
     contract: contract.memory
   evaluator:
-    contract: contract.agentbench
+    contract: contract.gym
   selector:
     contract: contract.selector-metrics
-  release:
-    contract: contract.release
+  promotion:
+    contract: contract.gym
 defaults:
   bindings:
     agent:
@@ -91,7 +91,7 @@ defaults:
         retryBaseDelayMs: 2000
     # WikiSkill §3.2 / appendix E: Wiki maintenance and skill proposals use
     # authorized training scores, outcomes and execution evidence.
-    # Training evidence feeds Wiki/proposals; test and release gates run only
+    # Training evidence feeds Wiki/proposals; test and promotion gates run only
     # after the learning loop finishes and never become memory evidence.
     memoryUpdater:
       plugin: memory.agent
@@ -111,12 +111,12 @@ defaults:
         metric: successRate
         direction: maximize
 steps:
-  # A duplicate key fails the foreach step, so this declares train/validation/test
+  # A duplicate key fails the foreach step, so this declares train/validation
   # without adding a speculative set-difference expression to the DSL.
   - id: validate_disjoint_splits
     type: foreach
-    foreach: ${{ concat(concat(config.dataset.trainTaskIds,
-      config.dataset.validationTaskIds), config.dataset.testTaskIds) }}
+    foreach: ${{ concat(config.dataset.trainTaskIds,
+      config.dataset.validationTaskIds) }}
     as: taskId
     key: ${{ taskId }}
     concurrency: 1
@@ -125,11 +125,13 @@ steps:
     type: invoke
     use: evaluator
     with:
+      action: evaluate
       candidateRef: ${{ state.incumbent }}
       taskIds: ${{ config.dataset.validationTaskIds }}
   - id: save_baseline
     type: state
     state:
+      initialMeasurement: ${{ steps.baseline.output.measurementRef }}
       measurement: ${{ steps.baseline.output.measurementRef }}
   - id: check_baseline_threshold
     type: if
@@ -155,6 +157,7 @@ steps:
         type: invoke
         use: evaluator
         with:
+          action: evaluate
           candidateRef: ${{ state.incumbent }}
           taskIds: ${{ config.dataset.trainTaskIds }}
       - id: remember
@@ -208,6 +211,7 @@ steps:
         type: invoke
         use: evaluator
         with:
+          action: evaluate
           candidateRef: ${{ steps.propose.output.candidateRef }}
           taskIds: ${{ config.dataset.validationTaskIds }}
       - id: select
@@ -242,41 +246,27 @@ steps:
               state:
                 incumbent: ${{ steps.propose.output.candidateRef }}
                 measurement: ${{ steps.validate.output.measurementRef }}
-  - id: test_if_requested
-    type: if
-    if: ${{ size(config.dataset.testTaskIds) > 0 }}
-    then:
-      steps:
-        - id: test
-          type: invoke
-          use: evaluator
-          with:
-            candidateRef: ${{ state.incumbent }}
-            taskIds: ${{ config.dataset.testTaskIds }}
-        - id: save_test
-          type: state
-          state:
-            testMeasurement: ${{ steps.test.output.measurementRef }}
-  - id: release
+  - id: promotion
     type: invoke
-    use: release
+    use: promotion
     with:
+      action: promote
       candidateRef: ${{ state.incumbent }}
       incumbentRef: ${{ state.initial }}
-  - id: save_release
+  - id: save_promotion
     type: state
     state:
-      release:
-        decision: ${{ steps.release.output.decision }}
-        reason: ${{ steps.release.output.reason }}
-        releaseRef: ${{ steps.release.output.releaseRef }}
+      promotion:
+        decision: ${{ steps.promotion.output.decision }}
+        reason: ${{ steps.promotion.output.reason }}
+        promotionRef: ${{ steps.promotion.output.promotionRef }}
 output:
-  candidateRef: "${{ state.release.decision == 'promote' ? state.incumbent : state.initial }}"
+  candidateRef: "${{ state.promotion.decision == 'promote' ? state.incumbent : state.initial }}"
   searchCandidateRef: ${{ state.incumbent }}
-  effectiveRef: "${{ state.release.decision == 'promote' ? state.incumbent : state.initial }}"
-  measurementRef: ${{ state.measurement }}
+  effectiveRef: "${{ state.promotion.decision == 'promote' ? state.incumbent : state.initial }}"
+  searchMeasurementRef: ${{ state.measurement }}
+  measurementRef: "${{ state.promotion.decision == 'promote' ? state.measurement : state.initialMeasurement }}"
   memoryRef: ${{ state.wikiRef }}
-  testMeasurementRef: ${{ state.testMeasurement }}
-  releaseDecision: ${{ state.release.decision }}
-  releaseReason: ${{ state.release.reason }}
-  releaseRef: ${{ state.release.releaseRef }}
+  promotionDecision: ${{ state.promotion.decision }}
+  promotionReason: ${{ state.promotion.reason }}
+  promotionRef: ${{ state.promotion.promotionRef }}

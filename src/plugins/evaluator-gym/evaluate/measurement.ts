@@ -2,7 +2,7 @@ import type {
   JsonObject,
   JsonValue,
   RuntimeContext,
-} from '../../contracts/index.js';
+} from '../../../contracts/index.js';
 import {
   evaluationFeedbackSchema,
   measurementEvidenceSchema,
@@ -10,26 +10,30 @@ import {
   recordSchema,
   type Measurement,
   validateMeasurement,
-} from '../../contracts/index.js';
-import { digest } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
-import { sourceIdentity } from '../shared/evaluator-adapter/identity.js';
-import { typed } from '../shared/evaluator-adapter/measurement.js';
-import { definition } from '../shared/evaluator-adapter/metric.js';
+} from '../../../contracts/index.js';
+import { digest } from '../../../shared/json.js';
+import { validate } from '../../../shared/schema.js';
+import { sourceIdentity } from '../../shared/evaluator-adapter/identity.js';
+import { typed } from '../../shared/evaluator-adapter/measurement.js';
+import { definition } from '../../shared/evaluator-adapter/metric.js';
 import type { GymEvalOutcome } from './client.js';
 import type { GymConfig } from './schema.js';
 
 let implementationIdentity: Promise<string> | undefined;
 function adapterIdentity(): Promise<string> {
   return (implementationIdentity ??= sourceIdentity(import.meta.url, [
-    './index',
+    '../index',
+    '../service',
     './service',
     './client',
     './measurement',
     './submission',
     './schema',
-    '../shared/gym/config',
-    '../shared/gym/http',
+    '../internal/config',
+    '../internal/http',
+    '../../shared/evaluator-adapter/identity',
+    '../../shared/evaluator-adapter/measurement',
+    '../../shared/evaluator-adapter/metric',
   ]));
 }
 

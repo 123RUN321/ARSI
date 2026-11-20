@@ -9,6 +9,9 @@ properties:
   effectiveRef:
     type: string
     minLength: 1
+  searchMeasurementRef:
+    type: string
+    minLength: 1
   measurementRef:
     type: string
     minLength: 1
@@ -17,27 +20,22 @@ properties:
       - type: string
         minLength: 1
       - type: 'null'
-  testMeasurementRef:
-    anyOf:
-      - type: string
-        minLength: 1
-      - type: 'null'
-  releaseDecision:
+  promotionDecision:
     enum: [promote, keep-incumbent, reject]
-  releaseReason:
+  promotionReason:
     type: string
     minLength: 1
-  releaseRef:
+  promotionRef:
     type: string
     minLength: 1
 required:
   - candidateRef
   - searchCandidateRef
   - effectiveRef
+  - searchMeasurementRef
   - measurementRef
   - memoryRef
-  - testMeasurementRef
-  - releaseDecision
-  - releaseReason
-  - releaseRef
+  - promotionDecision
+  - promotionReason
+  - promotionRef
 additionalProperties: false

@@ -1,16 +1,16 @@
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
-import type { GymReleaseConfig } from './schema.js';
-import { resolveReleaseConfig } from './service.js';
+import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
+import { runDoctorCheck } from '../../../shared/doctor-check.js';
+import type { GymPromotionConfig } from './schema.js';
+import { resolvePromotionConfig } from './service.js';
 
-export async function gymReleaseDoctor(
-  context: DoctorContext<GymReleaseConfig>,
+export async function gymPromotionDoctor(
+  context: DoctorContext<GymPromotionConfig>,
 ): Promise<DoctorResult> {
   const configuration = await runDoctorCheck(
     'configuration',
     async (signal) => {
       signal.throwIfAborted();
-      const config = resolveReleaseConfig(context.binding.config);
+      const config = resolvePromotionConfig(context.binding.config);
       new URL(config.baseUrl);
     },
     {

@@ -1,12 +1,12 @@
-import type { JsonObject, JsonValue } from '../../contracts/index.js';
-import { object, string } from '../../shared/json.js';
+import type { JsonObject, JsonValue } from '../../../contracts/index.js';
+import { object, string } from '../../../shared/json.js';
 import {
   GymHttpClient,
   GymHttpError,
   type GymHttpClientOptions,
   optionalObject,
   sleep,
-} from '../shared/gym/http.js';
+} from '../internal/http.js';
 
 export interface GymPromotionRequest {
   candidateId: string;

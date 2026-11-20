@@ -1,77 +1,37 @@
 import type { JsonObject } from '../../contracts/index.js';
+import { object } from '../../shared/json.js';
+import { gymConfigSchema, type GymConfig } from './evaluate/schema.js';
+import {
+  promotionConfigSchema,
+  type GymPromotionConfig,
+} from './promotion/schema.js';
 
-export type GymSplit = 'train_probe' | 'train_full';
+export type GymPluginConfig =
+  | ({ mode: 'evaluate' } & GymConfig)
+  | ({ mode: 'promote' } & GymPromotionConfig);
 
-export type GymTier = 'probe' | 'screen' | 'full';
-
-/** Fixed request defaults; every evaluation under one binding shares them. */
-export type GymRequestDefaults = {
-  adapter: string;
-  benchmark: string;
-  split: GymSplit;
-  tier: GymTier;
-  seed: number;
-  harnessManifest?: string;
-};
-
-export type GymConfig = {
-  baseUrl: string;
-  requestDefaults: GymRequestDefaults;
-  poll?: { intervalMs?: number; timeoutMs?: number };
-  budget?: { maxRollouts?: number; timeoutS?: number };
-};
-
-const text = { type: 'string', minLength: 1 };
-const integer = { type: 'integer' };
-
-function schema(split: JsonObject): JsonObject {
+function withMode(
+  schema: JsonObject,
+  mode: 'evaluate' | 'promote',
+): JsonObject {
+  const properties = object(schema.properties, `${mode} config.properties`);
+  const required = Array.isArray(schema.required)
+    ? schema.required.map((value) => String(value))
+    : [];
   return {
-    type: 'object',
-    additionalProperties: false,
+    ...schema,
     properties: {
-      baseUrl: {
-        ...text,
-        description: 'eval_service base URL, for example http://127.0.0.1:8411',
-      },
-      requestDefaults: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          adapter: {
-            ...text,
-            description:
-              'Gym harness adapter. Gym owns harness selection; RSI only names it.',
-          },
-          benchmark: text,
-          split,
-          tier: { enum: ['probe', 'screen', 'full'] },
-          seed: integer,
-          harnessManifest: text,
-        },
-        required: ['adapter', 'benchmark', 'split', 'tier', 'seed'],
-      },
-      poll: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          intervalMs: { type: 'integer', minimum: 100 },
-          timeoutMs: { type: 'integer', minimum: 1000 },
-        },
-      },
-      budget: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          maxRollouts: { type: 'integer', minimum: 1 },
-          timeoutS: { type: 'integer', minimum: 1 },
-        },
-      },
+      ...properties,
+      mode: { const: mode },
     },
-    required: ['baseUrl', 'requestDefaults'],
+    required: [...required, 'mode'],
   };
 }
 
-/** Holdout is not requestable through Gym's outer evaluation contract (OF-2). */
-export const gymConfigSchema: JsonObject = schema({
-  enum: ['train_probe', 'train_full'],
-});
+export const gymPluginConfigSchema: JsonObject = {
+  type: 'object',
+  oneOf: [
+    withMode(gymConfigSchema, 'evaluate'),
+    withMode(promotionConfigSchema, 'promote'),
+  ],
+};

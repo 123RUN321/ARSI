@@ -1,12 +1,12 @@
-﻿import type { JsonObject, JsonValue } from '../../contracts/index.js';
-import { object, string } from '../../shared/json.js';
+import type { JsonObject, JsonValue } from '../../../contracts/index.js';
+import { object, string } from '../../../shared/json.js';
 import {
   GymHttpClient,
   GymHttpError,
   type GymHttpClientOptions,
   optionalObject,
   sleep,
-} from '../shared/gym/http.js';
+} from '../internal/http.js';
 
 /** The bounded slice of the Gym `eval_service` contract that ember-rsi consumes. */
 export interface GymEvalRequest {

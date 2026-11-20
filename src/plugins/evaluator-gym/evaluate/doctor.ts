@@ -1,5 +1,5 @@
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
+import { runDoctorCheck } from '../../../shared/doctor-check.js';
 import type { GymConfig } from './schema.js';
 import { resolveGymConfig } from './service.js';
 

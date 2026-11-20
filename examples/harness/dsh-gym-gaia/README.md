@@ -1,4 +1,4 @@
-# DSH AgentBundle on Gym GAIA: train_full search plus holdout release
+# DSH AgentBundle on Gym GAIA: train_full search plus holdout promotion
 
 This example connects ember-rsi to Gym `eval_service` and keeps two decisions
 separate:
@@ -6,12 +6,16 @@ separate:
 - **Search:** RSI measures candidates on Gym's `train_full` split, using
   task-disjoint `trainTaskIds` and `validationTaskIds`. Validation rejects a
   strictly worse proposal; a tie advances the candidate to the holdout gate.
-- **Release:** after search freezes its final candidate, `release.gym` asks Gym
+- **Promotion:** after search freezes its final candidate, `evaluator.gym (mode: promote)` asks Gym
   to evaluate that bundle and the original incumbent on the locked `holdout`
   split, then promotes only on strict improvement.
 
+Both roles use the same `evaluator.gym` plugin through two mode-restricted bindings:
+`mode: evaluate` can only call Gym evaluation, while `mode: promote` can only
+call Gym promotion.
+
 RSI never receives holdout task IDs, cannot submit `holdout` through
-`evaluator.gym`, and never writes the holdout result into Wiki memory,
+`evaluator.gym (mode: evaluate)`, and never writes the holdout result into Wiki memory,
 proposer evidence, or candidate selection.
 
 The checked-in baseline is the bundle promoted by the 2026-11-18 GAIA run:
@@ -24,7 +28,7 @@ next incumbent.
 1. RSI materializes the baseline or proposed AgentBundle and acquires a ready
    execution. It sends the materialized directory, bundle digest and bundle
    kind to Gym; it does not install the bundle into DSH.
-2. `evaluator.gym` submits a `train_full` evaluation to Gym
+2. `evaluator.gym (mode: evaluate)` submits a `train_full` evaluation to Gym
    `POST /gym_evaluate` with `candidate_dir`, `candidate_digest` and
    `candidate_kind`.
 3. Gym core validates the candidate path and declared kind, then the
@@ -35,32 +39,32 @@ next incumbent.
    and compares the proposal with the incumbent on the pinned validation
    tasks. A strictly worse proposal is rejected; a tie advances the candidate
    to the holdout gate.
-5. When the search loop ends, `release.gym` calls Gym `POST /promotion` with
+5. When the search loop ends, `evaluator.gym (mode: promote)` calls Gym `POST /promotion` with
    the frozen candidate directory, digest and kind. The request also carries
    `candidate_id`, adapter, benchmark and seed; it cannot express `split` or
    `task_ids`.
    If validation rejected every proposal, the frozen candidate is still the
-   original incumbent. `release.gym` then writes a `keep-incumbent` audit
+   original incumbent. `evaluator.gym (mode: promote)` then writes a `keep-incumbent` audit
    artifact without calling `POST /promotion`; a bundle is never compared with
    itself on holdout.
-6. `release.gym` polls `GET /promotion/{promotion_id}` until the holdout report
+6. `evaluator.gym (mode: promote)` polls `GET /promotion/{promotion_id}` until the holdout report
    is terminal. Gym serializes these runs, and a bundle+benchmark report is
    reused rather than executed twice.
-7. `release.gym` repeats the same flow for the original incumbent, compares
-   the two completed reports, and writes a release artifact. The decision is
+7. `evaluator.gym (mode: promote)` repeats the same flow for the original incumbent, compares
+   the two completed reports, and writes a promotion artifact. The decision is
    `promote`, `keep-incumbent` or `reject`; no shared profile is mutated.
 
 The Policy output records `searchCandidateRef`, `effectiveRef`,
-`releaseDecision`, `releaseReason` and `releaseRef`. `searchCandidateRef` is
+`promotionDecision`, `promotionReason` and `promotionRef`. `searchCandidateRef` is
 the best validation candidate; `effectiveRef` is the candidate selected by the
-release gate (the incumbent when release keeps it), not a runtime-activation
-record. The release artifact contains aggregate scores and
+promotion gate (the incumbent when promotion keeps it), not a runtime-activation
+record. The promotion artifact contains aggregate scores and
 environment identities, but not holdout task rows. The policy ends after
-release, so these values cannot feed another search round.
+promotion, so these values cannot feed another search round.
 
 ## Harness and candidate contract
 
-The Gym-RSI core is harness-agnostic. `evaluator.gym` and `release.gym` send
+The Gym-RSI core is harness-agnostic. `evaluator.gym (mode: evaluate)` and `evaluator.gym (mode: promote)` send
 the same three candidate fields on every request:
 
 | Field              | Meaning                                                       |
@@ -91,26 +95,26 @@ installation/idempotency records, not host activation state.
 
 For AgentBundle kinds already registered by `agent-bundle-core`, switching the
 recipe changes `requestDefaults.adapter` / `promotionDefaults.adapter` to a Gym
-adapter that supports that kind. It does not change `evaluator.gym`,
-`release.gym`, `policy.gym-rsi`, `application.agentbundle`, or the selector. A
+adapter that supports that kind. It does not change `evaluator.gym (mode: evaluate)`,
+`evaluator.gym (mode: promote)`, `policy.gym-rsi`, `application.agentbundle`, or the selector. A
 new harness needs a Gym-side adapter that consumes the per-request
 `agent_candidate` row. A genuinely new kind must first be registered in
 `agent-bundle-core`; the SDK currently validates a fixed kind set.
 
-## Search versus release
+## Search versus promotion
 
-| Stage               | Gym split    | Tasks                  | Decision owner        |
-| ------------------- | ------------ | ---------------------- | --------------------- |
-| Baseline            | `train_full` | `validationTaskIds`    | WikiSkill selector    |
-| Training evidence   | `train_full` | `trainTaskIds`         | WikiSkill/Wiki memory |
-| Proposal validation | `train_full` | `validationTaskIds`    | WikiSkill selector    |
-| Final release       | `holdout`    | Gym-owned locked split | `release.gym`         |
+| Stage               | Gym split    | Tasks                  | Decision owner                  |
+| ------------------- | ------------ | ---------------------- | ------------------------------- |
+| Baseline            | `train_full` | `validationTaskIds`    | WikiSkill selector              |
+| Training evidence   | `train_full` | `trainTaskIds`         | WikiSkill/Wiki memory           |
+| Proposal validation | `train_full` | `validationTaskIds`    | WikiSkill selector              |
+| Final promotion     | `holdout`    | Gym-owned locked split | `evaluator.gym (mode: promote)` |
 
 `policy.config.dataset` therefore contains only RSI-owned task subsets:
 
 - `trainTaskIds` supplies training evidence to WikiSkill.
 - `validationTaskIds` independently gates each proposal against the incumbent.
-- `testTaskIds` is empty because Gym owns the release split.
+- No RSI-owned test list exists because Gym owns the holdout split.
 
 Both lists in `recipe.yaml` are disjoint subsets of Gym's `train_full` split.
 No holdout task ID may appear in any RSI list. The example pins thirty-six
@@ -132,7 +136,7 @@ it requires downloading an external paper and can stall in network-isolated runs
 schema defaults to three rounds, but this recipe explicitly overrides it to one;
 raise it for a longer search. `tier: full` is the search-side Gym rollout budget
 and runs the pinned 36-task slice at concurrency 12 with one repeat;
-`release.gym` always requests Gym's `full` tier for holdout. It compares
+`evaluator.gym (mode: promote)` always requests Gym's `full` tier for holdout. It compares
 effective `successRate` by default; set `metric: meanReward` when a dense-reward
 benchmark should use Gym's `reward_mean` objective instead.
 
@@ -193,10 +197,12 @@ export MODEL_API_KEY=...
 From the Gym repository root:
 
 ```bash
-export GYM_ENV_CONFIGS=benchmarks/gaia/config_dsh.yaml,responses_api_agents/dsh_agent/configs/rsi_dsh_candidate.yaml
-gym env start "+config_paths=[$GYM_ENV_CONFIGS]"
+GYM_VENV=".venv"
+"$GYM_VENV/bin/agent-gym" env start \
+  --config benchmarks/gaia/config_dsh.yaml \
+  --config responses_api_agents/dsh_agent/configs/rsi_dsh_candidate.yaml
 
-python -m eval_service.server \
+"$GYM_VENV/bin/python" -m eval_service.server \
   --profile-path eval_service/profiles/rsi_v1_gaia.yaml \
   --results-root "$RUN_ROOT/results" \
   --ledger-path "$RUN_ROOT/ledger.json" \
@@ -205,11 +211,18 @@ python -m eval_service.server \
   --port 8399
 ```
 
+If Gym reports an overlay component hash mismatch, refresh the manifest before
+starting the servers:
+
+```bash
+"$GYM_VENV/bin/agent-gym" release manifest --overlay overlay
+```
+
 Keep this shell running. `/gym_evaluate` accepts only `train_probe` and
 `train_full`; a direct `holdout` request is rejected with `HOLDOUT_LOCKED`.
 `POST /promotion` is enabled by default but accepts only loopback clients.
 
-## 2. Run RSI train_full evolution and release
+## 2. Run RSI train_full evolution and promotion
 
 From the ember-rsi repository root:
 
@@ -217,12 +230,12 @@ From the ember-rsi repository root:
 pnpm arsi run examples/harness/dsh-gym-gaia/recipe.yaml
 ```
 
-The run blocks through the final release gate. Search-side calls use
-`train_full`; only `release.gym` reaches Gym's holdout promotion endpoint.
+The run blocks through the final promotion gate. Search-side calls use
+`train_full`; only `evaluator.gym (mode: promote)` reaches Gym's holdout promotion endpoint.
 
 At the end, inspect the Policy output for `searchCandidateRef`, `effectiveRef`
-(the candidate selected by the release gate), `releaseDecision`,
-`releaseReason` and `releaseRef`. The referenced artifact
+(the candidate selected by the promotion gate), `promotionDecision`,
+`promotionReason` and `promotionRef`. The referenced artifact
 records:
 
 - candidate and incumbent candidate/digest identities;
@@ -231,7 +244,7 @@ records:
 - harness manifest, environment, evaluation, profile and dataset identities.
 
 It does not contain holdout task rows or per-task answers. The two holdout
-reports must share environment identity; otherwise `release.gym` returns
+reports must share environment identity; otherwise `evaluator.gym (mode: promote)` returns
 `reject` rather than comparing incomparable scores.
 
 ## Observability and recovery
@@ -241,7 +254,7 @@ reads a candidate's latest verdict and ledger summaries; it does not trigger a
 holdout rollout. `POST /promotion` is the only holdout trigger used by the RSI
 flow.
 
-If an RSI process is interrupted during release, rerun it. Gym keys a promotion
+If an RSI process is interrupted during promotion, rerun it. Gym keys a promotion
 by candidate digest, benchmark, adapter, tier, and evaluation digest. The seed
 is recorded in the report but excluded from the one-shot key, so changing it
 cannot buy another holdout run. An already completed report is reused instead
@@ -250,7 +263,7 @@ of spending a second holdout run.
 ## Guardrails
 
 - RSI's evaluator schema accepts only `train_probe` and `train_full`.
-- `release.gym` cannot express a split or task IDs; Gym always evaluates the
+- `evaluator.gym (mode: promote)` cannot express a split or task IDs; Gym always evaluates the
   complete locked holdout split.
 - Promotion is loopback-only and is not an MCP tool.
 - The DSH adapter writes its run-local installation record and readiness marker
@@ -258,8 +271,8 @@ of spending a second holdout run.
   carried by the request and `agent_candidate` row, not by a sidecar.
 - Holdout output is terminal evidence only. It must not be written back into
   Wiki memory, proposer evidence, training summaries, or search selection.
-- Validation ties advance the candidate to release; only a strictly worse
+- Validation ties advance the candidate to promotion; only a strictly worse
   proposal is rejected during search.
-- At release, a candidate must strictly exceed the incumbent by `minDelta`
+- At promotion, a candidate must strictly exceed the incumbent by `minDelta`
   (default `0`) on the configured `metric` (`successRate` by default). Ties
   keep the incumbent.

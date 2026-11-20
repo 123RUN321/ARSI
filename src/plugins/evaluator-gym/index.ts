@@ -1,23 +1,41 @@
 import type {
-  AgentbenchInput,
-  AgentbenchOutput,
+  DoctorContext,
+  DoctorResult,
+  GymInput,
+  GymOutput,
   OperationDefinition,
 } from '../../contracts/index.js';
-import { agentbenchContract } from '../../contracts/plugin-types/index.js';
-import { gymDoctor } from './doctor.js';
-import { gymConfigSchema, type GymConfig } from './schema.js';
-import { createGym } from './service.js';
+import { gymContract } from '../../contracts/plugin-types/index.js';
+import { gymDoctor } from './evaluate/doctor.js';
+import { gymPromotionDoctor } from './promotion/doctor.js';
+import { gymPluginConfigSchema, type GymPluginConfig } from './schema.js';
+import { createGymOperation } from './service.js';
+
+async function doctor(
+  context: DoctorContext<GymPluginConfig>,
+): Promise<DoctorResult> {
+  const config = context.binding.config;
+  return config.mode === 'evaluate'
+    ? gymDoctor({
+        ...context,
+        binding: { ...context.binding, config },
+      })
+    : gymPromotionDoctor({
+        ...context,
+        binding: { ...context.binding, config },
+      });
+}
 
 export const gymDefinition: OperationDefinition<
-  AgentbenchInput,
-  AgentbenchOutput,
-  GymConfig
+  GymInput,
+  GymOutput,
+  GymPluginConfig
 > = {
   id: 'evaluator.gym',
   description:
-    'Measure an AgentBundle on Gym training splits through eval_service.',
-  contract: agentbenchContract,
-  configSchema: gymConfigSchema,
-  create: (config, context) => createGym(config, context, gymConfigSchema),
-  doctor: gymDoctor,
+    'Run mode-restricted Gym training evaluations or holdout promotions.',
+  contract: gymContract,
+  configSchema: gymPluginConfigSchema,
+  create: (config, context) => createGymOperation(config, context),
+  doctor,
 };

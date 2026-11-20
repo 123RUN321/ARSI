@@ -672,17 +672,14 @@ export class Manager {
           candidateRef,
           capability,
           use,
-          options,
         ) {
           const ctx = this;
-          const instanceKey = options?.instanceKey;
           const instanceId =
             'instance-' +
             digest({
               callId: ctx.idempotencyKey,
               candidateRef,
               capability,
-              ...(instanceKey === undefined ? {} : { instanceKey }),
             }).slice(0, 32);
           let error: unknown;
           try {
