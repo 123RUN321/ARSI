@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { agentProcessLauncher } from '../../src/runtime/services/agent-execution/process.js';
-import { windowsCommand } from '../../src/runtime/services/agent-execution/windows-command.js';
 
 test(
   'Agent processes receive input in the project cwd and preserve the final Unicode line',
@@ -37,6 +36,31 @@ test(
       lines.map((line) => JSON.parse(line)),
       [{ text: '完整消息', cwd: directory, input: 'task\n' }],
     );
+  },
+);
+
+test(
+  'Windows accepts cancellation immediately after spawning the CLI',
+  {
+    skip: process.platform !== 'win32',
+    timeout: 10000,
+  },
+  async () => {
+    const controller = new AbortController();
+    const launch = agentProcessLauncher({
+      project: tmpdir(),
+      signal: controller.signal,
+    });
+    const running = launch(
+      {
+        executable: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 30000)'],
+        input: '',
+      },
+      () => {},
+    );
+    controller.abort(new Error('cancel during startup'));
+    await assert.rejects(running, /cancel during startup/);
   },
 );
 
@@ -80,31 +104,6 @@ test(
     assert.equal(await readFile(ticks, 'utf8'), before);
   },
 );
-
-test('Windows job launch transports literal argv and ships its lifecycle owner', async () => {
-  const spec = {
-    executable: 'C:\\Agent Tools\\node.exe',
-    args: ['a"b', '$(literal)', '尾部\\', ''],
-    input: '',
-  };
-  const command = windowsCommand(spec);
-  assert.equal(
-    command.args[command.args.indexOf('-File') + 1]?.endsWith(
-      'windows-job.ps1',
-    ),
-    true,
-  );
-  assert.deepEqual(
-    JSON.parse(Buffer.from(command.args.at(-1)!, 'base64').toString()),
-    { executable: spec.executable, args: spec.args },
-  );
-  await access(
-    new URL(
-      '../../src/runtime/services/agent-execution/windows-job.cs',
-      import.meta.url,
-    ),
-  );
-});
 
 test(
   'cleanup uncertainty takes precedence over a preceding protocol failure',

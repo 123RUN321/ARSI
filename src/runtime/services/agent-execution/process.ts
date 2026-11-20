@@ -1,4 +1,4 @@
-import { windowsCommand } from './windows-command.js';
+import { terminateWindowsTree } from './terminate.js';
 import { spawn } from 'node:child_process';
 import type { AgentProcessLauncher } from '../../../contracts/runtime/agent-execution.js';
 
@@ -9,17 +9,10 @@ export function agentProcessLauncher(scope: {
 }): AgentProcessLauncher {
   return async (spec, onLine) => {
     scope.signal.throwIfAborted();
-    const command = {
-      ...(process.platform === 'win32'
-        ? windowsCommand(spec)
-        : { executable: spec.executable, args: spec.args }),
-      env: spec.env ?? process.env,
-    };
-    scope.signal.throwIfAborted();
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(command.executable, command.args, {
+      const child = spawn(spec.executable, spec.args, {
         cwd: scope.project,
-        env: command.env,
+        env: spec.env ?? process.env,
         detached: process.platform !== 'win32',
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -31,18 +24,6 @@ export function agentProcessLauncher(scope: {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const kill = (signal: NodeJS.Signals): void => {
         if (!child.pid) return;
-        if (process.platform === 'win32') {
-          if (
-            child.exitCode === null &&
-            child.signalCode === null &&
-            !child.kill('SIGTERM')
-          )
-            failure = Object.assign(
-              new Error('Agent job owner stop could not be confirmed'),
-              { status: 'unknown' },
-            );
-          return;
-        }
         try {
           process.kill(-child.pid, signal);
         } catch (error) {
@@ -61,7 +42,21 @@ export function agentProcessLauncher(scope: {
             );
         }
       };
+      let terminating: Promise<void> | undefined;
       const stop = (): void => {
+        if (process.platform === 'win32') {
+          if (child.pid && child.exitCode === null && child.signalCode === null)
+            terminating ??= terminateWindowsTree(child.pid).catch((error) => {
+              failure = Object.assign(
+                new Error('Agent process-tree cleanup could not be confirmed', {
+                  cause: error,
+                }),
+                { status: 'unknown' },
+              );
+              child.kill();
+            });
+          return;
+        }
         kill('SIGTERM');
         timer ??= setTimeout(() => kill('SIGKILL'), 1000);
       };
@@ -116,11 +111,7 @@ export function agentProcessLauncher(scope: {
       child.once('close', async (code, signal) => {
         consume(buffer);
         await pending;
-        if (process.platform === 'win32' && code === 125)
-          failure = Object.assign(
-            new Error(`Agent job lifecycle is unknown: ${stderr.trim()}`),
-            { status: 'unknown' },
-          );
+        await terminating;
         clearTimeout(timer);
         scope.signal.removeEventListener('abort', stop);
         if (failure) reject(failure);

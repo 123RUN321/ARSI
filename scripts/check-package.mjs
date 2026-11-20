@@ -82,21 +82,6 @@ try {
     "allowBuilds:\n  esbuild: true\n  protobufjs: false\n  '@google/genai': false\n",
   );
   run(['add', join(temporary, archives[0])], consumer);
-  for (const asset of ['windows-job.ps1', 'windows-job.cs']) {
-    assert.ok(
-      (
-        await readFile(
-          join(
-            consumer,
-            'node_modules/arsi/dist/src/runtime/services/agent-execution',
-            asset,
-          ),
-          'utf8',
-        )
-      ).length > 0,
-      `installed Windows lifecycle asset: ${asset}`,
-    );
-  }
   const command = join(
     consumer,
     'node_modules/arsi/dist/src/entries/cli/main.js',
