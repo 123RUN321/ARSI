@@ -80,7 +80,7 @@ ctx.event.emit('rsi/agent-observation', {
 });
 ```
 
-The framework automatically saves the observation to `agent/events.jsonl` under this call's `ctx.directory` for Dashboard queries; the plugin need not write files or register a listener. This event is optional and is not broadcast to plugin listeners; recording failures do not affect execution.
+The framework automatically saves the observation to `agent/events.jsonl` under this call's `ctx.directory` for Dashboard queries.
 
 ### Policy execution
 

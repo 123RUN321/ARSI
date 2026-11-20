@@ -80,7 +80,7 @@ ctx.event.emit('rsi/agent-observation', {
 });
 ```
 
-框架自动将观察数据保存到本次调用的 `ctx.directory` 下的 `agent/events.jsonl`，供 Dashboard 查询；插件无需自行写文件或注册监听。该事件可选，不广播给插件监听者；记录失败不影响执行。
+框架自动将观察数据保存到本次调用的 `ctx.directory` 下的 `agent/events.jsonl`，供 Dashboard 查询。
 
 ### Policy 执行
 
