@@ -149,3 +149,30 @@ test(
     );
   },
 );
+
+test('a transient-looking protocol error after spawn never relaunches a task', async () => {
+  let messages = 0;
+  const launch = agentProcessLauncher({
+    project: tmpdir(),
+    signal: AbortSignal.timeout(10000),
+  });
+  const error = Object.assign(new Error('busy after input'), { code: 'EBUSY' });
+  await assert.rejects(
+    launch(
+      {
+        executable: process.execPath,
+        args: [
+          '-e',
+          "process.stdin.resume();process.stdin.on('end',()=>console.log('started'))",
+        ],
+        input: 'task',
+      },
+      () => {
+        messages++;
+        throw error;
+      },
+    ),
+    (caught) => caught === error,
+  );
+  assert.equal(messages, 1);
+});

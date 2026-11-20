@@ -1,3 +1,4 @@
+import { retryStartup } from '../../shared/startup-retry.js';
 import { observeNative } from '../shared/native-agent/observe.js';
 import { parseAgentResult } from '../shared/native-agent/result.js';
 import { codexObservations } from './observations.js';
@@ -31,7 +32,7 @@ function nativeError(value: unknown): string {
 }
 
 /** Codex owns native tools, configuration and recovery. */
-export async function runSession(options: {
+interface SessionOptions {
   executable: string;
   directory: string;
   model?: string;
@@ -40,7 +41,23 @@ export async function runSession(options: {
   signal: AbortSignal;
   record: (event: AgentObservation) => void;
   launch: AgentProcessLauncher;
-}): Promise<JsonObject> {
+}
+export async function runSession(options: SessionOptions): Promise<JsonObject> {
+  let submitted = false;
+  return retryStartup(
+    options.signal,
+    () =>
+      runSessionAttempt(options, () => {
+        submitted = true;
+      }),
+    (error) => !submitted && !('status' in error && error.status === 'unknown'),
+  );
+}
+
+async function runSessionAttempt(
+  options: SessionOptions,
+  markSubmitted: () => void,
+): Promise<JsonObject> {
   const { request, record } = options;
   const observe = observeNative(
     codexObservations(record),
@@ -177,6 +194,7 @@ export async function runSession(options: {
               : {}),
           },
         });
+        markSubmitted();
         send({
           id: 3,
           method: 'turn/start',

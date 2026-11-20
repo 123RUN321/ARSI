@@ -1,3 +1,5 @@
+import { once } from 'node:events';
+import { retryStartup } from '../../../shared/startup-retry.js';
 import { terminateWindowsTree } from './terminate.js';
 import { spawn } from 'node:child_process';
 import type { AgentProcessLauncher } from '../../../contracts/runtime/agent-execution.js';
@@ -9,7 +11,7 @@ export function agentProcessLauncher(scope: {
 }): AgentProcessLauncher {
   return async (spec, onLine) => {
     scope.signal.throwIfAborted();
-    await new Promise<void>((resolve, reject) => {
+    const start = async () => {
       const child = spawn(spec.executable, spec.args, {
         cwd: scope.project,
         env: spec.env ?? process.env,
@@ -17,6 +19,14 @@ export function agentProcessLauncher(scope: {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+      await once(child, 'spawn');
+      return child;
+    };
+    // Interactive sessions own their handshake retries.
+    const child = spec.interactive
+      ? await start()
+      : await retryStartup(scope.signal, start);
+    await new Promise<void>((resolve, reject) => {
       let failure: Error | undefined;
       let buffer = '';
       let stderr = '';
@@ -124,6 +134,7 @@ export function agentProcessLauncher(scope: {
           );
         else resolve();
       });
+      if (scope.signal.aborted) return;
       child.stdin.write(spec.input);
       if (!spec.input.endsWith('\n')) child.stdin.write('\n');
       if (!spec.interactive) child.stdin.end();

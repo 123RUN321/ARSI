@@ -203,6 +203,11 @@ for (const [message, pattern] of [
     let launches = 0;
     const f = await agentFixture(async (_spec, consume) => {
       launches++;
+      if ('method' in message)
+        await consume(
+          JSON.stringify({ id: 2, result: { thread: { id: 't' } } }),
+          () => {},
+        );
       await consume(JSON.stringify(message), () => {});
     });
     t.after(() => f.close());
@@ -211,7 +216,7 @@ for (const [message, pattern] of [
       f.context,
     );
     await assert.rejects(f.execute(agent), pattern);
-    assert.equal(launches, 1);
+    assert.equal(launches, 'method' in message ? 1 : 3);
   });
 }
 
@@ -280,4 +285,50 @@ for (const sandbox of ['elevated', 'unelevated'] as const) {
       assert.equal(process.env.CODEX_WINDOWS_REGISTERED_CORE, '1');
     },
   );
+}
+
+for (const phase of ['startup', 'submitted'] as const) {
+  test(`Codex retries only before turn submission: ${phase}`, async (t) => {
+    let launches = 0;
+    let turns = 0;
+    const f = await agentFixture(async (_spec, consume) => {
+      launches++;
+      if (phase === 'startup' && launches === 1)
+        throw new Error('startup failed');
+      await consume(
+        JSON.stringify({ id: 2, result: { thread: { id: 't' } } }),
+        () => {
+          turns++;
+        },
+      );
+      if (phase === 'submitted') throw new Error('turn interrupted');
+      await consume(
+        JSON.stringify({
+          method: 'item/completed',
+          params: {
+            threadId: 't',
+            item: { id: 'm', type: 'agentMessage', text: '{"answer":"ok"}' },
+          },
+        }),
+        () => {},
+      );
+      await consume(
+        JSON.stringify({
+          method: 'turn/completed',
+          params: { threadId: 't', turn: { status: 'completed' } },
+        }),
+        () => {},
+      );
+    });
+    t.after(() => f.close());
+    const agent = await createAgentCodex(
+      { executable: process.execPath },
+      f.context,
+    );
+    if (phase === 'submitted')
+      await assert.rejects(f.execute(agent), /turn interrupted/);
+    else assert.deepEqual(await f.execute(agent), { answer: 'ok' });
+    assert.equal(launches, phase === 'startup' ? 2 : 1);
+    assert.equal(turns, 1);
+  });
 }
