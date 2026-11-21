@@ -11,25 +11,24 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
-import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
-import { ManagedEvents } from '../../src/runtime/services/events.js';
+import {
+  RuntimeContext,
+  type JsonObject,
+  type CleanupContext,
+} from '../../src/contracts/index.js';
+import { Registry } from '../../src/runtime/registry/index.js';
 import { FileFacts } from '../../src/runtime/storage/index.js';
 import { object } from '../../src/shared/json.js';
 import {
   runEvaluatorCleanup,
   recordCleanupInput,
-  type CleanupReceiptResult,
 } from '../../src/plugins/shared/evaluator-adapter/cleanup.js';
 import {
   createAgentbench,
   prepareEvaluationConfig,
 } from '../../src/plugins/evaluator-agentbench/service.js';
-import {
-  createOperatorbench,
-  prepareEvaluationConfig as prepareKernelConfig,
-} from '../../src/plugins/evaluator-operatorbench/service.js';
+import { prepareEvaluationConfig as prepareKernelConfig } from '../../src/plugins/evaluator-operatorbench/service.js';
 import { registerBuiltins } from '../../src/runtime/builtins.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
 
@@ -145,13 +144,23 @@ function report(...statuses: string[]): JsonObject {
   };
 }
 
-function experimentEvents(t: test.TestContext, context: RuntimeContext) {
-  const events = new ManagedEvents({
-    context: () => context,
-    diagnostic: ({ error }) => assert.fail(String(error)),
-  });
-  t.after(() => events.dispose());
-  return events;
+async function builtinRegistry(t: test.TestContext): Promise<Registry> {
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  await registerBuiltins(registry);
+  return registry;
+}
+
+function cleanupContext(ctx: RuntimeContext, pluginId: string): CleanupContext {
+  return {
+    experimentId: ctx.experimentId,
+    bindingId: ctx.bindingId,
+    pluginId,
+    dryRun: false,
+    dataDirectory: ctx.dataDirectory,
+    facts: ctx.facts,
+    signal: ctx.signal,
+  };
 }
 
 const agentConfig = { benchmark: 'terminalbench', services: {} };
@@ -187,35 +196,12 @@ test('an experiment without a Docker evaluator never reads its cleanup receipts,
   );
 });
 
-test('failed, cancelled and foreign finishes leave the evaluator inputs pending', async (t) => {
+test('disposing an evaluator instance leaves its experiment resources pending', async (t) => {
   const f = await fixture(t);
   const entry = await f.register();
-  for (const [eventId, status, savedStatus] of [
-    [f.context.experimentId, 'failed', 'failed'],
-    [f.context.experimentId, 'cancelled', 'cancelled'],
-    ['foreign', 'succeeded', 'succeeded'],
-    [f.context.experimentId, 'succeeded', 'running'],
-  ] as const) {
-    const events = experimentEvents(t, f.context);
-    const scope = events.prepare(f.context.bindingId);
-    const evaluator = await createAgentbench(
-      agentConfig,
-      f.context.extend({ event: scope.event }),
-    );
-    events.activate(scope);
-    await f.context.facts.write('experiments', f.context.experimentId, {
-      id: f.context.experimentId,
-      status: savedStatus,
-    });
-    await events.event.parallel('rsi/experiment-finished', {
-      experimentId: eventId,
-      recipeId: 'test',
-      status,
-    });
-    events.stop();
-    await evaluator.dispose();
-    assert.deepEqual((await f.read(entry.key)).attempts, []);
-  }
+  const evaluator = await createAgentbench(agentConfig, f.context);
+  await evaluator.dispose();
+  assert.deepEqual((await f.read(entry.key)).attempts, []);
 });
 
 test('older receipts require a call identifying the same experiment and binding', async (t) => {
@@ -242,7 +228,14 @@ test('older receipts require a call identifying the same experiment and binding'
     await runEvaluatorCleanup(f.context, agentCleanup, run);
   }
   assert.deepEqual((await f.read(entry.key)).attempts, []);
+  const recoveredFrom = entry.key + '-' + 'b'.repeat(24);
   await f.context.facts.write('calls', entry.key, {
+    callId: entry.key,
+    experimentId: f.context.experimentId,
+    bindingId: 'replacement',
+    recoveredFrom,
+  });
+  await f.context.facts.write('call-attempts', recoveredFrom, {
     callId: entry.key,
     experimentId: f.context.experimentId,
     bindingId,
@@ -300,11 +293,10 @@ test('manual preview reports an unverified receipt and leaves both bindings unto
   assert.equal(bindingId, f.context.bindingId);
   await f.context.facts.write(f.kind, owned.key, unverified);
   const before = await f.context.facts.list(f.kind);
-  const results: CleanupReceiptResult[] = [];
   const paths: string[] = [];
-  await runEvaluatorCleanup(
+  const results = await runEvaluatorCleanup(
     f.context,
-    { dryRun: true, onResult: (item) => results.push(item) },
+    { binding: { id: peer.bindingId, kind: 'agentbundle' }, dryRun: true },
     async (options) => {
       assert.equal(options.execute, false);
       paths.push(options.configPath);
@@ -313,7 +305,7 @@ test('manual preview reports an unverified receipt and leaves both bindings unto
   );
   assert.deepEqual(paths, [other.path]);
   assert.equal(
-    results.find((item) => item.bindingId === 'peer')?.status,
+    results.find((item) => item.key === other.key)?.status,
     'preview',
   );
   const pending = results.find((item) => item.key === owned.key);
@@ -484,37 +476,12 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
     async () => assert.fail('AgentBench consumed a kernel input'),
   );
   assert.deepEqual((await f.read(callId)).attempts, []);
-  const events = experimentEvents(t, context);
-  const scope = events.prepare(context.bindingId);
-  const evaluator = await createOperatorbench(
-    {
-      benchmark: 'kernel',
-      task: {
-        directory: fileURLToPath(
-          new URL(
-            '../../examples/artifacts/kernel/transpose-copy/task/',
-            import.meta.url,
-          ),
-        ),
-      },
-    },
-    context.extend({
-      event: scope.event,
-      cleanup: AbortSignal.abort(new Error('operator cleanup deadline')),
-    }),
-  );
-  events.activate(scope);
-  await context.facts.write('experiments', context.experimentId, {
-    id: context.experimentId,
-    status: 'succeeded',
+  const registry = await builtinRegistry(t);
+  const owner = cleanupContext(context, 'evaluator.operatorbench');
+  await registry.dispatch(owner.pluginId, 'rsi/cleanup', {
+    ...owner,
+    signal: AbortSignal.abort(new Error('operator cleanup deadline')),
   });
-  await events.event.parallel('rsi/experiment-finished', {
-    experimentId: context.experimentId,
-    recipeId: 'test',
-    status: 'succeeded',
-  });
-  events.stop();
-  await evaluator.dispose();
   assert.match(
     JSON.stringify((await f.read(callId)).attempts),
     /operator cleanup deadline/,
@@ -531,7 +498,7 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   assert.equal((await f.read(callId)).status, 'complete');
 });
 
-test('only the final AgentBench instance disposes its binding through the installed SDK', async (t) => {
+test('the registered AgentBench handler cleans its binding through the installed SDK without an instance', async (t) => {
   const f = await fixture(t);
   const root = f.context.dataDirectory;
   const docker = join(root, 'docker.cjs');
@@ -571,37 +538,16 @@ test('only the final AgentBench instance disposes its binding through the instal
     if (previous === undefined) delete process.env.NODE_OPTIONS;
     else process.env.NODE_OPTIONS = previous;
   });
-  const events = experimentEvents(t, f.context);
-  const create = async () => {
-    const scope = events.prepare(f.context.bindingId);
-    const evaluator = await createAgentbench(
-      agentConfig,
-      f.context.extend({ event: scope.event, signal: AbortSignal.abort() }),
-    );
-    events.activate(scope);
-    return evaluator;
-  };
-  const retired = await create();
-  const current = await create();
-  await retired.dispose();
-  assert.deepEqual((await f.read(entry.key)).attempts, []);
-  const experimentId = f.context.experimentId;
-  await f.context.facts.write('experiments', experimentId, {
-    id: experimentId,
-    status: 'succeeded',
-  });
-  await events.event.parallel('rsi/experiment-finished', {
-    experimentId,
-    recipeId: 'test',
-    status: 'succeeded',
-  });
-  events.stop();
+  const registry = await builtinRegistry(t);
   await assert.rejects(readFile(log), { code: 'ENOENT' });
-  const disposal = current.dispose();
-  await current.dispose();
+  const owner = cleanupContext(f.context, 'evaluator.agentbench');
+  const results = await registry.dispatch(owner.pluginId, 'rsi/cleanup', owner);
   const receipt = await f.read(entry.key);
   assert.equal(receipt.status, 'complete', JSON.stringify(receipt.attempts));
-  await disposal;
+  assert.deepEqual(
+    results.map(({ key, status }) => ({ key, status })),
+    [{ key: entry.key, status: 'complete' }],
+  );
   assert.deepEqual((await f.read(peer.key)).attempts, []);
   assert.match(JSON.stringify(receipt.attempts), /fixture-daemon/);
   const commands = await readFile(log, 'utf8');

@@ -43,7 +43,7 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 | `contract`             | Declare the public contract the plugin follows.               | Required imported contract object, such as `proposerContract`.                                        |
 | `configSchema`         | Validate this implementation's configuration.                 | Required JSON Schema; declare an object Schema even when there are no settings.                       |
 | `create`               | Create a plugin instance from configuration.                  | Required async function `create(config, context)` returning an object with `execute` and `dispose`.   |
-| `doctor`               | Diagnose this component's prerequisites before an experiment. | Optional `OperationDoctor<C>` function that receives `DoctorContext<C>` and returns a `DoctorResult`. |
+| `doctor`               | Diagnose this component's prerequisites before an experiment. | Legacy field. New plugins subscribe to `rsi/doctor` at registration. |
 | `implementationDigest` | Record the implementation version for experiment provenance.  | Optional digest covering the actual implementation code; update it when the code changes.             |
 
 - Without `implementationDigest`, Registry generates a digest from the `create` function text, contract, and configuration Schema.
@@ -282,7 +282,7 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 arsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
 ```
 
-`doctor` checks contracts, bindings and configuration, then invokes each selected component definition's optional `doctor` function. It incorporates the returned `DoctorResult` into the report.
+`doctor` checks contracts, bindings and configuration, then dispatches `rsi/doctor` to each selected binding with a handler. It incorporates the returned `DoctorResult` into the report.
 
 ## Use RuntimeContext
 
@@ -373,4 +373,4 @@ Common `createRuntime` options are listed below; see the [Runtime entrypoint](..
 
 Registrations in a host only apply to that Runtime. A separately started CLI loads extensions from the default user-level directory, or from directories selected with `--plugin-dir`.
 
-`Recipe.load` assembles and structurally validates the definition without running prerequisite probes. Use `arsi doctor` with the same extension registrations for CLI preflight. Add optional `doctor` to the component definition for its own diagnostics; see [Connecting custom components](doctor.md#4-connecting-custom-components) for the public callback and a complete registration example.
+`Recipe.load` assembles and structurally validates the definition without running prerequisite probes. Use `arsi doctor` with the same extension registrations for CLI preflight. Register a `rsi/doctor` handler for component diagnostics. See [Connecting custom components](doctor.md#4-connecting-custom-components) for the public callback and a complete registration example.

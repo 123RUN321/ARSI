@@ -139,6 +139,7 @@ export class CleanupLifecycle {
     notification: Promise<unknown>,
     diagnostics: () => Promise<unknown>,
     releaseOnFailure = false,
+    afterDisposal?: () => Promise<void>,
   ): Promise<void> {
     if (this.state !== 'idle') throw new Error('Cleanup already started');
     const work = async (): Promise<void> => {
@@ -175,6 +176,7 @@ export class CleanupLifecycle {
         }
         throw failure;
       }
+      await afterDisposal?.();
       await this.finish();
     };
     this.retryPreparation = work;

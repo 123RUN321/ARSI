@@ -61,7 +61,7 @@ arsi doctor my-experiment/recipe.yaml
 arsi run my-experiment/recipe.yaml --id terminal-skills-01
 ```
 
-- `doctor` checks the Recipe, plugin configuration, contract compatibility, Policy compilation and declared Reflection resources, then calls the optional `doctor` capability on each effective component definition. Its single JSON report contains `recipeId`, `summary`, `checks` and `missingResources`.
+- `doctor` checks the Recipe, plugin configuration, contract compatibility, Policy compilation and declared Reflection resources, then dispatches `rsi/doctor` to each effective binding with a handler. Its single JSON report contains `recipeId`, `summary`, `checks` and `missingResources`.
   - Statuses are `passed`, `failed` and `unchecked`.
   - For the diagnostic flow, report interpretation, built-in checks and custom-component integration, see the [doctor guide](doctor.md).
 
@@ -99,7 +99,7 @@ Runtime restores budget usage, compatible effective revisions, call receipts, an
 
 Experiments created before the Runtime saved control-flow decisions require a new experiment ID.
 
-- Completed experiments return their saved result without additional calls or charges.
+- Completed experiments return their saved result. Resume retries outstanding resource cleanup without repeating business calls or charges.
 - Keep the ordered Policy step IDs, types, nesting, and required plugin contract IDs. New calls use the currently registered input and output schemas.
 - The Runtime reuses completed Policy steps and committed results. It retries unfinished steps using the supplied bindings, configuration, and code. For an in-progress branch, loop iteration, or foreach, it preserves the previously selected branch, iteration, or items. A retried plugin call uses a fresh attempt directory and acquires fresh instances.
 - Retry keeps recorded usage and the original start time. Update the Recipe budget if the experiment exhausted it.
@@ -107,11 +107,13 @@ Experiments created before the Runtime saved control-flow decisions require a ne
 
 ## Clean up experiment resources
 
-After a successful experiment, AgentBench and OperatorBench automatically release eligible resources they recorded. On failure, cancellation, or interruption, those resources stay available for retry.
+After success, RSI dispatches cleanup to each plugin and binding used across the experiment’s attempts, including evaluations fully reused on resume. AgentBench and OperatorBench release eligible SDK resources. Failure, cancellation, and interruption leave resources available for retry or manual cleanup.
 
 - `arsi cleanup` or `arsi cleanup --dry-run` previews eligible resources in the current `.rsi` workspace.
 - `arsi cleanup terminal-skills-01 --dry-run` previews one experiment. Run `arsi cleanup terminal-skills-01` to release its eligible resources.
 - `arsi cleanup --all` releases eligible resources across the workspace and skips experiments in use.
+
+For custom plugins, pass the same `--plugin-dir` used to run the experiment. An unavailable plugin is reported as `pending` and other bindings are still checked.
 
 Cleanup preserves checkpoints, results, logs, and resources still in use by other experiments. A later `--resume` may pull or rebuild images.
 

@@ -1,6 +1,7 @@
 import type { Context, Events } from '@deepseek-ai/cordis';
 import type { AgentObservation } from '../models/agent-record.js';
 import type { RuntimeContext } from './context.js';
+import type { OperationEventMap } from '../operation-events.js';
 
 /** Native Cordis publishing, including explicit dispatch `this` and filtering. */
 export type EventPublisher = Pick<
@@ -17,7 +18,7 @@ type EventHandler<Name extends keyof Events> = {
 }[Name];
 
 export interface EventPipeline extends EventPublisher {
-  on<Name extends keyof Events>(
+  on<Name extends Exclude<keyof Events, keyof OperationEventMap>>(
     name: Name,
     handler: EventHandler<NoInfer<Name>>,
   ): () => boolean;

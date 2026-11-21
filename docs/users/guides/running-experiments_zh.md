@@ -61,7 +61,7 @@ arsi doctor my-experiment/recipe.yaml
 arsi run my-experiment/recipe.yaml --id terminal-skills-01
 ```
 
-- `doctor` 检查 Recipe、插件配置、契约兼容性、Policy 编译和已声明的 Reflection 资源，再调用每个生效组件定义上的可选 `doctor` 能力。单份 JSON 报告包含 `recipeId`、`summary`、`checks` 和 `missingResources`。
+- `doctor` 检查 Recipe、插件配置、契约兼容性、Policy 编译和已声明的 Reflection 资源，再向注册了 `rsi/doctor` 的每个生效绑定派发事件。单份 JSON 报告包含 `recipeId`、`summary`、`checks` 和 `missingResources`。
   - 状态为 `passed`（通过）、`failed`（失败）或 `unchecked`（未检查）。
   - 检查流程、报告解读、内置检查和自定义组件接入方式，参见 [doctor 指南](doctor_zh.md)。
 
@@ -99,7 +99,7 @@ Runtime 恢复预算用量、兼容的生效版本、调用收据和检查点，
 
 旧版 Runtime 未保存控制流决策的实验需要用新实验 ID 重新启动。
 
-- 已成功的实验直接返回已保存的结果，不会增加调用或扣费。
+- 已成功的实验返回已保存的结果。续跑会重试尚未完成的资源清理，不会重复业务调用或扣费。
 
 - Policy 步骤的顺序、ID、类型、嵌套结构和所需的插件 contract ID 需要一致。新的调用按当前注册的输入和输出 schema 校验。
 - Runtime 复用已完成的 Policy 步骤和已提交的结果，用传入的绑定、配置和代码执行未完成的步骤。对于已进入的条件分支、循环迭代和 foreach，会沿用之前选中的分支、迭代或条目。重试的插件调用使用新的尝试目录，并重新获取实例。
@@ -108,11 +108,13 @@ Runtime 恢复预算用量、兼容的生效版本、调用收据和检查点，
 
 ## 清理实验资源
 
-实验成功后，AgentBench 和 OperatorBench 会自动清理自己登记的可回收资源。实验失败、取消或中断时，这些资源会保留供重试。
+实验成功后，RSI 会按历次运行实际用过的插件和绑定派发清理，即使续跑复用了全部评测结果。AgentBench 和 OperatorBench 会释放 SDK 确认可回收的资源。实验失败、取消或中断时，资源保留供重试或手动清理。
 
 - `arsi cleanup` 或 `arsi cleanup --dry-run` 预览当前 `.rsi` 工作区可释放的资源。
 - `arsi cleanup terminal-skills-01 --dry-run` 预览单个实验，执行 `arsi cleanup terminal-skills-01` 即可清理。
 - `arsi cleanup --all` 批量清理当前工作区，跳过正在运行或恢复的实验。
+
+自定义插件请传入运行实验时使用的 `--plugin-dir`。缺少插件时，该绑定会标为 `pending`，其他绑定仍会继续处理。
 
 清理会保留检查点、结果、日志，以及其他实验仍在使用的资源。之后仍可用 `--resume` 续跑，所需镜像可能要重新拉取或构建。
 

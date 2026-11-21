@@ -4,7 +4,16 @@
 
 本指南介绍如何订阅内置事件、发布自定义事件，并在插件生命周期中管理监听与清理。
 
-**插件可通过 `RuntimeContext.event` 使用事件系统：在 `create(config, ctx)` 中注册监听，在 `execute(input, ctx)` 或监听回调中发布事件、调用服务。**
+在 `create(config, ctx)` 中通过 `ctx.event` 订阅实例生命周期事件。以下两个有返回值的事件在插件注册时订阅，即使实验复用了全部调用结果，处理器仍然可用。
+
+```js
+registry.registerOperation(myPlugin, (events) => {
+  events.on('rsi/doctor', checkEnvironment);
+  events.on('rsi/cleanup', cleanupResources);
+});
+```
+
+`rsi/doctor` 为当前 Recipe 绑定返回 `DoctorResult`。`rsi/cleanup` 接收 `experimentId`、`bindingId`、`pluginId`、`dryRun`、`facts`、`dataDirectory` 和 `signal`，返回 `CleanupResult[]`。每项包含资源键 `key` 和状态 `preview`、`complete` 或 `pending`，没有待清理资源时返回 `[]`。处理器须遵守 `dryRun` 并支持重复执行。实例被替换或运行结束时，框架仍会等待各实例的 `dispose()` 释放句柄。
 
 ## 1. 四种分发方式
 
@@ -15,7 +24,7 @@
 | `serial`    | 按顺序执行监听，前一个完成后再执行下一个；抛错会阻止后续流程。 | `rsi/before-experiment`：依次执行实验启动前的检查。                               |
 | `waterfall` | 按监听链处理准入决策，Manager 根据最终结果决定是否执行调用。   | `rsi/before-call`：按 binding 判断是否允许调用，返回 `proceed` 或 `reject` 决策。 |
 
-- 内置 `serial` 事件的监听只能返回 `undefined` 或 `Promise<undefined>`。返回 `true`、`0`、字符串或对象等值，会提前结束本次事件分发，跳过后续监听；
+- 实例上的内置 `serial` 事件监听只能返回 `undefined` 或 `Promise<undefined>`。返回 `true`、`0`、字符串或对象等值，会提前结束本次事件分发，跳过后续监听；
 
 ## 2. 内置事件一览
 

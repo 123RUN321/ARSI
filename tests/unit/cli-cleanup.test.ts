@@ -4,12 +4,23 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { Evaluator, type CleanupOptions } from 'arsi-evaluator';
+import { parseDocument } from 'yaml';
 import type { JsonObject, RuntimeContext } from '../../src/contracts/index.js';
 import { cleanupExperiment } from '../../src/entries/cli/cleanup.js';
 import { runCommand } from '../../src/entries/cli/commands.js';
 import { prepareEvaluationConfig } from '../../src/plugins/evaluator-operatorbench/service.js';
-import { recordCleanupInput } from '../../src/plugins/shared/evaluator-adapter/cleanup.js';
+import {
+  cleanupEvaluatorBinding,
+  recordCleanupInput,
+} from '../../src/plugins/shared/evaluator-adapter/cleanup.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
+import {
+  defineContract,
+  type OperationDefinition,
+} from '../../src/contracts/index.js';
+import { Manager } from '../../src/runtime/manager/index.js';
+import { Registry } from '../../src/runtime/registry/index.js';
+import { object } from '../../src/shared/json.js';
 
 async function recordKernelInput(context: RuntimeContext): Promise<string> {
   const path = join(context.directory, 'sdk-config.json');
@@ -80,6 +91,10 @@ for (const ending of ['failed', 'cancelled'] as const) {
       },
       {
         budget: { elapsedWallMs: 120_000 },
+        driverEvents: (events) =>
+          events.on('rsi/cleanup', (ctx) =>
+            cleanupEvaluatorBinding(ctx, 'kernel'),
+          ),
         policy: {
           steps: [
             { id: 'first', type: 'invoke', use: 'driver', with: {} },
@@ -98,6 +113,9 @@ for (const ending of ['failed', 'cancelled'] as const) {
       /fixture interruption/,
     );
     assert.equal((await manager.get('test')).status, ending);
+    await assert.rejects(manager.facts.read('resource-cleanup', 'test'), {
+      code: 'ENOENT',
+    });
     const firstCall = calls[0];
     const kind = 'evaluator-cleanup-test';
     const receipt = await manager.facts.read(kind, firstCall);
@@ -215,6 +233,273 @@ for (const ending of ['failed', 'cancelled'] as const) {
   });
 }
 
+test('a fresh runtime cleans the previous evaluation when resume reuses every evaluation result', async (t) => {
+  let retry = false;
+  const finish: OperationDefinition = {
+    id: 'test.finish',
+    contract: defineContract({
+      id: 'contract.finish',
+      input_schema: {},
+      output_schema: {},
+    }),
+    configSchema: { type: 'object' },
+    async create() {
+      return {
+        async execute() {
+          if (!retry) throw new Error('interrupted after evaluation');
+          return { done: true };
+        },
+        async dispose() {},
+      };
+    },
+  };
+  let evaluations = 0;
+  let disposals = 0;
+  const f = await managerFixture(
+    async (context) => {
+      evaluations++;
+      await recordKernelInput(context);
+      return { score: 1 };
+    },
+    {
+      plugins: [finish],
+      bindings: { finish: { plugin: finish.id, config: {} } },
+      policy: {
+        steps: [
+          { id: 'evaluate', type: 'invoke', use: 'driver', with: {} },
+          { id: 'drive', type: 'invoke', use: 'finish', with: {} },
+        ],
+      },
+      async disposeDriver() {
+        disposals++;
+      },
+      driverEvents(events) {
+        events.on('rsi/cleanup', () =>
+          assert.fail('failed experiments keep resources'),
+        );
+      },
+    },
+  );
+  t.after(f.dispose);
+  await useFixtureNetwork(t, f.manager.rootDirectory);
+  await assert.rejects(f.run(), /interrupted after evaluation/);
+  assert.equal(disposals, 1);
+  const [receipt] = await f.manager.facts.list('evaluator-cleanup-test');
+  assert.deepEqual(receipt.attempts, []);
+
+  const registry = new Registry();
+  const manager = new Manager({
+    registry,
+    rootDirectory: f.manager.rootDirectory,
+  });
+  t.after(async () => {
+    await manager.dispose();
+    await registry.dispose();
+  });
+  registry.registerPolicy(
+    'test.policy',
+    join(manager.rootDirectory, 'policy.yaml'),
+  );
+  registry.registerOperation(
+    f.manager.options.registry.get('test.application'),
+  );
+  registry.registerOperation(finish);
+  registry.registerOperation(
+    {
+      ...f.manager.options.registry.get('test.driver'),
+      id: 'test.replacement',
+      async create() {
+        return assert.fail('the replacement has no unfinished evaluation');
+      },
+    },
+    (events) =>
+      events.on('rsi/cleanup', () =>
+        assert.fail('unused replacement received cleanup'),
+      ),
+  );
+  registry.registerOperation(
+    {
+      ...f.manager.options.registry.get('test.driver'),
+      async create() {
+        return assert.fail('a reused evaluation must not create an instance');
+      },
+    },
+    (events) =>
+      events.on('rsi/cleanup', (context) =>
+        cleanupEvaluatorBinding(context, 'kernel'),
+      ),
+  );
+  const sdk = t.mock.method(
+    Evaluator.prototype,
+    'cleanup',
+    async (options: CleanupOptions) => {
+      assert.equal(options.execute, true);
+      assert.equal(
+        options.configPath,
+        join(
+          manager.directory,
+          'experiments',
+          'test',
+          'calls',
+          String(receipt.key),
+          'sdk-config.json',
+        ),
+      );
+      return {
+        preview: false,
+        nodes: [{ nodeId: 'local', daemonId: 'fixture', items: [] }],
+      };
+    },
+  );
+  retry = true;
+  const recipe = join(manager.rootDirectory, 'recipe.yaml');
+  const current = parseDocument(await readFile(recipe, 'utf8'));
+  current.setIn(['bindings', 'driver', 'plugin'], 'test.replacement');
+  await writeFile(recipe, current.toString());
+  const result = await manager.run(recipe, { id: 'test', resume: true });
+  assert.equal(result.status, 'succeeded');
+  assert.equal(evaluations, 1);
+  assert.equal(sdk.mock.callCount(), 1);
+  assert.equal(
+    (await manager.facts.read('evaluator-cleanup-test', String(receipt.key)))
+      .status,
+    'complete',
+  );
+  const report = await manager.facts.read('resource-cleanup', 'test');
+  assert.equal(report.status, 'complete');
+  assert.ok(Array.isArray(report.results));
+  assert.deepEqual(
+    report.results.map((entry) => object(entry).pluginId),
+    ['test.driver'],
+  );
+  assert.deepEqual(
+    await manager.run(recipe, { id: 'test', resume: true }),
+    result,
+  );
+  assert.equal(sdk.mock.callCount(), 1);
+});
+
+test('completed resume retries pending resource cleanup after instance disposal without repeating business calls', async (t) => {
+  const log: string[] = [];
+  let ready = false;
+  const f = await managerFixture(
+    async () => {
+      log.push('execute');
+      return {};
+    },
+    {
+      async disposeDriver() {
+        await Promise.resolve();
+        log.push('dispose');
+      },
+      driverEvents(events) {
+        events.on('rsi/cleanup', async () => {
+          log.push('cleanup');
+          if (!ready) throw new Error('unavailable');
+          return [{ key: 'owned', status: 'complete' }];
+        });
+      },
+    },
+  );
+  t.after(f.dispose);
+  const result = await f.run();
+  assert.equal(result.status, 'succeeded');
+  assert.deepEqual(log, ['execute', 'dispose', 'cleanup']);
+  assert.equal(
+    (await f.manager.facts.read('resource-cleanup', 'test')).status,
+    'pending',
+  );
+  ready = true;
+  assert.deepEqual(
+    await f.manager.run(join(f.manager.rootDirectory, 'recipe.yaml'), {
+      id: 'test',
+      resume: true,
+    }),
+    result,
+  );
+  assert.deepEqual(log, ['execute', 'dispose', 'cleanup', 'cleanup']);
+  assert.equal(
+    (await f.manager.facts.read('resource-cleanup', 'test')).status,
+    'complete',
+  );
+});
+
+test('legacy call attempts direct cleanup to each historical owner, including a replaced plugin', async (t) => {
+  const received: string[] = [];
+  const f = await managerFixture(async () => ({}), {
+    driverEvents(events) {
+      events.on('rsi/cleanup', async ({ bindingId, pluginId, dryRun }) => {
+        received.push(pluginId + '/' + bindingId);
+        return [{ key: 'resource', status: dryRun ? 'preview' : 'complete' }];
+      });
+    },
+  });
+  t.after(f.dispose);
+  const { manager } = f;
+  const registry = manager.options.registry;
+  for (const id of ['test.old', 'test.unused']) {
+    registry.registerOperation(
+      { ...registry.get('test.driver'), id },
+      (events) =>
+        events.on('rsi/cleanup', async ({ pluginId, bindingId }) => {
+          received.push(pluginId + '/' + bindingId);
+          throw new Error('temporarily unavailable');
+        }),
+    );
+  }
+  const facts = manager.facts;
+  await facts.write('experiments', 'old', { id: 'old', status: 'cancelled' });
+  const owner = {
+    experimentId: 'old',
+    bindingId: 'bench',
+    pluginId: 'test.driver',
+  };
+  await facts.write('calls', 'a', owner);
+  await facts.write('calls', 'b', { ...owner, bindingId: 'second' });
+  await facts.write('call-attempts', 'a-prior', {
+    experimentId: 'old',
+    bindingId: 'bench',
+    bindingRef: 'test.old',
+  });
+  await facts.write('call-attempts', 'b-prior', owner);
+  await facts.write('calls', 'other', {
+    ...owner,
+    experimentId: 'foreign',
+    pluginId: 'test.unused',
+  });
+  await facts.write('call-attempts', 'c-prior', {
+    ...owner,
+    bindingId: 'removed',
+    pluginId: 'test.missing',
+  });
+  const preview = await cleanupExperiment(
+    manager,
+    'old',
+    true,
+    new AbortController().signal,
+  );
+  assert.deepEqual(received.sort(), [
+    'test.driver/bench',
+    'test.driver/second',
+    'test.old/bench',
+  ]);
+  assert.deepEqual(
+    preview.results.map(({ pluginId, bindingId, status }) => [
+      pluginId,
+      bindingId,
+      status,
+    ]),
+    [
+      ['test.driver', 'bench', 'preview'],
+      ['test.driver', 'second', 'preview'],
+      ['test.old', 'bench', 'pending'],
+      ['test.missing', 'removed', 'pending'],
+    ],
+  );
+  assert.match(preview.results[3].error!, /Unknown plugin/);
+  assert.deepEqual(await facts.list('used-bindings'), []);
+});
+
 test('an active experiment can be previewed while execution stays with its owner', async (t) => {
   const barrier = new EventEmitter();
   const entered = once(barrier, 'running');
@@ -269,9 +554,15 @@ test('workspace previews are read-only and --all continues past failed and pendi
   const f = await managerFixture(
     async (context) => {
       paths.set(await recordKernelInput(context), context.experimentId);
-      return { done: true };
+      throw new Error('keep resources for manual cleanup');
     },
-    { budget: { elapsedWallMs: 120_000 } },
+    {
+      budget: { elapsedWallMs: 120_000 },
+      driverEvents: (events) =>
+        events.on('rsi/cleanup', (ctx) =>
+          cleanupEvaluatorBinding(ctx, 'kernel'),
+        ),
+    },
   );
   t.after(f.dispose);
   const { manager } = f;
@@ -279,7 +570,8 @@ test('workspace previews are read-only and --all continues past failed and pendi
   const command = fixtureCommand(f);
   const ids = ['b-retry', 'c-ready'];
   const recipe = join(manager.rootDirectory, 'recipe.yaml');
-  for (const id of ids) await manager.run(recipe, { id });
+  for (const id of ids)
+    await assert.rejects(manager.run(recipe, { id }), /keep resources/);
   const receipts = () =>
     Promise.all(ids.map((id) => manager.facts.list(`evaluator-cleanup-${id}`)));
   const before = await receipts();

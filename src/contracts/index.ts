@@ -6,6 +6,12 @@ export { defineContract } from './contract.js';
 export type { PluginContract } from './contract.js';
 export type { Operation, OperationDefinition } from './operation.js';
 export type {
+  CleanupContext,
+  CleanupResult,
+  OperationEventMap,
+  OperationEvents,
+} from './operation-events.js';
+export type {
   DoctorBinding,
   DoctorCheck,
   DoctorContext,

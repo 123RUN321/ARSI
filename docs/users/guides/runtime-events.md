@@ -4,7 +4,16 @@ English | [简体中文](runtime-events_zh.md) · [Getting started](../getting-s
 
 This guide explains how to subscribe to built-in events, publish custom events, and manage listeners and cleanup across a plugin's lifecycle.
 
-**Plugins access events through `RuntimeContext.event`: subscribe in `create(config, ctx)` and publish events or call services in `execute(input, ctx)` or a listener callback.**
+Subscribe to instance lifecycle events in `create(config, ctx)` through `ctx.event`. Two queries belong to the plugin registration and stay available even when an experiment reuses every call.
+
+```js
+registry.registerOperation(myPlugin, (events) => {
+  events.on('rsi/doctor', checkEnvironment);
+  events.on('rsi/cleanup', cleanupResources);
+});
+```
+
+`rsi/doctor` returns a `DoctorResult` for the effective Recipe binding. `rsi/cleanup` receives `experimentId`, `bindingId`, `pluginId`, `dryRun`, `facts`, `dataDirectory` and `signal`. Return a `CleanupResult[]` with a key and `preview`, `complete` or `pending` per resource. Return `[]` when nothing remains. Honor `dryRun` and make execution safe to repeat. The framework waits for `dispose()` on each retired or finished instance to release its handles.
 
 ## 1. Four dispatch modes
 
@@ -15,7 +24,7 @@ This guide explains how to subscribe to built-in events, publish custom events, 
 | `serial`    | Run listeners in order, waiting for each to finish before starting the next; a throw prevents subsequent flow.       | `rsi/before-experiment`: run checks in order before the experiment starts.                               |
 | `waterfall` | Process admission decisions through a listener chain; the Manager uses the final result to admit or reject the call. | `rsi/before-call`: decide whether to allow a binding's call, returning a `proceed` or `reject` decision. |
 
-- Listeners for built-in `serial` events must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
+- Instance listeners for built-in `serial` events must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
 
 ## 2. Built-in events
 

@@ -6,6 +6,8 @@ import type {
   JsonValue,
   Operation,
   OperationDefinition,
+  OperationEventMap,
+  OperationEvents,
   RuntimeContext,
   DoctorContext,
   DoctorResult,
@@ -18,6 +20,8 @@ import { validate } from '../../shared/schema.js';
 import { json, digest } from '../../shared/json.js';
 
 interface Registration {
+  scope: Context;
+  events: ReadonlySet<keyof OperationEventMap>;
   definition: OperationDefinition;
   createManaged(
     config: JsonObject,
@@ -74,7 +78,10 @@ export class Registry {
     I extends JsonValue,
     O extends JsonValue,
     C extends JsonObject,
-  >(definition: OperationDefinition<I, O, C>): () => void {
+  >(
+    definition: OperationDefinition<I, O, C>,
+    subscribe?: (events: OperationEvents<C>) => void,
+  ): () => void {
     const unknown = Object.keys(definition).find(
       (key) =>
         ![
@@ -98,6 +105,14 @@ export class Registry {
       this.policyFiles.has(definition.id)
     )
       throw new Error(`Duplicate ID ${definition.id}`);
+    const handlers: Partial<OperationEventMap<C>> = {};
+    subscribe?.({
+      on(name, handler) {
+        if (typeof handler !== 'function' || handlers[name])
+          throw new Error('Expected one handler for ' + name);
+        handlers[name] = handler;
+      },
+    });
     const contract = this.registerContract(definition.contract);
     const create = async (
       config: JsonObject,
@@ -109,7 +124,8 @@ export class Registry {
         ? managedAgentOperation(operation)
         : operation;
     };
-    const { doctor, ...capabilities } = definition;
+    const { doctor: legacyDoctor, ...capabilities } = definition;
+    const doctor = handlers['rsi/doctor'] ?? legacyDoctor?.bind(definition);
     const registered: OperationDefinition = {
       ...capabilities,
       contract,
@@ -121,7 +137,7 @@ export class Registry {
                 context.binding.config,
                 'plugin doctor config',
               );
-              return doctor.call(definition, {
+              return doctor({
                 ...context,
                 binding: {
                   name: context.binding.name,
@@ -147,7 +163,23 @@ export class Registry {
         };
       },
     };
+    const listeners: Partial<OperationEventMap> = { ...handlers };
+    if (registered.doctor) listeners['rsi/doctor'] = registered.doctor;
+    const names = Object.keys(listeners) as (keyof OperationEventMap)[];
+    const fiber = this.context.plugin({
+      name: definition.id,
+      apply: (ctx: Context) => {
+        ctx.provide(definition.id, registered);
+        for (const name of names) ctx.on(name, listeners[name]!);
+        ctx.effect(() => () => {
+          if (this.registrations.get(definition.id)?.scope.fiber === ctx.fiber)
+            this.registrations.delete(definition.id);
+        });
+      },
+    });
     const registration: Registration = {
+      scope: fiber.ctx,
+      events: new Set(names),
       definition: registered,
       createManaged: create,
       implementationId:
@@ -159,16 +191,6 @@ export class Registry {
         }),
     };
     this.registrations.set(definition.id, registration);
-    const fiber = this.context.plugin({
-      name: definition.id,
-      apply: (ctx: Context) => {
-        ctx.provide(definition.id, registered);
-        ctx.effect(() => () => {
-          if (this.registrations.get(definition.id) === registration)
-            this.registrations.delete(definition.id);
-        });
-      },
-    });
     return () => {
       if (this.registrations.get(definition.id) !== registration) return;
       if (this.references.get(definition.id))
@@ -176,6 +198,35 @@ export class Registry {
       this.registrations.delete(definition.id);
       void fiber.dispose();
     };
+  }
+  handles(id: string, name: keyof OperationEventMap): boolean {
+    return this.registration(id).events.has(name);
+  }
+  dispatch<K extends keyof OperationEventMap>(
+    id: string,
+    name: K,
+    ...args: Parameters<OperationEventMap[K]>
+  ): Promise<Awaited<ReturnType<OperationEventMap[K]>>>;
+  async dispatch(
+    id: string,
+    name: keyof OperationEventMap,
+    ...args: Parameters<OperationEventMap[keyof OperationEventMap]>
+  ): Promise<Awaited<ReturnType<OperationEventMap[keyof OperationEventMap]>>> {
+    const registration = this.registration(id);
+    if (!registration.events.has(name))
+      throw new Error('Plugin ' + id + ' has no handler for ' + name);
+    const release = this.retain(id);
+    try {
+      // A caller may dispatch in the same turn that registered the Cordis plugin.
+      await registration.scope.fiber.await();
+      const target = {
+        [Context.filter]: (ctx: Context) =>
+          ctx.fiber === registration.scope.fiber,
+      };
+      return await this.context.serial(target, name, ...args);
+    } finally {
+      release();
+    }
   }
   registerPolicy(id: string, path: string): void {
     if (this.registrations.has(id) || this.policyFiles.has(id))

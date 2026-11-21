@@ -22,7 +22,7 @@ export interface OperationDefinition<
   implementationDigest?: string;
   contract: PluginContract;
   configSchema: JsonSchema;
-  /** Optional diagnostic capability, called only by doctor with validated effective configuration. */
+  /** @deprecated Subscribe to rsi/doctor when registering the operation. */
   doctor?(context: DoctorContext<C>): Promise<DoctorResult>;
   create(config: C, context: RuntimeContext): Promise<Operation<I, O>>;
 }

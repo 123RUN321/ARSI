@@ -64,7 +64,10 @@ function commandFixture(t: TestContext, facts?: FactStore) {
 test('workspace cleanup uses the Manager to list experiments in a custom fact store', async (t) => {
   const experiment = { id: 'saved', status: 'failed' };
   const store = {
-    read: async () => experiment,
+    async read(kind: string, id: string) {
+      if (kind === 'experiments' && id === experiment.id) return experiment;
+      throw Object.assign(new Error('Missing fact'), { code: 'ENOENT' });
+    },
     write: async () => assert.fail('No resources were recorded'),
     list: async (kind: string) => (kind === 'experiments' ? [experiment] : []),
     listIds: () => ['store-internal-key'],

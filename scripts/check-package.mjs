@@ -209,7 +209,11 @@ export const customDefinition={
  }
 };
 export function register(registry){
- registry.registerOperation(customDefinition);
+ registry.registerOperation(customDefinition, (events) => {
+  events.on('rsi/cleanup', ({experimentId,bindingId,dryRun}) => [
+   {key:experimentId + '/' + bindingId,status:dryRun ? 'preview':'complete'},
+  ]);
+ });
  registry.registerOperation({id:'consumer.doctor-application',contract:applicationContract,configSchema:{type:'object'},async create(){throw Error('Doctor must not instantiate the Application');}});
  registry.registerPolicy('consumer.doctor',fileURLToPath(new URL('./policy.json',import.meta.url)));
 }
@@ -272,6 +276,52 @@ export function register(registry){
   console.log(
     'Installed component doctor: registration, full checks and static mode passed.',
   );
+
+  const cleanupWorkspace = join(temporary, 'cleanup-workspace');
+  const cleanupStore = join(cleanupWorkspace, '.rsi', 'facts');
+  for (const [kind, id, record] of [
+    ['experiments', 'saved', { id: 'saved', status: 'failed' }],
+    [
+      'calls',
+      'prior',
+      {
+        experimentId: 'saved',
+        bindingId: 'custom',
+        pluginId: 'proposer.consumer-doctor',
+      },
+    ],
+  ]) {
+    await mkdir(join(cleanupStore, kind), { recursive: true });
+    await writeFile(
+      join(cleanupStore, kind, id + '.json'),
+      JSON.stringify(record),
+    );
+  }
+  for (const dryRun of [true, false]) {
+    const report = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          command,
+          'cleanup',
+          'saved',
+          '--plugin-dir',
+          doctorExtension,
+          ...(dryRun ? ['--dry-run'] : []),
+        ],
+        { ...doctorOptions, cwd: cleanupWorkspace },
+      ),
+    );
+    assert.deepEqual(report.results, [
+      {
+        key: 'saved/custom',
+        status: dryRun ? 'preview' : 'complete',
+        pluginId: 'proposer.consumer-doctor',
+        bindingId: 'custom',
+      },
+    ]);
+  }
+  console.log('Installed extension cleanup passed for preview and execution.');
 
   assert.deepEqual(
     JSON.parse(
@@ -486,6 +536,48 @@ export function register(registry) {
       ).toString('base64'),
     })),
   );
+  const lifecycleExtension = join(consumer, 'lifecycle-extension');
+  await mkdir(lifecycleExtension);
+  await writeFile(
+    join(lifecycleExtension, 'index.mjs'),
+    `
+import assert from 'node:assert/strict';
+import {applicationContract,defineContract} from 'arsi';
+export const lifecycle=[],deliveries=[],admissions=[];
+export let creations=0,disposals=0;
+export const contract=defineContract({id:'contract.consumer-worker',input_schema:{type:'object'},output_schema:{type:'object'}});
+export function register(registry){
+ registry.registerOperation({
+  id:'consumer.application',contract:applicationContract,configSchema:{type:'object'},
+  async create(_config,factoryCtx){
+   factoryCtx.event.on('rsi/experiment-started',event=>lifecycle.push(['started',event.recipeId]));
+   factoryCtx.event.on('rsi/experiment-finished',event=>{lifecycle.push(['finished',event.recipeId]);});
+   return {async execute(_input,ctx){
+    const artifact=await ctx.artifacts.putJson({kind:'file-tree',files:[]});
+    return {action:'initialize',target:{},capabilities:[],initialCandidateRef:await ctx.recordCandidate(artifact,null)};
+   },async dispose(){}};
+  }
+ });
+ registry.registerOperation({
+  id:'consumer.worker',contract,configSchema:{type:'object',additionalProperties:false},
+  async create(_config,factoryCtx){
+   assert.deepEqual(_config,{});
+   creations++;
+   factoryCtx.event.on('consumer/notice',function(event,ctx){
+    assert.equal(this.tag,'package');assert.equal(ctx.bindingId,'worker');
+    assert.equal(ctx.event,factoryCtx.event);deliveries.push(event.count);
+   });
+   factoryCtx.event.on('rsi/before-call',async(event,next)=>{admissions.push(event.bindingId);return next();});
+   return {async execute(_input,ctx){
+    assert.equal(ctx.event,factoryCtx.event);
+    await ctx.event.parallel({tag:'package'},'consumer/notice',{count:1});
+    return {};
+   },async dispose(){disposals++;}};
+  }
+ });
+}
+`,
+  );
   await writeFile(
     join(consumer, 'consume.mjs'),
     `
@@ -496,7 +588,8 @@ import {dirname,isAbsolute,relative,resolve,sep} from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import * as publicApi from 'arsi';
-import {createRuntime,Recipe,Policy,Binding,proposerContract,operatorProposerContract,operatorSummarizerContract,gridProposerContract,iterativeProposerContract,applicationContract,defineContract,RuntimeContext,prepareAgentProject} from 'arsi';
+import {register,contract,lifecycle,deliveries,admissions,creations,disposals} from './lifecycle-extension/index.mjs';
+import {createRuntime,Recipe,Policy,Binding,proposerContract,operatorProposerContract,operatorSummarizerContract,gridProposerContract,iterativeProposerContract,RuntimeContext,prepareAgentProject} from 'arsi';
 import {RuntimeContext as ContractContext,iterativeProposerContract as ContractsIterativeProposerContract} from 'arsi/contracts';
 assert.equal(RuntimeContext,ContractContext);
 assert.equal(iterativeProposerContract,ContractsIterativeProposerContract);
@@ -623,37 +716,7 @@ try {
    for(const prompt of ['diagnose.md','generate.md','diagnose-metrics.md','generate-metrics.md','repair.md'])assert.ok((await readFile(await packageResource(resolve(promptsDirectory,prompt)),'utf8')).trim().length);
   }
  }
- const lifecycle=[],deliveries=[],admissions=[];
- let creations=0,disposals=0;
- runtime.registry.registerOperation({
-  id:'consumer.application',contract:applicationContract,configSchema:{type:'object'},
-  async create(_config,factoryCtx){
-   factoryCtx.event.on('rsi/experiment-started',event=>lifecycle.push(['started',event.recipeId]));
-   factoryCtx.event.on('rsi/experiment-finished',event=>{lifecycle.push(['finished',event.recipeId]);});
-   return {async execute(_input,ctx){
-    const artifact=await ctx.artifacts.putJson({kind:'file-tree',files:[]});
-    return {action:'initialize',target:{},capabilities:[],initialCandidateRef:await ctx.recordCandidate(artifact,null)};
-   },async dispose(){}};
-  }
- });
- const contract=defineContract({id:'contract.consumer-worker',input_schema:{type:'object'},output_schema:{type:'object'}});
- runtime.registry.registerOperation({
-  id:'consumer.worker',contract,configSchema:{type:'object',additionalProperties:false},
-  async create(_config,factoryCtx){
-   assert.deepEqual(_config,{});
-   creations++;
-   factoryCtx.event.on('consumer/notice',function(event,ctx){
-    assert.equal(this.tag,'package');assert.equal(ctx.bindingId,'worker');
-    assert.equal(ctx.event,factoryCtx.event);deliveries.push(event.count);
-   });
-   factoryCtx.event.on('rsi/before-call',async(event,next)=>{admissions.push(event.bindingId);return next();});
-   return {async execute(_input,ctx){
-    assert.equal(ctx.event,factoryCtx.event);
-    await ctx.event.parallel({tag:'package'},'consumer/notice',{count:1});
-    return {};
-   },async dispose(){disposals++;}};
-  }
- });
+ register(runtime.registry);
  const policyPath=resolve(${JSON.stringify(outside)},'consumer-policy.yaml');
  await writeFile(policyPath,JSON.stringify({
   schemaVersion:'rsi.policy/v1',id:'consumer.policy',input_schema:{type:'object'},output_schema:{type:'object'},
@@ -684,12 +747,16 @@ console.log('Installed resources and managed ctx.event subscriptions, publishing
   });
   const installedCleanup = (...args) =>
     JSON.parse(
-      execFileSync(process.execPath, [command, 'cleanup', ...args], {
-        env: consumerEnv,
-        cwd: outside,
-        encoding: 'utf8',
-        timeout: 30000,
-      }),
+      execFileSync(
+        process.execPath,
+        [command, 'cleanup', '--plugin-dir', lifecycleExtension, ...args],
+        {
+          env: consumerEnv,
+          cwd: outside,
+          encoding: 'utf8',
+          timeout: 30000,
+        },
+      ),
     );
   const experimentId = 'consumer.experiment';
   for (const dryRun of [true, false]) {
@@ -836,6 +903,15 @@ export const doctorDefinition:OperationDefinition<ProposerInput,ProposerOutput,C
  id:'proposer.custom',contract:proposerContract,configSchema:{type:'object'},doctor:checkCustom,
  async create(){return{async execute(input){return{status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'};},async dispose(){}};}
 };
+export function register(registry: import('arsi').Registry): void {
+  registry.registerOperation(doctorDefinition, (events) => {
+    events.on('rsi/doctor', context => {
+      const path: string = context.binding.config.inputFile;
+      return {checks:[{id: 'input', status: 'passed', details: {path}}]};
+    });
+    events.on('rsi/cleanup', ({bindingId, dryRun}) => [{key: bindingId, status: dryRun ? 'preview' : 'complete'}]);
+  });
+}
 `,
   );
   const compiler = join(root, 'node_modules/typescript/bin/tsc');

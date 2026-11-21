@@ -3,6 +3,8 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Evaluator, loadConfig, type CleanupOptions } from 'arsi-evaluator';
 import type {
+  CleanupContext as BindingCleanupContext,
+  CleanupResult,
   JsonObject,
   JsonValue,
   RuntimeContext,
@@ -23,21 +25,11 @@ export type EvaluatorCleanupSource =
     }
   | { context: RuntimeContext; kind: 'kernel' };
 
-interface CleanupOutcome {
-  status: 'complete' | 'pending' | 'preview';
-  report?: JsonObject;
-  error?: string;
-}
-
-export interface CleanupReceiptResult extends CleanupOutcome {
-  key: string;
-  bindingId?: string;
-}
+type CleanupOutcome = Omit<CleanupResult, 'key'>;
 
 interface CleanupRequest {
-  binding?: { id: string; kind: EvaluatorCleanupSource['kind'] };
+  binding: { id: string; kind: EvaluatorCleanupSource['kind'] };
   dryRun?: boolean;
-  onResult?(result: CleanupReceiptResult): void;
 }
 
 const callKey = /^(call-[0-9a-f]{32})(?:-([0-9a-f]{24}))?$/;
@@ -193,7 +185,7 @@ function cleanupResult(value: unknown, dryRun: boolean): CleanupOutcome {
   };
 }
 
-/** Use the recorded call to identify the binding of older receipts. */
+/** Follow the call's retry chain to the exact attempt that wrote an older input. */
 async function recordedBinding(
   context: CleanupContext,
   entry: JsonObject,
@@ -205,14 +197,26 @@ async function recordedBinding(
   const match = typeof entry.key === 'string' && callKey.exec(entry.key);
   if (!match) return undefined;
   try {
-    const call = await context.facts.read('calls', match[1]);
-    if (
+    let call = await context.facts.read('calls', match[1]);
+    const seen = new Set<string>();
+    while (
       call.callId === match[1] &&
-      call.experimentId === context.experimentId &&
-      typeof call.bindingId === 'string' &&
-      call.bindingId.length
-    )
-      return call.bindingId;
+      call.experimentId === context.experimentId
+    ) {
+      const prior = call.recoveredFrom;
+      if ((prior ?? call.callId) === entry.key)
+        return typeof call.bindingId === 'string' && call.bindingId.length
+          ? call.bindingId
+          : undefined;
+      if (
+        typeof prior !== 'string' ||
+        callKey.exec(prior)?.[1] !== match[1] ||
+        seen.has(prior)
+      )
+        break;
+      seen.add(prior);
+      call = await context.facts.read('call-attempts', prior);
+    }
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
       return undefined;
@@ -220,60 +224,44 @@ async function recordedBinding(
   }
 }
 
-/** A retired instance can be disposed mid-experiment. Only the active binding sees the terminal event. */
-export function createEvaluatorDisposer(
-  context: RuntimeContext,
-  ownerKind: EvaluatorCleanupSource['kind'],
-): () => Promise<void> {
-  let succeeded = false;
-  const unsubscribe = context.event?.on('rsi/experiment-finished', (event) => {
-    if (event.experimentId === context.experimentId)
-      succeeded = event.status === 'succeeded';
+export async function cleanupEvaluatorBinding(
+  context: BindingCleanupContext,
+  kind: EvaluatorCleanupSource['kind'],
+): Promise<CleanupResult[]> {
+  return runEvaluatorCleanup(context, {
+    binding: { id: context.bindingId, kind },
+    dryRun: context.dryRun,
   });
-  async function dispose(): Promise<void> {
-    unsubscribe?.();
-    if (!succeeded) return;
-    const experiment = await context.facts.read(
-      'experiments',
-      context.experimentId,
-    );
-    if (
-      experiment.id === context.experimentId &&
-      experiment.status === 'succeeded'
-    )
-      await runEvaluatorCleanup(context.extend({ signal: context.cleanup }), {
-        binding: { id: context.bindingId, kind: ownerKind },
-      });
-  }
-  let disposal: Promise<void> | undefined;
-  return () => (disposal ??= dispose());
 }
 
 export async function runEvaluatorCleanup(
   context: CleanupContext,
-  { binding, dryRun = false, onResult }: CleanupRequest,
+  { binding, dryRun = false }: CleanupRequest,
   run: (options: CleanupOptions) => Promise<unknown> = (options) =>
     new Evaluator().cleanup(options),
-): Promise<void> {
+): Promise<CleanupResult[]> {
+  const results: CleanupResult[] = [];
   for await (const { kind, entry } of cleanupReceipts(context)) {
     if (
       entry.status !== 'pending' ||
       entry.experimentId !== context.experimentId ||
-      (binding && entry.kind !== binding.kind)
+      entry.kind !== binding.kind
     )
       continue;
     const bindingId = await recordedBinding(context, entry);
-    if (binding && bindingId !== binding.id) continue;
     const key = string(entry.key);
+    if (!bindingId) {
+      results.push({
+        key,
+        status: 'pending',
+        error: 'Cannot identify the binding that owns the Evaluator input',
+      });
+      continue;
+    }
+    if (bindingId !== binding.id) continue;
     let outcome: CleanupOutcome;
     try {
       context.signal.throwIfAborted();
-      if (!bindingId)
-        throw new Error(
-          'Cannot identify the binding that owns the Evaluator input',
-        );
-      if (entry.kind !== 'agentbundle' && entry.kind !== 'kernel')
-        throw new Error('Unknown Evaluator cleanup input kind');
       const path = configPath(context, key, entry.kind);
       if (!path) throw new Error('Invalid Evaluator cleanup call identity');
       if (digest(await readFile(path, 'utf8')) !== entry.inputDigest)
@@ -326,7 +314,7 @@ export async function runEvaluatorCleanup(
         throw new Error('Invalid Evaluator cleanup receipt');
       await context.facts.write(kind, key, {
         ...entry,
-        ...(bindingId ? { bindingId } : {}),
+        bindingId,
         status: outcome.status,
         attempts: [
           ...entry.attempts,
@@ -334,7 +322,8 @@ export async function runEvaluatorCleanup(
         ],
       });
     }
-    onResult?.({ key, ...(bindingId ? { bindingId } : {}), ...outcome });
+    results.push({ key, ...outcome });
     if (context.signal.aborted) break;
   }
+  return results;
 }

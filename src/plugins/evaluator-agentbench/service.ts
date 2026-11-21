@@ -10,7 +10,6 @@ import type {
 import { object, string, strings, unknownKeys } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { plain, redact } from '../shared/evaluator-adapter/data.js';
-import { createEvaluatorDisposer } from '../shared/evaluator-adapter/cleanup.js';
 import {
   sdkRunner,
   type EvaluatorRunner,
@@ -25,7 +24,7 @@ import {
 import { isFinalizedVerifierTimeout } from './finalized-timeout.js';
 export async function createAgentbench(
   config: AgentbenchConfig,
-  services: RuntimeContext,
+  _services: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<AgentbenchInput, AgentbenchOutput>> {
   validate(configSchema, config, 'evaluator config');
@@ -129,7 +128,7 @@ export async function createAgentbench(
         },
       );
     },
-    dispose: createEvaluatorDisposer(services, 'agentbundle'),
+    async dispose() {},
   };
 }
 

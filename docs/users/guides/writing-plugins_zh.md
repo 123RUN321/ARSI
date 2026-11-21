@@ -43,7 +43,7 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 | `contract`             | 声明插件遵循的公共契约。        | 必填，填写导入的契约对象，如 `proposerContract`。                                    |
 | `configSchema`         | 校验该实现的配置。              | 必填，填写 JSON Schema；没有配置时也声明对象 Schema。                                |
 | `create`               | 根据配置创建插件实例。          | 必填，填写异步函数 `create(config, context)`，返回含 `execute` 和 `dispose` 的对象。 |
-| `doctor`               | 在实验前诊断该组件的运行前提。  | 可选的 `OperationDoctor<C>` 函数，接收 `DoctorContext<C>` 并返回 `DoctorResult`。    |
+| `doctor`               | 在实验前诊断该组件的运行前提。  | 兼容已有定义。新插件在注册时订阅 `rsi/doctor`。 |
 | `implementationDigest` | 记录实现版本，供实验追溯。      | 可选，填写覆盖实际实现代码的摘要；代码变化时更新。                                   |
 
 - 省略 `implementationDigest` 时，Registry 根据 `create` 函数文本、契约和配置 Schema 生成摘要。
@@ -282,7 +282,7 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 arsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
 ```
 
-`doctor` 检查契约、绑定和配置，再调用每个所选组件定义上的可选 `doctor` 函数，并将返回的 `DoctorResult` 纳入报告。
+`doctor` 检查契约、绑定和配置，再向提供 `rsi/doctor` 处理器的每个选中绑定派发事件，并将返回的 `DoctorResult` 纳入报告。
 
 ## 使用 RuntimeContext
 
@@ -373,4 +373,4 @@ try {
 
 宿主中的注册只对该 Runtime 生效。另行启动 CLI 时，将扩展放入默认用户级目录自动加载，或使用 `--plugin-dir` 指定扩展目录。
 
-`Recipe.load` 装配并检查定义的结构，不执行前提探测。需要 CLI 预检时，使用相同的扩展注册运行 `arsi doctor`。在组件定义上增加可选 `doctor` 即可提供自己的诊断，公开回调和完整注册示例见[自定义组件如何接入 doctor](doctor_zh.md#4-自定义组件如何接入-doctor)。
+`Recipe.load` 装配并检查定义的结构，不执行前提探测。需要 CLI 预检时，使用相同的扩展注册运行 `arsi doctor`。注册 `rsi/doctor` 处理器即可提供组件诊断。公开回调和完整注册示例见[自定义组件如何接入 doctor](doctor_zh.md#4-自定义组件如何接入-doctor)。

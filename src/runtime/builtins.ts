@@ -16,13 +16,22 @@ import { optunaProposerDefinition } from '../plugins/proposer-optuna/index.js';
 import { paretoEvolutionProposerDefinition } from '../plugins/proposer-pareto-evolution/index.js';
 import { memoryDefinition } from '../plugins/memory-agent/index.js';
 import { reflectionDefinition } from '../plugins/reflection-agent/index.js';
-import { agentbenchDefinition } from '../plugins/evaluator-agentbench/index.js';
-import { inferencebenchDefinition } from '../plugins/evaluator-inferencebench/index.js';
+import {
+  agentbenchDefinition,
+  agentbenchEvents,
+} from '../plugins/evaluator-agentbench/index.js';
+import {
+  inferencebenchDefinition,
+  inferencebenchEvents,
+} from '../plugins/evaluator-inferencebench/index.js';
 import { inferenceSelectorDefinition } from '../plugins/selector-inference/index.js';
 import { metricSelectorDefinition } from '../plugins/selector-metrics/index.js';
 import { artifactSelectorDefinition } from '../plugins/selector-artifacts/index.js';
 import { kernelApplicationDefinition } from '../plugins/application-kernel/index.js';
-import { operatorbenchDefinition } from '../plugins/evaluator-operatorbench/index.js';
+import {
+  operatorbenchDefinition,
+  operatorbenchEvents,
+} from '../plugins/evaluator-operatorbench/index.js';
 import type { OperationDefinition } from '../contracts/index.js';
 /** Startup code is the sole built-in registration list. Registration never runs an experiment. */
 export async function registerBuiltins(registry: Registry): Promise<void> {
@@ -42,15 +51,15 @@ export async function registerBuiltins(registry: Registry): Promise<void> {
     paretoEvolutionProposerDefinition,
     memoryDefinition,
     reflectionDefinition,
-    agentbenchDefinition,
-    inferencebenchDefinition,
     inferenceSelectorDefinition,
     metricSelectorDefinition,
     artifactSelectorDefinition,
     kernelApplicationDefinition,
-    operatorbenchDefinition,
   ];
   for (const definition of definitions) registry.registerOperation(definition);
+  registry.registerOperation(agentbenchDefinition, agentbenchEvents);
+  registry.registerOperation(inferencebenchDefinition, inferencebenchEvents);
+  registry.registerOperation(operatorbenchDefinition, operatorbenchEvents);
   for (const path of [
     'harness2/policy.yaml',
     'wikiskill/policy.yaml',

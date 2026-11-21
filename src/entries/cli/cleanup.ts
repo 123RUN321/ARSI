@@ -1,8 +1,12 @@
-import type { FactStore } from '../../contracts/index.js';
 import {
-  runEvaluatorCleanup,
-  type CleanupReceiptResult,
-} from '../../plugins/shared/evaluator-adapter/cleanup.js';
+  cleanupFacts,
+  collectBindingCleanup,
+  type BindingCleanupResult,
+} from '../../runtime/manager/resource-cleanup.js';
+import {
+  legacyBindingReader,
+  readUsedBindings,
+} from '../../runtime/manager/binding-history.js';
 import type { Manager } from '../../runtime/manager/index.js';
 import { acquireExecutionLock } from '../../runtime/manager/execution-lock.js';
 import { readExperimentRecord } from '../../runtime/manager/records.js';
@@ -16,7 +20,7 @@ class ExperimentInUseError extends Error {}
 interface ExperimentCleanupReport {
   experimentId: string;
   dryRun: boolean;
-  results: CleanupReceiptResult[];
+  results: BindingCleanupResult[];
 }
 
 type WorkspaceCleanupEntry = Pick<
@@ -34,6 +38,7 @@ async function collectExperimentCleanup(
   manager: Manager,
   { experimentId, dryRun, results }: ExperimentCleanupReport,
   signal: AbortSignal,
+  legacy?: ReturnType<typeof legacyBindingReader>,
 ): Promise<void> {
   signal.throwIfAborted();
   const experiment = readExperimentRecord(
@@ -71,23 +76,17 @@ async function collectExperimentCleanup(
     const cleanupSignal = AbortSignal.any([signal, ownership.signal]);
     cleanupSignal.throwIfAborted();
     const store = manager.facts;
-    const facts: FactStore = {
-      read: store.read.bind(store),
-      list: store.list.bind(store),
-      scan: store.scan?.bind(store),
-      write(kind, id, value) {
-        ownership.signal.throwIfAborted();
-        return store.write(kind, id, value);
-      },
-    };
-    await runEvaluatorCleanup(
+    await collectBindingCleanup(
+      manager.options.registry,
       {
         experimentId,
+        dryRun,
         dataDirectory: manager.directory,
-        facts,
+        facts: cleanupFacts(store, ownership.signal, dryRun),
         signal: cleanupSignal,
       },
-      { dryRun, onResult: (result) => results.push(result) },
+      await readUsedBindings(store, experimentId, legacy),
+      results,
     );
     ownership.signal.throwIfAborted();
   } finally {
@@ -119,12 +118,18 @@ export async function cleanupWorkspace(
       : (await manager.list()).map((record) =>
           string(record.id, 'experiment ID'),
         );
+  const legacy = legacyBindingReader(manager.facts, new Set(ids));
   for (const experimentId of ids) {
     if (signal.aborted) break;
-    const results: CleanupReceiptResult[] = [];
+    const results: BindingCleanupResult[] = [];
     const entry = { experimentId, results };
     try {
-      await collectExperimentCleanup(manager, { ...entry, dryRun }, signal);
+      await collectExperimentCleanup(
+        manager,
+        { ...entry, dryRun },
+        signal,
+        legacy,
+      );
       signal.throwIfAborted();
       const status = results.some((entry) => entry.status === 'pending')
         ? 'pending'
