@@ -84,6 +84,20 @@ export async function runCommand(
     .command('cancel <experiment-id>')
     .description('Cancel an experiment')
     .action(cancelExperiment);
+  program
+    .command('cleanup <experiment-id>')
+    .description(
+      'Release recorded experiment resources and keep checkpoints, results and logs',
+    )
+    .option(
+      '--dry-run',
+      'Preview eligible resources and reasons for retaining others',
+    )
+    .addHelpText(
+      'after',
+      '\nThe experiment can still be resumed. Required images may be pulled or built again.',
+    )
+    .action(cleanup);
   const reflection = program
     .command('reflection')
     .description('Inspect and apply reflection revisions');
@@ -162,6 +176,23 @@ export async function runCommand(
       await manager.cancel(id);
       return { id, cancellationRequested: true };
     });
+  }
+
+  async function cleanup(
+    id: string,
+    { dryRun = false }: { dryRun?: boolean },
+  ): Promise<void> {
+    const { manager } = await openRuntime();
+    const { cleanupExperiment } = await import('./cleanup.js');
+    const report = await cleanupExperiment(manager, id, dryRun, context.signal);
+    result = {
+      exitCode: context.signal.aborted
+        ? 130
+        : report.results.some((entry) => entry.status === 'pending')
+          ? 1
+          : 0,
+      json: report,
+    };
   }
 
   function forRevision(

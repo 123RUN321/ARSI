@@ -682,6 +682,26 @@ console.log('Installed resources and managed ctx.event subscriptions, publishing
     stdio: 'inherit',
     timeout: 30000,
   });
+  for (const flags of [['--dry-run'], []]) {
+    const cleanup = execFileSync(
+      process.execPath,
+      [command, 'cleanup', 'consumer.experiment', ...flags],
+      {
+        env: consumerEnv,
+        cwd: outside,
+        encoding: 'utf8',
+        timeout: 30000,
+      },
+    );
+    assert.deepEqual(JSON.parse(cleanup), {
+      experimentId: 'consumer.experiment',
+      dryRun: flags.length > 0,
+      results: [],
+    });
+  }
+  console.log(
+    'Installed CLI preview and cleanup passed for an experiment without recorded resources.',
+  );
   run(
     [
       'add',

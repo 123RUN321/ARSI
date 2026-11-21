@@ -13,7 +13,7 @@ import { clone, redact } from './data.js';
 
 type CleanupContext = Pick<
   RuntimeContext,
-  'experimentId' | 'bindingId' | 'dataDirectory' | 'facts' | 'signal'
+  'experimentId' | 'dataDirectory' | 'facts' | 'signal'
 >;
 export type EvaluatorCleanupSource =
   | {
@@ -22,6 +22,23 @@ export type EvaluatorCleanupSource =
       workspaceRef: JsonValue | undefined;
     }
   | { context: RuntimeContext; kind: 'kernel' };
+
+interface CleanupOutcome {
+  status: 'complete' | 'pending' | 'preview';
+  report?: JsonObject;
+  error?: string;
+}
+
+export interface CleanupReceiptResult extends CleanupOutcome {
+  key: string;
+  bindingId?: string;
+}
+
+interface CleanupRequest {
+  binding?: { id: string; kind: EvaluatorCleanupSource['kind'] };
+  dryRun?: boolean;
+  onResult?(result: CleanupReceiptResult): void;
+}
 
 const callKey = /^(call-[0-9a-f]{32})(?:-([0-9a-f]{24}))?$/;
 
@@ -134,10 +151,7 @@ export async function recordCleanupInput(
   });
 }
 
-function cleanupResult(value: unknown): {
-  status: 'complete' | 'pending';
-  report: JsonObject;
-} {
+function cleanupResult(value: unknown, dryRun: boolean): CleanupOutcome {
   const report = object(value, 'Evaluator cleanup report');
   if (
     typeof report.preview !== 'boolean' ||
@@ -145,7 +159,7 @@ function cleanupResult(value: unknown): {
     !report.nodes.length
   )
     throw new Error('Evaluator returned an invalid cleanup report');
-  let pending = report.preview;
+  let pending = report.preview !== dryRun;
   for (const raw of report.nodes) {
     const node = object(raw, 'cleanup node');
     if (
@@ -166,35 +180,42 @@ function cleanupResult(value: unknown): {
         )
       )
         throw new Error('Invalid Evaluator cleanup item');
-      if (item.status !== 'deleted' && item.status !== 'retained')
+      if (
+        item.status === 'failed' ||
+        (!dryRun && item.status !== 'deleted' && item.status !== 'retained')
+      )
         pending = true;
     }
   }
   return {
-    status: pending ? 'pending' : 'complete',
+    status: pending ? 'pending' : dryRun ? 'preview' : 'complete',
     report: object(redact(report)),
   };
 }
 
 /** Use the recorded call to identify the binding of older receipts. */
-async function ownsBinding(
+async function recordedBinding(
   context: CleanupContext,
   entry: JsonObject,
-): Promise<boolean> {
+): Promise<string | undefined> {
   if (entry.bindingId !== undefined)
-    return entry.bindingId === context.bindingId;
+    return typeof entry.bindingId === 'string' && entry.bindingId.length
+      ? entry.bindingId
+      : undefined;
   const match = typeof entry.key === 'string' && callKey.exec(entry.key);
-  if (!match) return false;
+  if (!match) return undefined;
   try {
     const call = await context.facts.read('calls', match[1]);
-    return (
+    if (
       call.callId === match[1] &&
       call.experimentId === context.experimentId &&
-      call.bindingId === context.bindingId
-    );
+      typeof call.bindingId === 'string' &&
+      call.bindingId.length
+    )
+      return call.bindingId;
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-      return false;
+      return undefined;
     throw error;
   }
 }
@@ -220,10 +241,9 @@ export function createEvaluatorDisposer(
       experiment.id === context.experimentId &&
       experiment.status === 'succeeded'
     )
-      await runEvaluatorCleanup(
-        context.extend({ signal: context.cleanup }),
-        ownerKind,
-      );
+      await runEvaluatorCleanup(context.extend({ signal: context.cleanup }), {
+        binding: { id: context.bindingId, kind: ownerKind },
+      });
   }
   let disposal: Promise<void> | undefined;
   return () => (disposal ??= dispose());
@@ -231,7 +251,7 @@ export function createEvaluatorDisposer(
 
 export async function runEvaluatorCleanup(
   context: CleanupContext,
-  ownerKind: EvaluatorCleanupSource['kind'],
+  { binding, dryRun = false, onResult }: CleanupRequest,
   run: (options: CleanupOptions) => Promise<unknown> = (options) =>
     new Evaluator().cleanup(options),
 ): Promise<void> {
@@ -239,15 +259,22 @@ export async function runEvaluatorCleanup(
     if (
       entry.status !== 'pending' ||
       entry.experimentId !== context.experimentId ||
-      entry.kind !== ownerKind ||
-      !(await ownsBinding(context, entry))
+      (binding && entry.kind !== binding.kind)
     )
       continue;
+    const bindingId = await recordedBinding(context, entry);
+    if (binding && bindingId !== binding.id) continue;
     const key = string(entry.key);
-    let outcome: JsonObject;
+    let outcome: CleanupOutcome;
     try {
       context.signal.throwIfAborted();
-      const path = configPath(context, key, ownerKind);
+      if (!bindingId)
+        throw new Error(
+          'Cannot identify the binding that owns the Evaluator input',
+        );
+      if (entry.kind !== 'agentbundle' && entry.kind !== 'kernel')
+        throw new Error('Unknown Evaluator cleanup input kind');
+      const path = configPath(context, key, entry.kind);
       if (!path) throw new Error('Invalid Evaluator cleanup call identity');
       if (digest(await readFile(path, 'utf8')) !== entry.inputDigest)
         throw new Error('Evaluator input changed after the recorded call');
@@ -280,9 +307,10 @@ export async function runEvaluatorCleanup(
       outcome = cleanupResult(
         await run({
           configPath: path,
-          execute: true,
+          execute: !dryRun,
           signal,
         }),
+        dryRun,
       );
       if (signal.aborted)
         outcome = {
@@ -293,17 +321,20 @@ export async function runEvaluatorCleanup(
     } catch (error) {
       outcome = { status: 'pending', error: errorText(error) };
     }
-    if (!Array.isArray(entry.attempts))
-      throw new Error('Invalid Evaluator cleanup receipt');
-    await context.facts.write(kind, key, {
-      ...entry,
-      bindingId: context.bindingId,
-      status: outcome.status,
-      attempts: [
-        ...entry.attempts,
-        { at: new Date().toISOString(), ...outcome },
-      ],
-    });
+    if (!dryRun) {
+      if (!Array.isArray(entry.attempts))
+        throw new Error('Invalid Evaluator cleanup receipt');
+      await context.facts.write(kind, key, {
+        ...entry,
+        ...(bindingId ? { bindingId } : {}),
+        status: outcome.status,
+        attempts: [
+          ...entry.attempts,
+          { at: new Date().toISOString(), ...outcome },
+        ],
+      });
+    }
+    onResult?.({ key, ...(bindingId ? { bindingId } : {}), ...outcome });
     if (context.signal.aborted) break;
   }
 }

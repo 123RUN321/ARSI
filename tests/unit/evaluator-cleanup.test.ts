@@ -20,6 +20,7 @@ import { object } from '../../src/shared/json.js';
 import {
   runEvaluatorCleanup,
   recordCleanupInput,
+  type CleanupReceiptResult,
 } from '../../src/plugins/shared/evaluator-adapter/cleanup.js';
 import {
   createAgentbench,
@@ -31,6 +32,10 @@ import {
 } from '../../src/plugins/evaluator-operatorbench/service.js';
 import { registerBuiltins } from '../../src/runtime/builtins.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
+
+const agentCleanup = {
+  binding: { id: 'agent-evaluator', kind: 'agentbundle' },
+} as const;
 
 async function fixture(t: test.TestContext) {
   const dataDirectory = await mkdtemp(join(tmpdir(), 'rsi-evaluator-cleanup-'));
@@ -57,7 +62,7 @@ async function fixture(t: test.TestContext) {
   });
   const context = new RuntimeContext().extend({
     experimentId,
-    bindingId: 'agent-evaluator',
+    bindingId: agentCleanup.binding.id,
     callId: 'call-' + 'a'.repeat(32),
     dataDirectory,
     facts,
@@ -224,7 +229,7 @@ test('older receipts require a call identifying the same experiment and binding'
     paths.push(configPath);
     return report('retained');
   };
-  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, agentCleanup, run);
   for (const [experimentId, owner] of [
     ['foreign', f.context.bindingId],
     [f.context.experimentId, 'other'],
@@ -234,7 +239,7 @@ test('older receipts require a call identifying the same experiment and binding'
       experimentId,
       bindingId: owner,
     });
-    await runEvaluatorCleanup(f.context, 'agentbundle', run);
+    await runEvaluatorCleanup(f.context, agentCleanup, run);
   }
   assert.deepEqual((await f.read(entry.key)).attempts, []);
   await f.context.facts.write('calls', entry.key, {
@@ -242,7 +247,7 @@ test('older receipts require a call identifying the same experiment and binding'
     experimentId: f.context.experimentId,
     bindingId,
   });
-  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, agentCleanup, run);
   assert.deepEqual(paths, [entry.path]);
   assert.equal((await f.read(entry.key)).bindingId, bindingId);
 });
@@ -259,7 +264,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
     'failed',
     'candidate',
   );
-  await runEvaluatorCleanup(f.context, 'agentbundle', async (options) => {
+  await runEvaluatorCleanup(f.context, agentCleanup, async (options) => {
     assert.equal(options.execute, true);
     paths.push(options.configPath);
     return options.configPath === first.path ? partial : report('retained');
@@ -270,7 +275,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   assert.equal(pending.status, 'pending');
   assert.ok(Array.isArray(pending.attempts));
   assert.deepEqual(object(pending.attempts[0]).report, partial);
-  await runEvaluatorCleanup(f.context, 'agentbundle', async (options) => {
+  await runEvaluatorCleanup(f.context, agentCleanup, async (options) => {
     assert.equal(options.configPath, first.path);
     return report('deleted');
   });
@@ -278,9 +283,43 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   assert.equal(final.status, 'complete');
   assert.ok(Array.isArray(final.attempts));
   assert.equal(final.attempts.length, 2);
-  await runEvaluatorCleanup(f.context, 'agentbundle', async () =>
+  await runEvaluatorCleanup(f.context, agentCleanup, async () =>
     assert.fail('completed input was replayed'),
   );
+});
+
+test('manual preview reports an unverified receipt and leaves both bindings untouched', async (t) => {
+  const f = await fixture(t);
+  const owned = await f.register();
+  const peer = f.context.extend({
+    bindingId: 'peer',
+    callId: 'call-' + 'e'.repeat(32),
+  });
+  const other = await f.register(undefined, randomUUID(), {}, peer);
+  const { bindingId, ...unverified } = await f.read(owned.key);
+  assert.equal(bindingId, f.context.bindingId);
+  await f.context.facts.write(f.kind, owned.key, unverified);
+  const before = await f.context.facts.list(f.kind);
+  const results: CleanupReceiptResult[] = [];
+  const paths: string[] = [];
+  await runEvaluatorCleanup(
+    f.context,
+    { dryRun: true, onResult: (item) => results.push(item) },
+    async (options) => {
+      assert.equal(options.execute, false);
+      paths.push(options.configPath);
+      return { ...report('candidate'), preview: true };
+    },
+  );
+  assert.deepEqual(paths, [other.path]);
+  assert.equal(
+    results.find((item) => item.bindingId === 'peer')?.status,
+    'preview',
+  );
+  const pending = results.find((item) => item.key === owned.key);
+  assert.equal(pending?.status, 'pending');
+  assert.match(pending?.error ?? '', /identify the binding/);
+  assert.deepEqual(await f.context.facts.list(f.kind), before);
 });
 
 test('cleanup resumes legacy receipts and processes each call only once across both collections', async (t) => {
@@ -288,7 +327,7 @@ test('cleanup resumes legacy receipts and processes each call only once across b
   const { dataDirectory, experimentId, facts } = f.context;
   const legacyKind = `evaluator-images-${experimentId}`;
   const older = await f.register();
-  await runEvaluatorCleanup(f.context, 'agentbundle', async () =>
+  await runEvaluatorCleanup(f.context, agentCleanup, async () =>
     report('skipped'),
   );
   const prior = await f.read(older.key);
@@ -305,8 +344,8 @@ test('cleanup resumes legacy receipts and processes each call only once across b
     paths.push(configPath);
     return report('retained');
   };
-  await runEvaluatorCleanup(f.context, 'agentbundle', run);
-  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, agentCleanup, run);
+  await runEvaluatorCleanup(f.context, agentCleanup, run);
 
   assert.deepEqual(paths.sort(), [older.path, current.path].sort());
   const resumed = await facts.read(legacyKind, older.key);
@@ -330,11 +369,11 @@ test('uncertain ownership, edited input and an unrelated experiment never invoke
   };
   await runEvaluatorCleanup(
     f.context.extend({ experimentId: 'elsewhere' }),
-    'agentbundle',
+    agentCleanup,
     run,
   );
   assert.deepEqual((await f.read(shared.key)).attempts, []);
-  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, agentCleanup, run);
   assert.deepEqual(calls, []);
   assert.match(
     JSON.stringify((await f.read(edited.key)).attempts),
@@ -353,16 +392,16 @@ test('an aborted cleanup or an SDK error stays retryable with a recorded reason'
     f.context.extend({
       signal: AbortSignal.abort(new Error('cleanup deadline')),
     }),
-    'agentbundle',
+    agentCleanup,
   );
-  await runEvaluatorCleanup(f.context, 'agentbundle', async () => {
+  await runEvaluatorCleanup(f.context, agentCleanup, async () => {
     throw new Error('daemon unavailable');
   });
   const controller = new AbortController();
   const partial = report('deleted', 'skipped');
   await runEvaluatorCleanup(
     f.context.extend({ signal: controller.signal }),
-    'agentbundle',
+    agentCleanup,
     async () => {
       controller.abort(new Error('interrupted after one removal'));
       return partial;
@@ -398,11 +437,11 @@ test('a changed configuration variable does not settle cleanup against a differe
     calls++;
     return report();
   };
-  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, agentCleanup, run);
   assert.equal(calls, 0);
   assert.equal((await f.read(entry.key)).status, 'pending');
   process.env.RSI_CLEANUP_TEST_IMAGE = 'fixture/original:1';
-  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, agentCleanup, run);
   assert.equal(calls, 1);
   assert.equal((await f.read(entry.key)).status, 'complete');
 });
@@ -439,8 +478,10 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   await writeFile(path, JSON.stringify(config));
   await recordCleanupInput({ context, kind: 'kernel' }, path, process.env);
   const issued: string[] = [];
-  await runEvaluatorCleanup(context, 'agentbundle', async () =>
-    assert.fail('AgentBench consumed a kernel input'),
+  await runEvaluatorCleanup(
+    context,
+    { binding: { id: context.bindingId, kind: 'agentbundle' } },
+    async () => assert.fail('AgentBench consumed a kernel input'),
   );
   assert.deepEqual((await f.read(callId)).attempts, []);
   const events = experimentEvents(t, context);
@@ -478,10 +519,14 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
     JSON.stringify((await f.read(callId)).attempts),
     /operator cleanup deadline/,
   );
-  await runEvaluatorCleanup(context, 'kernel', async (options) => {
-    issued.push(options.configPath);
-    return report('retained');
-  });
+  await runEvaluatorCleanup(
+    context,
+    { binding: { id: context.bindingId, kind: 'kernel' } },
+    async (options) => {
+      issued.push(options.configPath);
+      return report('retained');
+    },
+  );
   assert.deepEqual(issued, [path], JSON.stringify(await f.read(callId)));
   assert.equal((await f.read(callId)).status, 'complete');
 });

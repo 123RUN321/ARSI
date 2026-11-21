@@ -1,8 +1,6 @@
 import { agentProcessLauncher } from '../services/agent-execution/process.js';
 import { errorText } from '../../shared/errors.js';
-import { mkdir } from 'node:fs/promises';
-import { lock as acquireProcessLock } from 'proper-lockfile';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type {
   ArtifactStore,
@@ -17,7 +15,7 @@ import { RuntimeContext } from '../../contracts/runtime/context.js';
 import { object, string, digest } from '../../shared/json.js';
 import { createCallExecutor, type CallExecutor } from './calls.js';
 import { Instances } from './instances.js';
-import { executionLockPath, executionLockTiming } from './execution-lock.js';
+import { acquireExecutionLock } from './execution-lock.js';
 import { ManagedEvents } from '../services/events.js';
 import {
   FileArtifacts,
@@ -189,15 +187,12 @@ export class Manager {
         recipe = await Recipe.load(recipePath, this.options.registry);
         id = safeId(options.id ?? `${recipe.id}-${randomUUID().slice(0, 8)}`);
       }
-      const lock = executionLockPath(this.directory, id);
-      await mkdir(dirname(lock), { recursive: true });
-      gate.assertOwned();
-      releaseLock = await acquireProcessLock(lock, {
-        realpath: false,
-        ...executionLockTiming,
-        retries: 0,
-        onCompromised: (error) => controller.abort(error),
-      });
+      releaseLock = await acquireExecutionLock(
+        this.directory,
+        id,
+        gate,
+        controller,
+      );
     } finally {
       await gate.release();
     }
