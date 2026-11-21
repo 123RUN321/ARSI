@@ -1,0 +1,548 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  RuntimeContext,
+  agentContract,
+  gymContract,
+  memoryContract,
+  proposerContract,
+  metricSelectorContract,
+  type JsonObject,
+} from '../../src/contracts/index.js';
+import { Policy } from '../../src/runtime/policy/index.js';
+import { object, string } from '../../src/shared/json.js';
+
+const policyContracts = {
+  [agentContract.id]: agentContract,
+  [gymContract.id]: gymContract,
+  [memoryContract.id]: memoryContract,
+  [proposerContract.id]: proposerContract,
+  [metricSelectorContract.id]: metricSelectorContract,
+};
+
+const policyContractResolver = {
+  contract(id: string) {
+    const contract = Object.hasOwn(policyContracts, id)
+      ? policyContracts[id as keyof typeof policyContracts]
+      : undefined;
+    if (contract === undefined) throw new Error(`Unknown contract ${id}`);
+    return contract;
+  },
+};
+
+async function loadGymPolicy(): Promise<Policy> {
+  return Policy.load(
+    'src/policies/gym-rsi/policy.yaml',
+    policyContractResolver,
+  );
+}
+
+test('policy.gym-rsi keeps promotion as a top-level post-search step', async () => {
+  const policy = await loadGymPolicy();
+  const definition = policy.toJSON();
+  const rawSteps = definition.steps;
+  if (!Array.isArray(rawSteps)) throw new Error('Policy steps are missing');
+  const promotionPaths: string[] = [];
+  const visit = (steps: unknown[], path: string): void => {
+    for (const step of steps) {
+      if (step === null || typeof step !== 'object' || Array.isArray(step))
+        continue;
+      const record = object(step);
+      const id = string(record.id, `${path}.id`);
+      const stepPath = `${path}/${id}`;
+      if (record.type === 'invoke' && record.use === 'promotion')
+        promotionPaths.push(stepPath);
+      for (const key of ['steps', 'then', 'else']) {
+        const child = record[key];
+        if (Array.isArray(child)) visit(child, stepPath);
+        else if (
+          child !== null &&
+          typeof child === 'object' &&
+          !Array.isArray(child)
+        ) {
+          const nested = object(child).steps;
+          if (Array.isArray(nested)) visit(nested, stepPath);
+        }
+      }
+    }
+  };
+  visit(rawSteps, 'steps');
+  assert.deepEqual(promotionPaths, ['steps/promotion']);
+
+  const searchIndex = rawSteps.findIndex(
+    (step) =>
+      step !== null &&
+      typeof step === 'object' &&
+      !Array.isArray(step) &&
+      object(step).id === 'search',
+  );
+  const promotionIndex = rawSteps.findIndex(
+    (step) =>
+      step !== null &&
+      typeof step === 'object' &&
+      !Array.isArray(step) &&
+      object(step).id === 'promotion',
+  );
+  assert.ok(searchIndex >= 0);
+  assert.ok(promotionIndex > searchIndex);
+});
+
+function policyConfig(): JsonObject {
+  return {
+    maxRounds: 1,
+    dataset: {
+      trainTaskIds: ['train'],
+      validationTaskIds: ['val'],
+    },
+  };
+}
+
+test('policy.gym-rsi promotes after search and exposes the effective candidate', async () => {
+  const policy = await loadGymPolicy();
+  const calls: { name: string; input: JsonObject }[] = [];
+  const result = object(
+    await policy.execute({
+      input: { candidateRef: 'h0' },
+      config: policyConfig(),
+      application: {},
+      context: new RuntimeContext().extend({
+        signal: new AbortController().signal,
+      }),
+      checkpoint: async () => {},
+      invoke: async (name, raw): Promise<JsonObject> => {
+        const input = object(raw);
+        calls.push({ name, input });
+        if (name === 'evaluator') {
+          const taskId = (input.taskIds as string[])[0];
+          return {
+            action: 'evaluate',
+            measurementRef:
+              taskId === 'train'
+                ? 'm-train'
+                : input.candidateRef === 'h0'
+                  ? 'm-baseline'
+                  : 'm-val',
+          };
+        }
+        if (name === 'memoryUpdater')
+          return {
+            status: 'updated',
+            memoryRef: 'wiki',
+            changeRef: 'memory-change',
+            reason: 'Training evidence recorded.',
+          };
+        if (name === 'proposer')
+          return {
+            status: 'created',
+            candidateRef: 'c1',
+            diffRef: 'diff',
+            rationale: 'Improve the skill.',
+          };
+        if (name === 'selector')
+          return {
+            accepted: true,
+            candidateFeasible: true,
+            selectedCandidateRef: 'c1',
+            measurementRef: 'm-val',
+            decisionRef: 'decision',
+            reason: 'Validation improved.',
+            metric: 'successRate',
+            incumbentValue: 0.5,
+            candidateValue: 0.8,
+            selectedValue: 0.8,
+          };
+        if (name === 'promotion') {
+          assert.deepEqual(input, {
+            action: 'promote',
+            candidateRef: 'c1',
+            incumbentRef: 'h0',
+          });
+          return {
+            action: 'promote',
+            decision: 'promote',
+            reason: 'Candidate strictly beats incumbent on holdout.',
+            promotionRef: 'artifact:promotion',
+          };
+        }
+        throw new Error(`unexpected binding ${name}`);
+      },
+    }),
+  );
+
+  assert.equal(calls.at(-1)!.name, 'promotion');
+  assert.deepEqual(
+    calls.find((call) => call.name === 'memoryUpdater')!.input.evidenceRefs,
+    ['m-train'],
+  );
+  assert.equal(result.searchCandidateRef, 'c1');
+  assert.equal(result.effectiveRef, 'c1');
+  assert.equal(result.candidateRef, 'c1');
+  assert.equal(result.searchMeasurementRef, 'm-val');
+  assert.equal(result.measurementRef, 'm-val');
+  assert.equal(result.promotionDecision, 'promote');
+  assert.equal(result.promotionRef, 'artifact:promotion');
+});
+
+test('policy.gym-rsi keeps the original incumbent effective when promotion is declined', async () => {
+  const policy = await loadGymPolicy();
+  const result = object(
+    await policy.execute({
+      input: { candidateRef: 'h0' },
+      config: policyConfig(),
+      application: {},
+      context: new RuntimeContext().extend({
+        signal: new AbortController().signal,
+      }),
+      checkpoint: async () => {},
+      invoke: async (name, raw): Promise<JsonObject> => {
+        const input = object(raw);
+        if (name === 'evaluator') {
+          const taskId = (input.taskIds as string[])[0];
+          return {
+            action: 'evaluate',
+            measurementRef:
+              taskId === 'train'
+                ? 'm-train'
+                : input.candidateRef === 'h0'
+                  ? 'm-baseline'
+                  : 'm-val',
+          };
+        }
+        if (name === 'memoryUpdater')
+          return {
+            status: 'no-change',
+            memoryRef: input.memoryRef,
+            changeRef: null,
+            reason: 'No update.',
+          };
+        if (name === 'proposer')
+          return {
+            status: 'created',
+            candidateRef: 'c1',
+            diffRef: 'diff',
+            rationale: 'Improve the skill.',
+          };
+        if (name === 'selector')
+          return {
+            accepted: true,
+            candidateFeasible: true,
+            selectedCandidateRef: 'c1',
+            measurementRef: 'm-val',
+            decisionRef: 'decision',
+            reason: 'Validation improved.',
+            metric: 'successRate',
+            incumbentValue: 0.5,
+            candidateValue: 0.8,
+            selectedValue: 0.8,
+          };
+        if (name === 'promotion')
+          return {
+            action: 'promote',
+            decision: 'keep-incumbent',
+            reason: 'Holdout did not improve.',
+            promotionRef: 'artifact:promotion',
+          };
+        throw new Error(`unexpected binding ${name}`);
+      },
+    }),
+  );
+
+  assert.equal(result.searchCandidateRef, 'c1');
+  assert.equal(result.effectiveRef, 'h0');
+  assert.equal(result.candidateRef, 'h0');
+  assert.equal(result.searchMeasurementRef, 'm-val');
+  assert.equal(result.measurementRef, 'm-baseline');
+  assert.equal(result.promotionDecision, 'keep-incumbent');
+});
+
+test('policy.gym-rsi always runs its explicit promotion step', async () => {
+  const policy = await loadGymPolicy();
+  const promotions: JsonObject[] = [];
+  const result = object(
+    await policy.execute({
+      input: { candidateRef: 'h0' },
+      config: policyConfig(),
+      application: {},
+      context: new RuntimeContext().extend({
+        signal: new AbortController().signal,
+      }),
+      checkpoint: async () => {},
+      invoke: async (name, raw): Promise<JsonObject> => {
+        const input = object(raw);
+        if (name === 'evaluator')
+          return { action: 'evaluate', measurementRef: 'm-train' };
+        if (name === 'memoryUpdater')
+          return {
+            status: 'no-change',
+            memoryRef: input.memoryRef,
+            changeRef: null,
+            reason: 'No update.',
+          };
+        if (name === 'proposer')
+          return {
+            status: 'no-change',
+            candidateRef: 'h0',
+            diffRef: null,
+            rationale: 'No edit.',
+          };
+        if (name === 'promotion') {
+          promotions.push(input);
+          return {
+            action: 'promote',
+            decision: 'keep-incumbent',
+            reason: 'No candidate to promote.',
+            promotionRef: 'artifact:promotion',
+          };
+        }
+        throw new Error(`unexpected binding ${name}`);
+      },
+    }),
+  );
+
+  assert.deepEqual(promotions, [
+    { action: 'promote', candidateRef: 'h0', incumbentRef: 'h0' },
+  ]);
+  assert.equal(result.searchCandidateRef, 'h0');
+  assert.equal(result.effectiveRef, 'h0');
+  assert.equal(result.promotionDecision, 'keep-incumbent');
+});
+
+test('policy.gym-rsi advances a tied candidate to holdout', async () => {
+  const policy = await loadGymPolicy();
+  let promotionInput: JsonObject | null = null;
+  const result = object(
+    await policy.execute({
+      input: { candidateRef: 'h0' },
+      config: policyConfig(),
+      application: {},
+      context: new RuntimeContext().extend({
+        signal: new AbortController().signal,
+      }),
+      checkpoint: async () => {},
+      invoke: async (name, raw): Promise<JsonObject> => {
+        const input = object(raw);
+        if (name === 'evaluator') {
+          const taskId = (input.taskIds as string[])[0];
+          return {
+            action: 'evaluate',
+            measurementRef: taskId === 'train' ? 'm-train' : 'm-val',
+          };
+        }
+        if (name === 'memoryUpdater')
+          return {
+            status: 'no-change',
+            memoryRef: input.memoryRef,
+            changeRef: null,
+            reason: 'No update.',
+          };
+        if (name === 'proposer')
+          return {
+            status: 'created',
+            candidateRef: 'c1',
+            diffRef: 'diff',
+            rationale: 'Improve the skill.',
+          };
+        if (name === 'selector')
+          return {
+            accepted: false,
+            candidateFeasible: true,
+            selectedCandidateRef: 'h0',
+            measurementRef: 'm-val',
+            decisionRef: 'decision',
+            reason: 'Validation tied.',
+            metric: 'successRate',
+            incumbentValue: 1,
+            candidateValue: 1,
+            selectedValue: 1,
+          };
+        if (name === 'promotion') {
+          promotionInput = input;
+          return {
+            action: 'promote',
+            decision: 'promote',
+            reason: 'Candidate beats incumbent on holdout.',
+            promotionRef: 'artifact:promotion',
+          };
+        }
+        throw new Error(`unexpected binding ${name}`);
+      },
+    }),
+  );
+
+  assert.deepEqual(promotionInput, {
+    action: 'promote',
+    candidateRef: 'c1',
+    incumbentRef: 'h0',
+  });
+  assert.equal(result.searchCandidateRef, 'c1');
+  assert.equal(result.effectiveRef, 'c1');
+  assert.equal(result.promotionDecision, 'promote');
+});
+
+test('policy.gym-rsi does not advance an infeasible tie to holdout', async () => {
+  const policy = await loadGymPolicy();
+  let promotionInput: JsonObject | null = null;
+  const result = object(
+    await policy.execute({
+      input: { candidateRef: 'h0' },
+      config: policyConfig(),
+      application: {},
+      context: new RuntimeContext().extend({
+        signal: new AbortController().signal,
+      }),
+      checkpoint: async () => {},
+      invoke: async (name, raw): Promise<JsonObject> => {
+        const input = object(raw);
+        if (name === 'evaluator') {
+          const taskId = (input.taskIds as string[])[0];
+          return {
+            action: 'evaluate',
+            measurementRef: taskId === 'train' ? 'm-train' : 'm-val',
+          };
+        }
+        if (name === 'memoryUpdater')
+          return {
+            status: 'no-change',
+            memoryRef: input.memoryRef,
+            changeRef: null,
+            reason: 'No update.',
+          };
+        if (name === 'proposer')
+          return {
+            status: 'created',
+            candidateRef: 'c1',
+            diffRef: 'diff',
+            rationale: 'Proposal is infeasible.',
+          };
+        if (name === 'selector')
+          return {
+            accepted: false,
+            candidateFeasible: false,
+            selectedCandidateRef: 'h0',
+            measurementRef: 'm-val',
+            decisionRef: 'decision',
+            reason: 'Infeasible validation tie.',
+            metric: 'successRate',
+            incumbentValue: 1,
+            candidateValue: 1,
+            selectedValue: 1,
+          };
+        if (name === 'promotion') {
+          promotionInput = input;
+          return {
+            action: 'promote',
+            decision: 'keep-incumbent',
+            reason: 'Infeasible candidate was not advanced.',
+            promotionRef: 'artifact:promotion',
+          };
+        }
+        throw new Error(`unexpected binding ${name}`);
+      },
+    }),
+  );
+
+  assert.deepEqual(promotionInput, {
+    action: 'promote',
+    candidateRef: 'h0',
+    incumbentRef: 'h0',
+  });
+  assert.equal(result.searchCandidateRef, 'h0');
+  assert.equal(result.effectiveRef, 'h0');
+});
+
+test('policy.gym-rsi keeps the incumbent when validation regresses', async () => {
+  const policy = await loadGymPolicy();
+  let promotionInput: JsonObject | null = null;
+  const result = object(
+    await policy.execute({
+      input: { candidateRef: 'h0' },
+      config: policyConfig(),
+      application: {},
+      context: new RuntimeContext().extend({
+        signal: new AbortController().signal,
+      }),
+      checkpoint: async () => {},
+      invoke: async (name, raw): Promise<JsonObject> => {
+        const input = object(raw);
+        if (name === 'evaluator') {
+          const taskId = (input.taskIds as string[])[0];
+          return {
+            action: 'evaluate',
+            measurementRef: taskId === 'train' ? 'm-train' : 'm-val',
+          };
+        }
+        if (name === 'memoryUpdater')
+          return {
+            status: 'no-change',
+            memoryRef: input.memoryRef,
+            changeRef: null,
+            reason: 'No update.',
+          };
+        if (name === 'proposer')
+          return {
+            status: 'created',
+            candidateRef: 'c1',
+            diffRef: 'diff',
+            rationale: 'Improve the skill.',
+          };
+        if (name === 'selector')
+          return {
+            accepted: false,
+            candidateFeasible: true,
+            selectedCandidateRef: 'h0',
+            measurementRef: 'm-val',
+            decisionRef: 'decision',
+            reason: 'Validation regressed.',
+            metric: 'successRate',
+            incumbentValue: 1,
+            candidateValue: 0.8,
+            selectedValue: 1,
+          };
+        if (name === 'promotion') {
+          promotionInput = input;
+          return {
+            action: 'promote',
+            decision: 'keep-incumbent',
+            reason: 'Validation did not advance the candidate.',
+            promotionRef: 'artifact:promotion',
+          };
+        }
+        throw new Error(`unexpected binding ${name}`);
+      },
+    }),
+  );
+
+  assert.deepEqual(promotionInput, {
+    action: 'promote',
+    candidateRef: 'h0',
+    incumbentRef: 'h0',
+  });
+  assert.equal(result.searchCandidateRef, 'h0');
+  assert.equal(result.effectiveRef, 'h0');
+  assert.equal(result.promotionDecision, 'keep-incumbent');
+});
+
+test('policy.gym-rsi rejects overlapping dataset task ids', async () => {
+  const policy = await loadGymPolicy();
+  await assert.rejects(
+    policy.execute({
+      input: { candidateRef: 'h0' },
+      config: {
+        maxRounds: 1,
+        dataset: {
+          trainTaskIds: ['same'],
+          validationTaskIds: ['same'],
+        },
+      },
+      application: {},
+      context: new RuntimeContext().extend({
+        signal: new AbortController().signal,
+      }),
+      checkpoint: async () => {},
+      invoke: async () => {
+        throw new Error('overlapping splits must fail before invocation');
+      },
+    }),
+    /duplicate foreach key/,
+  );
+});

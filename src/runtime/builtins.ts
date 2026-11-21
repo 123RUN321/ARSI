@@ -20,6 +20,7 @@ import {
   agentbenchDefinition,
   agentbenchEvents,
 } from '../plugins/evaluator-agentbench/index.js';
+import { gymDefinition } from '../plugins/evaluator-gym/index.js';
 import {
   inferencebenchDefinition,
   inferencebenchEvents,
@@ -51,6 +52,7 @@ export async function registerBuiltins(registry: Registry): Promise<void> {
     paretoEvolutionProposerDefinition,
     memoryDefinition,
     reflectionDefinition,
+    gymDefinition,
     inferenceSelectorDefinition,
     metricSelectorDefinition,
     artifactSelectorDefinition,
@@ -63,6 +65,7 @@ export async function registerBuiltins(registry: Registry): Promise<void> {
   for (const path of [
     'harness2/policy.yaml',
     'wikiskill/policy.yaml',
+    'gym-rsi/policy.yaml',
     'operator-search/policy.yaml',
     'parameter/grid/policy.yaml',
     'parameter/optuna/policy.yaml',
