@@ -85,9 +85,13 @@ export async function runCommand(
     .description('Cancel an experiment')
     .action(cancelExperiment);
   program
-    .command('cleanup <experiment-id>')
+    .command('cleanup [experiment-id]')
     .description(
-      'Release recorded experiment resources and keep checkpoints, results and logs',
+      'Clean up a saved experiment or preview all experiments in this workspace',
+    )
+    .option(
+      '--all',
+      'Clean up all experiments in this workspace, skipping any in use',
     )
     .option(
       '--dry-run',
@@ -95,7 +99,7 @@ export async function runCommand(
     )
     .addHelpText(
       'after',
-      '\nThe experiment can still be resumed. Required images may be pulled or built again.',
+      '\nWith no ID or flags, cleanup previews the workspace. Checkpoints, results and logs are kept for --resume. Required images may be pulled or built again.',
     )
     .action(cleanup);
   const reflection = program
@@ -179,18 +183,28 @@ export async function runCommand(
   }
 
   async function cleanup(
-    id: string,
-    { dryRun = false }: { dryRun?: boolean },
+    id: string | undefined,
+    { dryRun = false, all = false }: { dryRun?: boolean; all?: boolean },
+    cmd: Command,
   ): Promise<void> {
+    if (id !== undefined && all)
+      cmd.error('--all cannot be combined with an experiment ID');
     const { manager } = await openRuntime();
-    const { cleanupExperiment } = await import('./cleanup.js');
-    const report = await cleanupExperiment(manager, id, dryRun, context.signal);
+    const { cleanupExperiment, cleanupWorkspace } = await import(
+      './cleanup.js'
+    );
+    const report =
+      id === undefined
+        ? await cleanupWorkspace(manager, dryRun || !all, context.signal)
+        : await cleanupExperiment(manager, id, dryRun, context.signal);
+    const incomplete =
+      'experiments' in report
+        ? report.experiments.some(
+            ({ status }) => status === 'pending' || status === 'failed',
+          )
+        : report.results.some(({ status }) => status === 'pending');
     result = {
-      exitCode: context.signal.aborted
-        ? 130
-        : report.results.some((entry) => entry.status === 'pending')
-          ? 1
-          : 0,
+      exitCode: context.signal.aborted ? 130 : incomplete ? 1 : 0,
       json: report,
     };
   }

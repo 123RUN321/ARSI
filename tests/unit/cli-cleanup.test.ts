@@ -1,15 +1,59 @@
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { Evaluator, type CleanupOptions } from 'arsi-evaluator';
-import type { JsonObject } from '../../src/contracts/index.js';
+import type { JsonObject, RuntimeContext } from '../../src/contracts/index.js';
 import { cleanupExperiment } from '../../src/entries/cli/cleanup.js';
 import { runCommand } from '../../src/entries/cli/commands.js';
 import { prepareEvaluationConfig } from '../../src/plugins/evaluator-operatorbench/service.js';
 import { recordCleanupInput } from '../../src/plugins/shared/evaluator-adapter/cleanup.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
+
+async function recordKernelInput(context: RuntimeContext): Promise<string> {
+  const path = join(context.directory, 'sdk-config.json');
+  const config = prepareEvaluationConfig(
+    { benchmark: 'kernel', environment: 'docker' },
+    {
+      selected: { id: 'fixture', seed: 1 },
+      operation: 'evaluate',
+      directory: context.directory,
+      manifest: join(context.directory, 'sdk-input', 'manifest.json'),
+    },
+  );
+  await writeFile(path, JSON.stringify(config));
+  await recordCleanupInput({ context, kind: 'kernel' }, path, process.env);
+  return path;
+}
+
+async function useFixtureNetwork(t: TestContext, root: string): Promise<void> {
+  const network = join(root, 'network.yaml');
+  await writeFile(network, '{}\n');
+  const previous = process.env.EVALUATOR_NETWORK_CONFIG;
+  process.env.EVALUATOR_NETWORK_CONFIG = network;
+  t.after(() => {
+    if (previous === undefined) delete process.env.EVALUATOR_NETWORK_CONFIG;
+    else process.env.EVALUATOR_NETWORK_CONFIG = previous;
+  });
+}
+
+function fixtureCommand(
+  { manager, dispose }: Awaited<ReturnType<typeof managerFixture>>,
+  signal = new AbortController().signal,
+) {
+  return (...args: string[]) =>
+    runCommand(args, {
+      signal,
+      openRuntime: async () => ({
+        context: manager.context,
+        manager,
+        registry: manager.options.registry,
+        dispose,
+      }),
+      releaseRuntime: dispose,
+    });
+}
 
 for (const ending of ['failed', 'cancelled'] as const) {
   test(`CLI previews and cleans a ${ending} experiment and resumes its checkpoint`, async (t) => {
@@ -22,23 +66,8 @@ for (const ending of ['failed', 'cancelled'] as const) {
       async (context): Promise<JsonObject> => {
         calls.push(context.callId);
         if (calls.length === 1) {
-          configPath = join(context.directory, 'sdk-config.json');
+          configPath = await recordKernelInput(context);
           logPath = join(context.directory, 'worker.log');
-          const config = prepareEvaluationConfig(
-            { benchmark: 'kernel', environment: 'docker' },
-            {
-              selected: { id: 'fixture', seed: 1 },
-              operation: 'evaluate',
-              directory: context.directory,
-              manifest: join(context.directory, 'sdk-input', 'manifest.json'),
-            },
-          );
-          await writeFile(configPath, JSON.stringify(config));
-          await recordCleanupInput(
-            { context, kind: 'kernel' },
-            configPath,
-            process.env,
-          );
           await writeFile(logPath, 'completed first step\n');
           return { score: 1 };
         }
@@ -50,6 +79,7 @@ for (const ending of ['failed', 'cancelled'] as const) {
         return { done: true };
       },
       {
+        budget: { elapsedWallMs: 120_000 },
         policy: {
           steps: [
             { id: 'first', type: 'invoke', use: 'driver', with: {} },
@@ -60,26 +90,9 @@ for (const ending of ['failed', 'cancelled'] as const) {
     );
     t.after(f.dispose);
     const { manager } = f;
-    const network = join(manager.rootDirectory, 'network.yaml');
-    await writeFile(network, '{}\n');
-    const previous = process.env.EVALUATOR_NETWORK_CONFIG;
-    process.env.EVALUATOR_NETWORK_CONFIG = network;
-    t.after(() => {
-      if (previous === undefined) delete process.env.EVALUATOR_NETWORK_CONFIG;
-      else process.env.EVALUATOR_NETWORK_CONFIG = previous;
-    });
+    await useFixtureNetwork(t, manager.rootDirectory);
     const recipe = join(manager.rootDirectory, 'recipe.yaml');
-    const command = (...args: string[]) =>
-      runCommand(args, {
-        signal: new AbortController().signal,
-        openRuntime: async () => ({
-          context: manager.context,
-          manager,
-          registry: manager.options.registry,
-          dispose: f.dispose,
-        }),
-        releaseRuntime: f.dispose,
-      });
+    const command = fixtureCommand(f);
     await assert.rejects(
       manager.run(recipe, { id: 'test', signal: stop.signal }),
       /fixture interruption/,
@@ -212,6 +225,7 @@ test('an active experiment can be previewed while execution stays with its owner
     return { done: true };
   });
   t.after(f.dispose);
+  const command = fixtureCommand(f);
   const signal = new AbortController().signal;
   const running = f.run();
   try {
@@ -228,9 +242,149 @@ test('an active experiment can be previewed while execution stays with its owner
       cleanupExperiment(f.manager, 'test', false, signal),
       /in use/,
     );
+    await f.manager.facts.write('experiments', 'z-idle', {
+      id: 'z-idle',
+      status: 'cancelled',
+    });
+    const batch = await command('cleanup', '--all');
+    assert.equal(batch.exitCode, 0);
+    const [busy, idle] = JSON.parse(batch.stdout!).experiments;
+    assert.equal(busy.experimentId, 'test');
+    assert.equal(busy.status, 'skipped');
+    assert.match(busy.reason, /in use/);
+    assert.deepEqual(idle, {
+      experimentId: 'z-idle',
+      status: 'complete',
+      results: [],
+    });
     assert.equal((await f.manager.get('test')).status, 'running');
   } finally {
     barrier.emit('release');
     await running;
   }
+});
+
+test('workspace previews are read-only and --all continues past failed and pending experiments', async (t) => {
+  const paths = new Map<string, string>();
+  const f = await managerFixture(
+    async (context) => {
+      paths.set(await recordKernelInput(context), context.experimentId);
+      return { done: true };
+    },
+    { budget: { elapsedWallMs: 120_000 } },
+  );
+  t.after(f.dispose);
+  const { manager } = f;
+  await useFixtureNetwork(t, manager.rootDirectory);
+  const command = fixtureCommand(f);
+  const ids = ['b-retry', 'c-ready'];
+  const recipe = join(manager.rootDirectory, 'recipe.yaml');
+  for (const id of ids) await manager.run(recipe, { id });
+  const receipts = () =>
+    Promise.all(ids.map((id) => manager.facts.list(`evaluator-cleanup-${id}`)));
+  const before = await receipts();
+  const executed: string[] = [];
+  t.mock.method(
+    Evaluator.prototype,
+    'cleanup',
+    async ({ configPath, execute }: CleanupOptions) => {
+      const id = paths.get(configPath);
+      assert.ok(id);
+      if (execute) {
+        executed.push(id);
+        if (id === 'b-retry' && executed.length === 1)
+          throw new Error('fixture unavailable');
+      }
+      return {
+        preview: !execute,
+        nodes: [{ nodeId: 'local', daemonId: 'fixture', items: [] }],
+      };
+    },
+  );
+  for (const args of [[], ['--dry-run'], ['--all', '--dry-run']]) {
+    const preview = await command('cleanup', ...args);
+    assert.equal(preview.exitCode, 0);
+    const { dryRun, experiments } = JSON.parse(preview.stdout!);
+    assert.equal(dryRun, true);
+    assert.deepEqual(
+      experiments.map((entry: { experimentId: string }) => entry.experimentId),
+      ids,
+    );
+    for (const entry of experiments) {
+      assert.equal(entry.status, 'preview');
+      assert.equal(entry.results[0].report.preview, true);
+    }
+  }
+  assert.deepEqual(executed, []);
+  assert.deepEqual(await receipts(), before);
+
+  await writeFile(
+    join(manager.directory, 'facts', 'experiments', 'a-damaged.json'),
+    '{',
+  );
+  const first = await command('cleanup', '--all');
+  assert.equal(first.exitCode, 1);
+  const {
+    dryRun,
+    experiments: [damaged, pending, complete],
+  } = JSON.parse(first.stdout!);
+  assert.equal(dryRun, false);
+  assert.equal(damaged.experimentId, 'a-damaged');
+  assert.equal(damaged.status, 'failed');
+  assert.ok(damaged.error);
+  assert.equal(pending.status, 'pending');
+  assert.match(pending.results[0].error, /fixture unavailable/);
+  assert.equal(complete.status, 'complete');
+  assert.equal(complete.results[0].report.preview, false);
+  assert.deepEqual(executed, ids);
+  assert.deepEqual(
+    (await receipts()).map(([entry]) => entry.status),
+    ['pending', 'complete'],
+  );
+
+  await manager.facts.write('experiments', 'a-damaged', {
+    id: 'a-damaged',
+    status: 'failed',
+  });
+  const retry = await command('cleanup', '--all');
+  assert.equal(retry.exitCode, 0);
+  assert.deepEqual(JSON.parse(retry.stdout!).experiments[2].results, []);
+  assert.deepEqual(executed, [...ids, 'b-retry']);
+});
+
+test('an empty workspace stays empty and interruption stops before the next experiment', async (t) => {
+  const f = await managerFixture(async () => ({}));
+  t.after(f.dispose);
+  const stop = new AbortController();
+  const command = fixtureCommand(f, stop.signal);
+  for (const args of [[], ['--all']]) {
+    const empty = await command('cleanup', ...args);
+    assert.equal(empty.exitCode, 0);
+    assert.deepEqual(JSON.parse(empty.stdout!), {
+      dryRun: !args.length,
+      experiments: [],
+    });
+  }
+  await assert.rejects(stat(f.manager.directory), { code: 'ENOENT' });
+  for (const id of ['first', 'second'])
+    await f.manager.facts.write('experiments', id, { id, status: 'failed' });
+  const get = f.manager.get.bind(f.manager);
+  const reads = t.mock.method(f.manager, 'get', async (id: string) => {
+    stop.abort(new Error('fixture interruption'));
+    return get(id);
+  });
+  const interrupted = await command('cleanup', '--all');
+  assert.equal(interrupted.exitCode, 130);
+  assert.deepEqual(JSON.parse(interrupted.stdout!).experiments, [
+    {
+      experimentId: 'first',
+      status: 'interrupted',
+      reason: 'fixture interruption',
+      results: [],
+    },
+  ]);
+  assert.deepEqual(
+    reads.mock.calls.map((call) => call.arguments),
+    [['first']],
+  );
 });

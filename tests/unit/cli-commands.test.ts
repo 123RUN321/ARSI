@@ -124,7 +124,11 @@ test('CLI prints command-specific and nested help to stdout', () => {
     if (args.length === 0) assert.match(result.stdout, /Run facts are saved/);
     if (args.includes('run')) assert.match(result.stdout, /--resume/);
     if (args.includes('doctor')) assert.match(result.stdout, /--static/);
-    if (args.includes('cleanup')) assert.match(result.stdout, /--dry-run/);
+    if (args.includes('cleanup')) {
+      assert.match(result.stdout, /--dry-run/);
+      assert.match(result.stdout, /--all/);
+      assert.match(result.stdout, /previews the workspace/);
+    }
     if (args.includes('apply')) assert.match(result.stdout, /revisionID/);
   }
 });
@@ -132,8 +136,9 @@ test('CLI prints command-specific and nested help to stdout', () => {
 test('CLI reports invalid input and focused help to stderr before runtime initialization', () => {
   for (const [args, message, command = ''] of [
     [['run'], /missing required argument/, ' run'],
-    [['cleanup'], /missing required argument/, ' cleanup'],
-    [['cleanup', 'id', '--all'], /unknown option/, ' cleanup'],
+    [['cleanup', 'id', '--all'], /cannot be combined/, ' cleanup'],
+    [['cleanup', '--all', 'id', '--dry-run'], /cannot be combined/, ' cleanup'],
+    [['cleanup', 'id', 'other'], /too many arguments/, ' cleanup'],
     [['run', 'r', '--resume'], /requires --id/, ' run'],
     [['run', 'r', '--id', 'run', '--retry'], /unknown option/, ' run'],
     [['show', 'id', 'extra'], /too many arguments/, ' show'],
