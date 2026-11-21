@@ -15,7 +15,7 @@ type CleanupContext = Pick<
   RuntimeContext,
   'experimentId' | 'bindingId' | 'dataDirectory' | 'facts' | 'signal'
 >;
-export type ImageCleanupSource =
+export type EvaluatorCleanupSource =
   | {
       context: RuntimeContext;
       kind: 'agentbundle';
@@ -25,10 +25,31 @@ export type ImageCleanupSource =
 
 const callKey = /^(call-[0-9a-f]{32})(?:-([0-9a-f]{24}))?$/;
 
+function cleanupReceiptKind(experimentId: string): string {
+  return `evaluator-cleanup-${experimentId}`;
+}
+
+async function* cleanupReceipts(context: CleanupContext) {
+  // A resumed call can have both receipts. Its current registration takes precedence.
+  const seen = new Set<JsonValue>();
+  for (const kind of [
+    cleanupReceiptKind(context.experimentId),
+    `evaluator-images-${context.experimentId}`,
+  ]) {
+    const receipts =
+      context.facts.scan?.(kind) ?? (await context.facts.list(kind));
+    for await (const entry of receipts) {
+      if (seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      yield { kind, entry };
+    }
+  }
+}
+
 function configPath(
   context: CleanupContext,
   key: string,
-  kind: ImageCleanupSource['kind'],
+  kind: EvaluatorCleanupSource['kind'],
 ): string | undefined {
   const match = callKey.exec(key);
   if (!match) return undefined;
@@ -65,9 +86,9 @@ function cleanupTarget(
   );
 }
 
-/** Journal the exact public input before the real SDK can acquire images. */
-export async function recordImageCleanupInput(
-  source: ImageCleanupSource,
+/** Record the SDK input before evaluation can acquire resources. */
+export async function recordCleanupInput(
+  source: EvaluatorCleanupSource,
   path: string,
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
@@ -100,7 +121,7 @@ export async function recordImageCleanupInput(
         'files',
       );
   }
-  await context.facts.write(`evaluator-images-${context.experimentId}`, key, {
+  await context.facts.write(cleanupReceiptKind(context.experimentId), key, {
     experimentId: context.experimentId,
     bindingId: context.bindingId,
     key,
@@ -117,13 +138,13 @@ function cleanupResult(value: unknown): {
   status: 'complete' | 'pending';
   report: JsonObject;
 } {
-  const report = object(value, 'Evaluator image cleanup report');
+  const report = object(value, 'Evaluator cleanup report');
   if (
     typeof report.preview !== 'boolean' ||
     !Array.isArray(report.nodes) ||
     !report.nodes.length
   )
-    throw new Error('Evaluator returned an invalid image cleanup report');
+    throw new Error('Evaluator returned an invalid cleanup report');
   let pending = report.preview;
   for (const raw of report.nodes) {
     const node = object(raw, 'cleanup node');
@@ -132,7 +153,7 @@ function cleanupResult(value: unknown): {
       typeof node.daemonId !== 'string' ||
       !Array.isArray(node.items)
     )
-      throw new Error('Invalid Evaluator image cleanup node');
+      throw new Error('Invalid Evaluator cleanup node');
     if (node.error !== undefined) pending = true;
     for (const rawItem of node.items) {
       const item = object(rawItem, 'cleanup item');
@@ -144,7 +165,7 @@ function cleanupResult(value: unknown): {
           String(item.status),
         )
       )
-        throw new Error('Invalid Evaluator image cleanup item');
+        throw new Error('Invalid Evaluator cleanup item');
       if (item.status !== 'deleted' && item.status !== 'retained')
         pending = true;
     }
@@ -179,9 +200,9 @@ async function ownsBinding(
 }
 
 /** A retired instance can be disposed mid-experiment. Only the active binding sees the terminal event. */
-export function evaluatorImageDisposer(
+export function createEvaluatorDisposer(
   context: RuntimeContext,
-  ownerKind: ImageCleanupSource['kind'],
+  ownerKind: EvaluatorCleanupSource['kind'],
 ): () => Promise<void> {
   let succeeded = false;
   const unsubscribe = context.event?.on('rsi/experiment-finished', (event) => {
@@ -199,7 +220,7 @@ export function evaluatorImageDisposer(
       experiment.id === context.experimentId &&
       experiment.status === 'succeeded'
     )
-      await cleanupEvaluatorImages(
+      await runEvaluatorCleanup(
         context.extend({ signal: context.cleanup }),
         ownerKind,
       );
@@ -208,16 +229,13 @@ export function evaluatorImageDisposer(
   return () => (disposal ??= dispose());
 }
 
-export async function cleanupEvaluatorImages(
+export async function runEvaluatorCleanup(
   context: CleanupContext,
-  ownerKind: ImageCleanupSource['kind'],
+  ownerKind: EvaluatorCleanupSource['kind'],
   run: (options: CleanupOptions) => Promise<unknown> = (options) =>
     new Evaluator().cleanup(options),
 ): Promise<void> {
-  const kind = `evaluator-images-${context.experimentId}`;
-  const receipts =
-    context.facts.scan?.(kind) ?? (await context.facts.list(kind));
-  for await (const entry of receipts) {
+  for await (const { kind, entry } of cleanupReceipts(context)) {
     if (
       entry.status !== 'pending' ||
       entry.experimentId !== context.experimentId ||

@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,9 +18,9 @@ import { ManagedEvents } from '../../src/runtime/services/events.js';
 import { FileFacts } from '../../src/runtime/storage/index.js';
 import { object } from '../../src/shared/json.js';
 import {
-  cleanupEvaluatorImages,
-  recordImageCleanupInput,
-} from '../../src/plugins/shared/evaluator-adapter/image-cleanup.js';
+  runEvaluatorCleanup,
+  recordCleanupInput,
+} from '../../src/plugins/shared/evaluator-adapter/cleanup.js';
 import {
   createAgentbench,
   prepareEvaluationConfig,
@@ -26,7 +33,7 @@ import { registerBuiltins } from '../../src/runtime/builtins.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
 
 async function fixture(t: test.TestContext) {
-  const dataDirectory = await mkdtemp(join(tmpdir(), 'rsi-image-cleanup-'));
+  const dataDirectory = await mkdtemp(join(tmpdir(), 'rsi-evaluator-cleanup-'));
   t.after(() => rm(dataDirectory, { recursive: true, force: true }));
   const network = join(dataDirectory, 'network.yaml');
   await writeFile(network, '{}\n');
@@ -43,8 +50,8 @@ async function fixture(t: test.TestContext) {
     });
   }
   const facts = new FileFacts(join(dataDirectory, 'facts'));
-  const experimentId = 'images';
-  const kind = 'evaluator-images-images';
+  const experimentId = 'cleanup-test';
+  const kind = `evaluator-cleanup-${experimentId}`;
   await facts.write('definitions', experimentId, {
     recipe: { application: { plugin: 'application.agentbundle' } },
   });
@@ -100,7 +107,7 @@ async function fixture(t: test.TestContext) {
     await mkdir(directory, { recursive: true });
     const path = join(directory, 'evaluator.json');
     await writeFile(path, JSON.stringify(input));
-    await recordImageCleanupInput(
+    await recordCleanupInput(
       { context: call, kind: 'agentbundle', workspaceRef },
       path,
       process.env,
@@ -144,7 +151,7 @@ function experimentEvents(t: test.TestContext, context: RuntimeContext) {
 
 const agentConfig = { benchmark: 'terminalbench', services: {} };
 
-test('an experiment without a Docker evaluator never opens its image journal, including on completed resume', async (t) => {
+test('an experiment without a Docker evaluator never reads its cleanup receipts, including on completed resume', async (t) => {
   const f = await managerFixture(async () => ({ done: true }));
   t.after(() => f.dispose());
   await registerBuiltins(f.manager.options.registry);
@@ -170,7 +177,7 @@ test('an experiment without a Docker evaluator never opens its image journal, in
   );
   assert.ok(
     scan.mock.calls.every(
-      (call) => !call.arguments[0].startsWith('evaluator-images-'),
+      (call) => !/^evaluator-(?:cleanup|images)-/.test(call.arguments[0]),
     ),
   );
 });
@@ -217,7 +224,7 @@ test('older receipts require a call identifying the same experiment and binding'
     paths.push(configPath);
     return report('retained');
   };
-  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, 'agentbundle', run);
   for (const [experimentId, owner] of [
     ['foreign', f.context.bindingId],
     [f.context.experimentId, 'other'],
@@ -227,7 +234,7 @@ test('older receipts require a call identifying the same experiment and binding'
       experimentId,
       bindingId: owner,
     });
-    await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+    await runEvaluatorCleanup(f.context, 'agentbundle', run);
   }
   assert.deepEqual((await f.read(entry.key)).attempts, []);
   await f.context.facts.write('calls', entry.key, {
@@ -235,7 +242,7 @@ test('older receipts require a call identifying the same experiment and binding'
     experimentId: f.context.experimentId,
     bindingId,
   });
-  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, 'agentbundle', run);
   assert.deepEqual(paths, [entry.path]);
   assert.equal((await f.read(entry.key)).bindingId, bindingId);
 });
@@ -252,7 +259,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
     'failed',
     'candidate',
   );
-  await cleanupEvaluatorImages(f.context, 'agentbundle', async (options) => {
+  await runEvaluatorCleanup(f.context, 'agentbundle', async (options) => {
     assert.equal(options.execute, true);
     paths.push(options.configPath);
     return options.configPath === first.path ? partial : report('retained');
@@ -263,7 +270,7 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   assert.equal(pending.status, 'pending');
   assert.ok(Array.isArray(pending.attempts));
   assert.deepEqual(object(pending.attempts[0]).report, partial);
-  await cleanupEvaluatorImages(f.context, 'agentbundle', async (options) => {
+  await runEvaluatorCleanup(f.context, 'agentbundle', async (options) => {
     assert.equal(options.configPath, first.path);
     return report('deleted');
   });
@@ -271,9 +278,44 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   assert.equal(final.status, 'complete');
   assert.ok(Array.isArray(final.attempts));
   assert.equal(final.attempts.length, 2);
-  await cleanupEvaluatorImages(f.context, 'agentbundle', async () =>
+  await runEvaluatorCleanup(f.context, 'agentbundle', async () =>
     assert.fail('completed input was replayed'),
   );
+});
+
+test('cleanup resumes legacy receipts and processes each call only once across both collections', async (t) => {
+  const f = await fixture(t);
+  const { dataDirectory, experimentId, facts } = f.context;
+  const legacyKind = `evaluator-images-${experimentId}`;
+  const older = await f.register();
+  await runEvaluatorCleanup(f.context, 'agentbundle', async () =>
+    report('skipped'),
+  );
+  const prior = await f.read(older.key);
+  await rename(
+    join(dataDirectory, 'facts', f.kind),
+    join(dataDirectory, 'facts', legacyKind),
+  );
+
+  const current = await f.register('b'.repeat(24));
+  const duplicate = await f.read(current.key);
+  await facts.write(legacyKind, current.key, duplicate);
+  const paths: string[] = [];
+  const run = async ({ configPath }: { configPath: string }) => {
+    paths.push(configPath);
+    return report('retained');
+  };
+  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, 'agentbundle', run);
+
+  assert.deepEqual(paths.sort(), [older.path, current.path].sort());
+  const resumed = await facts.read(legacyKind, older.key);
+  assert.equal(resumed.status, 'complete');
+  assert.ok(Array.isArray(resumed.attempts));
+  assert.equal(resumed.attempts.length, 2);
+  assert.deepEqual(resumed.attempts.slice(0, 1), prior.attempts);
+  assert.equal((await f.read(current.key)).status, 'complete');
+  assert.deepEqual(await facts.read(legacyKind, current.key), duplicate);
 });
 
 test('uncertain ownership, edited input and an unrelated experiment never invoke cleanup', async (t) => {
@@ -286,13 +328,13 @@ test('uncertain ownership, edited input and an unrelated experiment never invoke
     calls.push(options.configPath);
     return report();
   };
-  await cleanupEvaluatorImages(
+  await runEvaluatorCleanup(
     f.context.extend({ experimentId: 'elsewhere' }),
     'agentbundle',
     run,
   );
   assert.deepEqual((await f.read(shared.key)).attempts, []);
-  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, 'agentbundle', run);
   assert.deepEqual(calls, []);
   assert.match(
     JSON.stringify((await f.read(edited.key)).attempts),
@@ -307,18 +349,18 @@ test('uncertain ownership, edited input and an unrelated experiment never invoke
 test('an aborted cleanup or an SDK error stays retryable with a recorded reason', async (t) => {
   const f = await fixture(t);
   const entry = await f.register();
-  await cleanupEvaluatorImages(
+  await runEvaluatorCleanup(
     f.context.extend({
       signal: AbortSignal.abort(new Error('cleanup deadline')),
     }),
     'agentbundle',
   );
-  await cleanupEvaluatorImages(f.context, 'agentbundle', async () => {
+  await runEvaluatorCleanup(f.context, 'agentbundle', async () => {
     throw new Error('daemon unavailable');
   });
   const controller = new AbortController();
   const partial = report('deleted', 'skipped');
-  await cleanupEvaluatorImages(
+  await runEvaluatorCleanup(
     f.context.extend({ signal: controller.signal }),
     'agentbundle',
     async () => {
@@ -356,16 +398,16 @@ test('a changed configuration variable does not settle cleanup against a differe
     calls++;
     return report();
   };
-  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, 'agentbundle', run);
   assert.equal(calls, 0);
   assert.equal((await f.read(entry.key)).status, 'pending');
   process.env.RSI_CLEANUP_TEST_IMAGE = 'fixture/original:1';
-  await cleanupEvaluatorImages(f.context, 'agentbundle', run);
+  await runEvaluatorCleanup(f.context, 'agentbundle', run);
   assert.equal(calls, 1);
   assert.equal((await f.read(entry.key)).status, 'complete');
 });
 
-test('operator cleanup uses its call-owned kernel manifest and local evaluations create no image work', async (t) => {
+test('operator cleanup uses its call-owned kernel manifest and local evaluations create no cleanup receipts', async (t) => {
   const f = await fixture(t);
   await f.register(undefined, randomUUID(), { environment: 'local' });
   assert.deepEqual(await f.context.facts.list(f.kind), []);
@@ -395,9 +437,9 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
     },
   );
   await writeFile(path, JSON.stringify(config));
-  await recordImageCleanupInput({ context, kind: 'kernel' }, path, process.env);
+  await recordCleanupInput({ context, kind: 'kernel' }, path, process.env);
   const issued: string[] = [];
-  await cleanupEvaluatorImages(context, 'agentbundle', async () =>
+  await runEvaluatorCleanup(context, 'agentbundle', async () =>
     assert.fail('AgentBench consumed a kernel input'),
   );
   assert.deepEqual((await f.read(callId)).attempts, []);
@@ -436,7 +478,7 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
     JSON.stringify((await f.read(callId)).attempts),
     /operator cleanup deadline/,
   );
-  await cleanupEvaluatorImages(context, 'kernel', async (options) => {
+  await runEvaluatorCleanup(context, 'kernel', async (options) => {
     issued.push(options.configPath);
     return report('retained');
   });

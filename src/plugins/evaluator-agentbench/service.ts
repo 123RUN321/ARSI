@@ -10,7 +10,7 @@ import type {
 import { object, string, strings, unknownKeys } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { plain, redact } from '../shared/evaluator-adapter/data.js';
-import { evaluatorImageDisposer } from '../shared/evaluator-adapter/image-cleanup.js';
+import { createEvaluatorDisposer } from '../shared/evaluator-adapter/cleanup.js';
 import {
   sdkRunner,
   type EvaluatorRunner,
@@ -129,7 +129,7 @@ export async function createAgentbench(
         },
       );
     },
-    dispose: evaluatorImageDisposer(services, 'agentbundle'),
+    dispose: createEvaluatorDisposer(services, 'agentbundle'),
   };
 }
 

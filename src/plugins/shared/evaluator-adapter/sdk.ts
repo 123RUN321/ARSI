@@ -1,20 +1,17 @@
 import type { EvaluatorRunOptions } from 'arsi-evaluator';
-import {
-  recordImageCleanupInput,
-  type ImageCleanupSource,
-} from './image-cleanup.js';
+import { recordCleanupInput, type EvaluatorCleanupSource } from './cleanup.js';
 export type SdkRunOptions = EvaluatorRunOptions;
 export type EvaluatorRunner = (
   options: SdkRunOptions,
-  source?: ImageCleanupSource,
+  source?: EvaluatorCleanupSource,
 ) => Promise<unknown>;
 export async function sdkRunner(
   options: SdkRunOptions,
-  source?: ImageCleanupSource,
+  source?: EvaluatorCleanupSource,
 ): Promise<unknown> {
   const sdk = await import('arsi-evaluator');
   if (source)
-    await recordImageCleanupInput(
+    await recordCleanupInput(
       source,
       options.configPath,
       options.env ?? process.env,

@@ -21,7 +21,7 @@ import { digest, object, string } from '../../shared/json.js';
 import { compareFilePaths } from '../../shared/paths.js';
 import { parseConfig, validate } from '../../shared/schema.js';
 import { sourceIdentity } from '../shared/evaluator-adapter/identity.js';
-import { evaluatorImageDisposer } from '../shared/evaluator-adapter/image-cleanup.js';
+import { createEvaluatorDisposer } from '../shared/evaluator-adapter/cleanup.js';
 import { archiveItemExecution } from '../shared/evaluator-adapter/measurement.js';
 import { prepareOperatorCase } from './kernel-input.js';
 import { loadOperatorTask } from '../shared/operator-task.js';
@@ -265,7 +265,7 @@ export async function createOperatorbench(
         },
       );
     },
-    dispose: evaluatorImageDisposer(services, 'kernel'),
+    dispose: createEvaluatorDisposer(services, 'kernel'),
   };
 }
 
