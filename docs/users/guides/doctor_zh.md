@@ -126,18 +126,18 @@ flowchart TD
 
 ## 4. 自定义组件如何接入 doctor
 
-在注册组件时订阅 `rsi/doctor`。已有插件声明的 `definition.doctor` 也会由兼容层接入同一事件。参见[编写插件](writing-plugins_zh.md)。
+在注册组件时订阅 `rsi/doctor`。参见[编写插件](writing-plugins_zh.md)。
 
-### 编写并声明检测函数
+### 编写诊断事件处理器
 
 从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorResult`。
 
 - 处理器随插件注册生效。`doctor` 命令为每个绑定传入其生效配置。
-- 省略 `doctor` 时，框架仍执行通用检查，并将组件专用的 `plugin` 项标为 `unchecked`。
+- 组件未订阅 `rsi/doctor` 时，框架仍执行通用检查，并将组件专用的 `plugin` 项标为 `unchecked`。
 
 | 类型                 | 用途                                                                                                                                                            |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | 给组件的 `doctor` 函数标注类型。它规定函数接收 `DoctorContext<C>`，并异步返回 `DoctorResult`。                                                                  |
+| `OperationDoctor<C>` | `rsi/doctor` 异步处理器的类型，接收 `DoctorContext<C>` 并返回 `Promise<DoctorResult>`。                                                                  |
 | `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。                               |
 | `DoctorResult`       | 组件返回的检查结果。`checks` 里写每项的 ID、状态和可选说明，有缺失资源时可附上 `missingResources`。框架负责加绑定名前缀，并把各组件的结果汇总成最终 JSON 报告。 |
 

@@ -9,8 +9,6 @@ import type {
   OperationEventMap,
   OperationEvents,
   RuntimeContext,
-  DoctorContext,
-  DoctorResult,
 } from '../../contracts/index.js';
 import {
   defineContract,
@@ -91,15 +89,9 @@ export class Registry {
           'configSchema',
           'implementationDigest',
           'create',
-          'doctor',
         ].includes(key),
     );
     if (unknown) throw new Error(`Plugin definition: unknown field ${unknown}`);
-    if (
-      definition.doctor !== undefined &&
-      typeof definition.doctor !== 'function'
-    )
-      throw new Error(`Plugin ${definition.id}: doctor must be a function`);
     if (
       this.registrations.has(definition.id) ||
       this.policyFiles.has(definition.id)
@@ -113,6 +105,17 @@ export class Registry {
         handlers[name] = handler;
       },
     });
+    const check = handlers['rsi/doctor'];
+    if (check) {
+      handlers['rsi/doctor'] = (context) => {
+        validate(
+          definition.configSchema,
+          context.binding.config,
+          'plugin doctor config',
+        );
+        return check(context);
+      };
+    }
     const contract = this.registerContract(definition.contract);
     const create = async (
       config: JsonObject,
@@ -124,31 +127,9 @@ export class Registry {
         ? managedAgentOperation(operation)
         : operation;
     };
-    const { doctor: legacyDoctor, ...capabilities } = definition;
-    const doctor = handlers['rsi/doctor'] ?? legacyDoctor?.bind(definition);
     const registered: OperationDefinition = {
-      ...capabilities,
+      ...definition,
       contract,
-      ...(doctor
-        ? {
-            async doctor(context: DoctorContext): Promise<DoctorResult> {
-              validate(
-                definition.configSchema,
-                context.binding.config,
-                'plugin doctor config',
-              );
-              return doctor({
-                ...context,
-                binding: {
-                  name: context.binding.name,
-                  pluginId: context.binding.pluginId,
-                  definition: context.binding.definition,
-                  config: context.binding.config as C,
-                },
-              });
-            },
-          }
-        : {}),
       async create(config, services) {
         const operation = await create(config, services);
         return {
@@ -163,14 +144,12 @@ export class Registry {
         };
       },
     };
-    const listeners: Partial<OperationEventMap> = { ...handlers };
-    if (registered.doctor) listeners['rsi/doctor'] = registered.doctor;
-    const names = Object.keys(listeners) as (keyof OperationEventMap)[];
+    const names = Object.keys(handlers) as (keyof OperationEventMap)[];
     const fiber = this.context.plugin({
       name: definition.id,
       apply: (ctx: Context) => {
         ctx.provide(definition.id, registered);
-        for (const name of names) ctx.on(name, listeners[name]!);
+        for (const name of names) ctx.on(name, handlers[name]!);
         ctx.effect(() => () => {
           if (this.registrations.get(definition.id)?.scope.fiber === ctx.fiber)
             this.registrations.delete(definition.id);

@@ -74,31 +74,57 @@ test('managed creation rejects unknown and unregistered plugins', async (t) => {
   );
 });
 
-test('doctor is an optional function capability and registration never invokes it', async (t) => {
+test('doctor is registered as an event and runs only on dispatch', async (t) => {
   const registry = new Registry();
   t.after(() => registry.dispose());
-  const invalid = definition('invalid');
-  Object.defineProperty(invalid, 'doctor', { value: true });
+  const invalid = { ...definition('invalid'), doctor: () => ({ checks: [] }) };
   assert.throws(
     () => registry.registerOperation(invalid),
-    /doctor must be a function/,
+    /unknown field doctor/,
   );
   assert.deepEqual(registry.catalog().plugins, []);
   let calls = 0;
   const worker = definition('worker');
-  registry.registerOperation({
-    ...worker,
-    async doctor() {
+  registry.registerOperation(worker, (events) => {
+    events.on('rsi/doctor', ({ binding }) => {
       calls++;
+      assert.equal(binding.config.suffix, 'default');
       return { checks: [] };
-    },
+    });
   });
-  assert.equal(typeof registry.get(worker.id).doctor, 'function');
+  assert.ok(registry.handles(worker.id, 'rsi/doctor'));
+  assert.ok(!('doctor' in registry.get(worker.id)));
   const context = new RuntimeContext();
   const operation = await registry.get(worker.id).create({}, context);
   try {
     assert.equal(await operation.execute('input', context), 'worker:default');
     assert.equal(calls, 0);
+    const binding = {
+      name: 'worker',
+      pluginId: worker.id,
+      definition: worker,
+      config: {},
+    };
+    const probe = {
+      binding,
+      recipe: { application: binding, bindings: {}, policyConfig: {} },
+      registry,
+      runtime: context,
+      directory: '.',
+      signal: new AbortController().signal,
+    };
+    await assert.rejects(
+      registry.dispatch(worker.id, 'rsi/doctor', {
+        ...probe,
+        binding: { ...binding, config: { suffix: 42 } },
+      }),
+      /plugin doctor config.*suffix/,
+    );
+    assert.equal(calls, 0);
+    assert.deepEqual(await registry.dispatch(worker.id, 'rsi/doctor', probe), {
+      checks: [],
+    });
+    assert.equal(calls, 1);
   } finally {
     await operation.dispose();
   }

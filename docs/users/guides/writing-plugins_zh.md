@@ -43,7 +43,6 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 | `contract`             | 声明插件遵循的公共契约。        | 必填，填写导入的契约对象，如 `proposerContract`。                                    |
 | `configSchema`         | 校验该实现的配置。              | 必填，填写 JSON Schema；没有配置时也声明对象 Schema。                                |
 | `create`               | 根据配置创建插件实例。          | 必填，填写异步函数 `create(config, context)`，返回含 `execute` 和 `dispose` 的对象。 |
-| `doctor`               | 在实验前诊断该组件的运行前提。  | 可选的兼容字段。Registry 将已有实现接入 `rsi/doctor`。                               |
 | `implementationDigest` | 记录实现版本，供实验追溯。      | 可选，填写覆盖实际实现代码的摘要；代码变化时更新。                                   |
 
 - 省略 `implementationDigest` 时，Registry 根据 `create` 函数文本、契约和配置 Schema 生成摘要。

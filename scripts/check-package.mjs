@@ -197,19 +197,18 @@ import {runDoctorCheck} from 'arsi';
 export const customDefinition={
  id:'proposer.consumer-doctor',contract:proposerContract,
  configSchema:{type:'object',properties:{inputFile:{type:'string','x-rsi-path':'file'}},required:['inputFile']},
- async create(){throw Error('Doctor must not instantiate the proposer');},
- async doctor(context){
-  const input=await runDoctorCheck('read-input',async signal=>{
-   if(this.id!==context.binding.pluginId)throw Error('Missing definition receiver');
-   if(context.binding.pluginId!=='proposer.consumer-doctor')throw Error('Missing binding metadata');
-   const value=await readFile(context.binding.config.inputFile,{encoding:'utf8',signal});
-   if(value!=='doctor-ready')throw Error('Input is not doctor-ready');
-  },{signal:context.signal});
-  return {checks:[input,{id:'remote',status:'unchecked',reason:'This fixture does not probe remote services.'}]};
- }
+ async create(){throw Error('Doctor must not instantiate the proposer');}
 };
 export function register(registry){
  registry.registerOperation(customDefinition, (events) => {
+  events.on('rsi/doctor', async (context) => {
+   const input=await runDoctorCheck('read-input',async signal=>{
+    if(context.binding.pluginId!=='proposer.consumer-doctor')throw Error('Missing binding metadata');
+    const value=await readFile(context.binding.config.inputFile,{encoding:'utf8',signal});
+    if(value!=='doctor-ready')throw Error('Input is not doctor-ready');
+   },{signal:context.signal});
+   return {checks:[input,{id:'remote',status:'unchecked',reason:'This fixture does not probe remote services.'}]};
+  });
   events.on('rsi/cleanup', ({experimentId,bindingId,dryRun}) => [
    {key:experimentId + '/' + bindingId,status:dryRun ? 'preview':'complete'},
   ]);
@@ -903,15 +902,12 @@ export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Con
 };
 const rootDoctor:RootOperationDoctor<Config>=checkCustom;void rootDoctor;
 export const doctorDefinition:OperationDefinition<ProposerInput,ProposerOutput,Config>={
- id:'proposer.custom',contract:proposerContract,configSchema:{type:'object'},doctor:checkCustom,
+ id:'proposer.custom',contract:proposerContract,configSchema:{type:'object'},
  async create(){return{async execute(input){return{status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'};},async dispose(){}};}
 };
 export function register(registry: import('arsi').Registry): void {
   registry.registerOperation(doctorDefinition, (events) => {
-    events.on('rsi/doctor', context => {
-      const path: string = context.binding.config.inputFile;
-      return {checks:[{id: 'input', status: 'passed', details: {path}}]};
-    });
+    events.on('rsi/doctor', context => checkCustom(context));
     events.on('rsi/cleanup', ({bindingId, dryRun}) => [{key: bindingId, status: dryRun ? 'preview' : 'complete'}]);
   });
 }
@@ -946,7 +942,8 @@ export function register(registry: import('arsi').Registry): void {
     'event-payload': `services.event.emit({tag:'publisher'}, 'consumer/notice', {count:'wrong'});`,
     'event-this': `services.event.emit({tag:1}, 'consumer/notice', {count:1});`,
     'definition-listeners': `import {definition} from './events-consumer.js'; const invalid:typeof definition={...definition,listeners:{}};void invalid;`,
-    'definition-doctor': `import {doctorDefinition} from './doctor-consumer.js';const invalid:typeof doctorDefinition={...doctorDefinition,doctor:'invalid'};void invalid;`,
+    'definition-doctor': `import {doctorDefinition,checkCustom} from './doctor-consumer.js';const invalid:typeof doctorDefinition={...doctorDefinition,doctor:checkCustom};void invalid;`,
+    'doctor-result': `import {doctorDefinition} from './doctor-consumer.js';declare const registry:import('arsi').Registry;registry.registerOperation(doctorDefinition,events=>events.on('rsi/doctor',()=>42));`,
     'listener-context': `services.event.on('consumer/notice',(_event,context:string)=>{void context;});`,
     'serial-return': `services.event.on('rsi/before-experiment',()=>true);`,
     'admission-return': `services.event.on('rsi/before-call',async()=>({kind:'invalid'}));`,
@@ -981,7 +978,7 @@ export function register(registry: import('arsi').Registry): void {
     );
   }
   console.log(
-    'Installed public doctor callback types and invalid-doctor rejection passed.',
+    'Installed doctor event types, result checks and definition field rejection passed.',
   );
   await checkOperatorConsumer(consumer, operatorExample);
   console.log(

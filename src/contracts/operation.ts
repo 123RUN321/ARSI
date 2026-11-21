@@ -1,7 +1,6 @@
 import type { JsonObject, JsonSchema, JsonValue } from './json.js';
 import type { PluginContract } from './contract.js';
 import type { RuntimeContext } from './runtime/context.js';
-import type { DoctorContext, DoctorResult } from './doctor.js';
 
 /** A concrete plugin uses the input and output types owned by its public contract. */
 export interface Operation<
@@ -22,7 +21,5 @@ export interface OperationDefinition<
   implementationDigest?: string;
   contract: PluginContract;
   configSchema: JsonSchema;
-  /** @deprecated Subscribe to rsi/doctor when registering the operation. */
-  doctor?(context: DoctorContext<C>): Promise<DoctorResult>;
   create(config: C, context: RuntimeContext): Promise<Operation<I, O>>;
 }

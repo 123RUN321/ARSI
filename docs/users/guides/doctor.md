@@ -126,18 +126,18 @@ All three Evaluators use their configuration adapters to call the installed Eval
 
 ## 4. Connecting custom components
 
-Subscribe to `rsi/doctor` when registering the component. Existing plugins that declare `definition.doctor` also receive this event through the compatibility adapter. See [Write a plugin](writing-plugins.md).
+Subscribe to `rsi/doctor` when registering the component. See [Write a plugin](writing-plugins.md).
 
-### Write and declare the diagnostic function
+### Write the diagnostic handler
 
 Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/contracts` or `arsi`.
 
 - The registration owns the handler. The `doctor` command supplies each binding’s effective configuration.
-- When a component omits `doctor`, the framework still runs the common checks and marks the component-specific `plugin` check as `unchecked`.
+- When a component has no `rsi/doctor` subscription, the framework still runs the common checks and marks the component-specific `plugin` check as `unchecked`.
 
 | Type                 | Purpose                                                                                                                                                                                                                                                     |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | The type of the component's `doctor` function. The function receives `DoctorContext<C>` and returns `Promise<DoctorResult>`.                                                                                                                                |
+| `OperationDoctor<C>` | An asynchronous `rsi/doctor` handler that receives `DoctorContext<C>` and returns `Promise<DoctorResult>`.                                                                                                                                |
 | `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                                                        |
 | `DoctorResult`       | The component's results. Each entry in `checks` gives an ID, status and optional explanation. The result can include `missingResources` for missing inputs. The framework prefixes IDs with the binding name and combines the results into the JSON report. |
 
