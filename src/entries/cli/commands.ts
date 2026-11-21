@@ -45,14 +45,6 @@ export async function runCommand(
       'after',
       '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.arsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
     );
-  const openRuntime = (): Promise<Runtime> =>
-    context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir);
-  const runJson = async (
-    execute: (runtime: Runtime) => unknown,
-  ): Promise<void> => {
-    const runtime = await openRuntime();
-    result = { exitCode: 0, json: await execute(runtime) };
-  };
   program
     .command('run <recipe.yaml>')
     .description('Run or resume an experiment')
@@ -102,21 +94,6 @@ export async function runCommand(
       '\nWith no ID or flags, cleanup previews the workspace. Checkpoints, results and logs are kept for --resume. Required images may be pulled or built again.',
     )
     .action(cleanup);
-  const reflection = program
-    .command('reflection')
-    .description('Inspect and apply reflection revisions');
-  reflection
-    .command('list [experiment-id]')
-    .description('List reflection revisions')
-    .action(forRevision((revisions, id) => revisions.list(id)));
-  reflection
-    .command('show <revisionID>')
-    .description('Show reflection revisions')
-    .action(forRevision((revisions, id) => revisions.show(requireId(id))));
-  reflection
-    .command('apply <revisionID>')
-    .description('Apply reflection revisions')
-    .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
   program
     .command('catalog')
     .description('Show registered contracts, plugins, and policies')
@@ -136,6 +113,30 @@ export async function runCommand(
       4317,
     )
     .action(startDashboard);
+  const reflection = program
+    .command('reflection')
+    .description('Inspect and apply reflection revisions');
+  reflection
+    .command('list [experiment-id]')
+    .description('List reflection revisions')
+    .action(forRevision((revisions, id) => revisions.list(id)));
+  reflection
+    .command('show <revisionID>')
+    .description('Show reflection revisions')
+    .action(forRevision((revisions, id) => revisions.show(requireId(id))));
+  reflection
+    .command('apply <revisionID>')
+    .description('Apply reflection revisions')
+    .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
+
+  async function runJson(
+    execute: (runtime: Runtime) => unknown,
+  ): Promise<void> {
+    const runtime = await context.openRuntime(
+      program.opts<{ pluginDir: string[] }>().pluginDir,
+    );
+    result = { exitCode: 0, json: await execute(runtime) };
+  }
 
   function runExperiment(
     file: string,
@@ -158,7 +159,8 @@ export async function runCommand(
     const report = await checkRecipe(file, {
       signal: context.signal,
       staticOnly: options.static ?? false,
-      openRuntime,
+      openRuntime: () =>
+        context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir),
       releaseRuntime: context.releaseRuntime,
     });
     result = { exitCode: report.summary.failed > 0 ? 1 : 0, json: report };
@@ -226,7 +228,9 @@ export async function runCommand(
       throw new Error(
         'Dashboard requires a .rsi directory in the current working directory. Run it from your experiment workspace.',
       );
-    const runtime = await openRuntime();
+    const runtime = await context.openRuntime(
+      program.opts<{ pluginDir: string[] }>().pluginDir,
+    );
     const { createServer } = await import('../web/server.js');
     const server = await createServer(runtime);
     const address = await server.listen({ host: '127.0.0.1', port });
