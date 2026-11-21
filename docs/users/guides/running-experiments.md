@@ -20,6 +20,7 @@ Use `arsi --help` to list commands and `arsi <command> --help` for a command's s
 | `arsi list`                            | List saved experiments.                                                                                                                   |
 | `arsi show <experiment-id>`            | Print saved experiment status, output, and error information.                                                                             |
 | `arsi cancel <experiment-id>`          | Send a cancellation request to the specified experiment.                                                                                  |
+| `arsi cleanup [experiment-id]`         | [Preview or release experiment resources](#clean-up-experiment-resources).                                                                |
 | `arsi dashboard`                       | Serve a local web dashboard for inspecting experiments.                                                                                   |
 | `arsi reflection list [experiment-id]` | List persisted revisions, optionally for one experiment.                                                                                  |
 | `arsi reflection show <revisionID>`    | Inspect revision content and planned resource changes.                                                                                    |
@@ -103,6 +104,16 @@ Experiments created before the Runtime saved control-flow decisions require a ne
 - The Runtime reuses completed Policy steps and committed results. It retries unfinished steps using the supplied bindings, configuration, and code. For an in-progress branch, loop iteration, or foreach, it preserves the previously selected branch, iteration, or items. A retried plugin call uses a fresh attempt directory and acquires fresh instances.
 - Retry keeps recorded usage and the original start time. Update the Recipe budget if the experiment exhausted it.
 - Once the previous execution releases the experiment lock or the lock expires after a crash, resume can retry incomplete calls, including receipts marked `unknown` or left as `running`. The Runtime archives the previous receipt and any unresolved cleanup record. A retry can repeat an external operation whose previous outcome is unknown.
+
+## Clean up experiment resources
+
+After a successful experiment, AgentBench and OperatorBench automatically release eligible resources they recorded. On failure, cancellation, or interruption, those resources stay available for retry.
+
+- `arsi cleanup` or `arsi cleanup --dry-run` previews eligible resources in the current `.rsi` workspace.
+- `arsi cleanup terminal-skills-01 --dry-run` previews one experiment. Run `arsi cleanup terminal-skills-01` to release its eligible resources.
+- `arsi cleanup --all` releases eligible resources across the workspace and skips experiments in use.
+
+Cleanup preserves checkpoints, results, logs, and resources still in use by other experiments. A later `--resume` may pull or rebuild images.
 
 ## Dashboard
 

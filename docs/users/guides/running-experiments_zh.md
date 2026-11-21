@@ -20,6 +20,7 @@
 | `arsi list`                            | 列出已保存的实验。                                                                            |
 | `arsi show <experiment-id>`            | 输出已保存的实验状态、结果和错误信息。                                                        |
 | `arsi cancel <experiment-id>`          | 向指定实验发送取消请求。                                                                      |
+| `arsi cleanup [experiment-id]`         | [预览或清理实验资源](#清理实验资源)。                                                         |
 | `arsi dashboard`                       | 在本机提供网页版的实验观察界面。                                                              |
 | `arsi reflection list [experiment-id]` | 列出持久化版本，可按实验筛选。                                                                |
 | `arsi reflection show <revisionID>`    | 检查版本内容与计划中的资源变更。                                                              |
@@ -104,6 +105,16 @@ Runtime 恢复预算用量、兼容的生效版本、调用收据和检查点，
 - Runtime 复用已完成的 Policy 步骤和已提交的结果，用传入的绑定、配置和代码执行未完成的步骤。对于已进入的条件分支、循环迭代和 foreach，会沿用之前选中的分支、迭代或条目。重试的插件调用使用新的尝试目录，并重新获取实例。
 - 重试保留已记录的用量和原始开始时间。如果实验耗尽预算，可以修改 Recipe 中的预算。
 - 上次执行释放实验锁，或进程崩溃后锁过期，即可重试未完成的调用，包括标记为 `unknown` 或停留在 `running` 的调用。Runtime 归档上次的调用收据和未确认的清理记录。外部操作的结果未知时，重试可能再次执行该操作。
+
+## 清理实验资源
+
+实验成功后，AgentBench 和 OperatorBench 会自动清理自己登记的可回收资源。实验失败、取消或中断时，这些资源会保留供重试。
+
+- `arsi cleanup` 或 `arsi cleanup --dry-run` 预览当前 `.rsi` 工作区可释放的资源。
+- `arsi cleanup terminal-skills-01 --dry-run` 预览单个实验，执行 `arsi cleanup terminal-skills-01` 即可清理。
+- `arsi cleanup --all` 批量清理当前工作区，跳过正在运行或恢复的实验。
+
+清理会保留检查点、结果、日志，以及其他实验仍在使用的资源。之后仍可用 `--resume` 续跑，所需镜像可能要重新拉取或构建。
 
 ## 工作台
 
