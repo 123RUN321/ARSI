@@ -20,6 +20,7 @@ import {
   type OperationDefinition,
 } from '../../src/contracts/index.js';
 import { Manager } from '../../src/runtime/manager/index.js';
+import { dispatchRecipeCleanup } from '../../src/runtime/manager/cleanup.js';
 import { Registry } from '../../src/runtime/registry/index.js';
 import { digest, object } from '../../src/shared/json.js';
 
@@ -530,7 +531,7 @@ test('manual cleanup awaits each distinct binding in this experiment’s saved R
   assert.deepEqual(notified, []);
 });
 
-test('cleanup addresses saved Application and Reflection bindings without opening the original files', async (t) => {
+test('standalone cleanup previews saved Application and Reflection bindings without opening the original files', async (t) => {
   const f = await managerFixture(async () => ({}));
   t.after(f.dispose);
   const { manager } = f;
@@ -544,9 +545,13 @@ test('cleanup addresses saved Application and Reflection bindings without openin
     },
   ]) {
     registry.registerOperation(definition, (events) =>
-      events.on('rsi/cleanup', ({ bindingId }) => [
-        { key: bindingId, status: 'preview' },
-      ]),
+      events.on('rsi/cleanup', async ({ bindingId, facts }) => {
+        await assert.rejects(
+          async () => facts.write('preview-writes', bindingId, {}),
+          /Cleanup previews cannot write facts/,
+        );
+        return [{ key: bindingId, status: 'preview' }];
+      }),
     );
   }
   const recipe = {
@@ -560,10 +565,19 @@ test('cleanup addresses saved Application and Reflection bindings without openin
     status: 'failed',
     recipe,
   });
-  const preview = async () =>
-    (
-      await cleanupExperiment(manager, id, true, new AbortController().signal)
-    ).results.map(({ bindingId, pluginId }) => [bindingId, pluginId]);
+  const preview = async () => {
+    const results = await dispatchRecipeCleanup(registry, {
+      experimentId: id,
+      dataDirectory: manager.directory,
+      facts: manager.facts,
+      dryRun: true,
+      signal: new AbortController().signal,
+    });
+    return results.map(({ bindingId, pluginId, status }) => {
+      assert.equal(status, 'preview');
+      return [bindingId, pluginId];
+    });
+  };
   // A failure before the definition lock still leaves the Application in the saved Recipe.
   assert.deepEqual(await preview(), [['_application', 'test.app']]);
 
@@ -724,6 +738,38 @@ test('workspace previews are read-only and --all continues past failed and pendi
   assert.equal(retry.exitCode, 0);
   assert.deepEqual(JSON.parse(retry.stdout!).experiments[2].results, []);
   assert.deepEqual(executed, [...ids, 'b-retry']);
+});
+
+test('workspace cleanup retains the current binding result when dispatch is interrupted', async (t) => {
+  const stop = new AbortController();
+  const f = await managerFixture(
+    async () => {
+      throw new Error('keep resources');
+    },
+    {
+      bindings: { second: { plugin: 'test.driver', config: {} } },
+      driverEvents(events) {
+        events.on('rsi/cleanup', ({ bindingId }) => {
+          stop.abort(new Error('interrupted during cleanup'));
+          return [{ key: bindingId, status: 'complete' }];
+        });
+      },
+    },
+  );
+  t.after(f.dispose);
+  await assert.rejects(f.run(), /keep resources/);
+  const result = await fixtureCommand(f, stop.signal)('cleanup', '--all');
+  assert.equal(result.exitCode, 130);
+  const [experiment] = JSON.parse(result.stdout!).experiments;
+  assert.equal(experiment.status, 'interrupted');
+  assert.deepEqual(experiment.results, [
+    {
+      key: 'driver',
+      status: 'complete',
+      pluginId: 'test.driver',
+      bindingId: 'driver',
+    },
+  ]);
 });
 
 test('an empty workspace stays empty and interruption stops before the next experiment', async (t) => {

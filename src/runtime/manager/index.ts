@@ -15,7 +15,6 @@ import { RuntimeContext } from '../../contracts/runtime/context.js';
 import { object, string, digest } from '../../shared/json.js';
 import { createCallExecutor, type CallExecutor } from './calls.js';
 import { Instances } from './instances.js';
-import { cleanAfterSuccess, cleanupFacts } from './resource-cleanup.js';
 import { acquireExecutionLock } from './execution-lock.js';
 import { ManagedEvents } from '../services/events.js';
 import {
@@ -42,6 +41,7 @@ import {
   CleanupLifecycle,
   archiveUnresolvedCleanup,
   assertCleanupResolved,
+  cleanAfterSuccess,
   reconcilePersistedCleanup,
 } from './cleanup.js';
 import { RevisionActivation } from './activation.js';
@@ -208,13 +208,16 @@ export class Manager {
     const checkpoints = new PolicyCheckpoints(this.facts, id);
     const resources = join(this.directory, 'experiments', id, 'resources');
     const cleanupResources = (signal: AbortSignal) =>
-      cleanAfterSuccess(this.options.registry, {
-        experimentId: id,
-        dataDirectory: this.directory,
-        facts: cleanupFacts(this.facts, controller.signal, false),
-        dryRun: false,
-        signal,
-      });
+      cleanAfterSuccess(
+        this.options.registry,
+        {
+          experimentId: id,
+          dataDirectory: this.directory,
+          facts: this.facts,
+          signal,
+        },
+        controller.signal,
+      );
     try {
       if (continuing) {
         resumedRecord = readExperimentRecord(await this.get(id));
@@ -999,10 +1002,7 @@ export class Manager {
         () => Promise.allSettled([...diagnostics]),
         terminal !== 'succeeded',
         terminal === 'succeeded'
-          ? () =>
-              cleanupResources(
-                AbortSignal.any([controller.signal, cleanup.signal]),
-              )
+          ? () => cleanupResources(cleanup.signal)
           : undefined,
       );
       void cleanupJob.then(

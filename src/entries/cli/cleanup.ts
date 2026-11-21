@@ -2,7 +2,7 @@ import {
   collectExperimentCleanup,
   ExperimentInUseError,
   type ExperimentCleanupReport,
-} from '../../runtime/manager/resource-cleanup.js';
+} from '../../runtime/manager/cleanup.js';
 import type { Manager } from '../../runtime/manager/index.js';
 import { FileFacts } from '../../runtime/storage/index.js';
 import { errorText } from '../../shared/errors.js';
@@ -44,18 +44,23 @@ export async function cleanupWorkspace(
         );
   for (const experimentId of ids) {
     if (signal.aborted) break;
-    const results: ExperimentCleanupReport['results'] = [];
-    const entry = { experimentId, results };
+    const report: ExperimentCleanupReport = {
+      experimentId,
+      dryRun,
+      results: [],
+    };
     try {
-      await collectExperimentCleanup(manager, { ...entry, dryRun }, signal);
+      await collectExperimentCleanup(manager, report, signal);
       signal.throwIfAborted();
+      const { results } = report;
       const status = results.some((entry) => entry.status === 'pending')
         ? 'pending'
         : dryRun
           ? 'preview'
           : 'complete';
-      experiments.push({ ...entry, status });
+      experiments.push({ experimentId, results, status });
     } catch (error) {
+      const entry = { experimentId, results: report.results };
       if (signal.aborted)
         experiments.push({
           ...entry,
