@@ -43,10 +43,19 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 | `contract`             | Declare the public contract the plugin follows.               | Required imported contract object, such as `proposerContract`.                                        |
 | `configSchema`         | Validate this implementation's configuration.                 | Required JSON Schema; declare an object Schema even when there are no settings.                       |
 | `create`               | Create a plugin instance from configuration.                  | Required async function `create(config, context)` returning an object with `execute` and `dispose`.   |
-| `doctor`               | Diagnose this component's prerequisites before an experiment. | Legacy field. New plugins subscribe to `rsi/doctor` at registration. |
+| `doctor`               | Diagnose this component's prerequisites before an experiment. | Optional legacy field. The Registry adapts existing implementations to `rsi/doctor`.                  |
 | `implementationDigest` | Record the implementation version for experiment provenance.  | Optional digest covering the actual implementation code; update it when the code changes.             |
 
 - Without `implementationDigest`, Registry generates a digest from the `create` function text, contract, and configuration Schema.
+
+### Optional registration events
+
+Both `doctor` and `cleanup` are optional. In the `registry.registerOperation` callback, register a handler for each event your plugin supports. See [Plugin diagnostics and resource cleanup](runtime-events.md#plugin-diagnostics-and-resource-cleanup) for an example.
+
+| Capability | Registration                                 | Handler result                                                     |
+| ---------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| `doctor`   | `events.on('rsi/doctor', checkEnvironment)`  | `DoctorResult` with diagnostics for the binding.                   |
+| `cleanup`  | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results for the binding. |
 
 ### configSchema
 

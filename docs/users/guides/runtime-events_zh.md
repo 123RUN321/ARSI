@@ -4,16 +4,7 @@
 
 本指南介绍如何订阅内置事件、发布自定义事件，并在插件生命周期中管理监听与清理。
 
-在 `create(config, ctx)` 中通过 `ctx.event` 订阅实例生命周期事件。以下两个有返回值的事件在插件注册时订阅，即使实验复用了全部调用结果，处理器仍然可用。
-
-```js
-registry.registerOperation(myPlugin, (events) => {
-  events.on('rsi/doctor', checkEnvironment);
-  events.on('rsi/cleanup', cleanupResources);
-});
-```
-
-`rsi/doctor` 为当前 Recipe 绑定返回 `DoctorResult`。`rsi/cleanup` 接收 `experimentId`、`bindingId`、`pluginId`、`dryRun`、`facts`、`dataDirectory` 和 `signal`，返回 `CleanupResult[]`。每项包含资源键 `key` 和状态 `preview`、`complete` 或 `pending`，没有待清理资源时返回 `[]`。处理器须遵守 `dryRun` 并支持重复执行。实例被替换或运行结束时，框架仍会等待各实例的 `dispose()` 释放句柄。
+插件实例在 `create(config, ctx)` 中通过 `ctx.event` 订阅生命周期事件，在 `execute(input, ctx)` 或监听函数中发布事件、调用服务。
 
 ## 1. 四种分发方式
 
@@ -126,6 +117,22 @@ ctx.event.emit('rsi/agent-observation', {
 | `rsi/candidate-recorded`   | 候选保存后                                       | `emit`   | `callId: string`：写入该记录的调用 ID。<br>`bindingId: string`：写入该记录的绑定名。<br>`candidateRef: string`：已保存的候选引用。<br>`parentRef: string \| null`：父候选引用；初始候选为 `null`。                                                                                                                          |
 | `rsi/measurement-recorded` | 测量校验并保存后                                 | `emit`   | `callId: string`：写入该记录的调用 ID。<br>`bindingId: string`：写入该记录的绑定名。<br>`measurementRef: string`：已保存的测量引用。                                                                                                                                                                                        |
 | `rsi/revision-activated`   | 激活记录保存、有效绑定及已有插件实例的订阅切换后 | `emit`   | `activationId: string`：本次修订启用记录的 ID。<br>`bindingIds: readonly string[]`：本次启用修订涉及的绑定名列表。<br>`revisionRefs: Readonly<Record<string, string>>`：本次启用的修订映射，键为绑定名，值为修订引用。<br>`policyRevisionRef?: string`：可选。契约预留的 Policy 修订引用；当前 Runtime 发布该事件时不设置。 |
+
+### 插件诊断与资源清理
+
+插件在注册时按需订阅以下事件。框架按绑定派发并等待处理器返回结果。即使续跑复用了全部评测结果，框架仍可通过已加载的插件清理原绑定的资源。
+
+```js
+registry.registerOperation(myPlugin, (events) => {
+  events.on('rsi/doctor', checkEnvironment);
+  events.on('rsi/cleanup', cleanupResources);
+});
+```
+
+- `rsi/doctor` 为当前 Recipe 绑定返回 `DoctorResult`，由 RSI 汇总。
+- `rsi/cleanup` 接收 `experimentId`、`bindingId`、`pluginId`、`dryRun`、`facts`、`dataDirectory` 和 `signal`，返回 `CleanupResult[]`。每项包含资源键 `key` 和状态 `preview`、`complete` 或 `pending`。没有待清理资源时返回 `[]`。`dryRun` 为 `true` 时只做预览，实际清理应支持重复执行。
+
+实例被替换或运行结束时，框架仍会等待各实例的 `dispose()` 释放句柄。
 
 ## 3. 监听内置事件
 

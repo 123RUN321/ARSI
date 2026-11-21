@@ -4,16 +4,7 @@ English | [简体中文](runtime-events_zh.md) · [Getting started](../getting-s
 
 This guide explains how to subscribe to built-in events, publish custom events, and manage listeners and cleanup across a plugin's lifecycle.
 
-Subscribe to instance lifecycle events in `create(config, ctx)` through `ctx.event`. Two queries belong to the plugin registration and stay available even when an experiment reuses every call.
-
-```js
-registry.registerOperation(myPlugin, (events) => {
-  events.on('rsi/doctor', checkEnvironment);
-  events.on('rsi/cleanup', cleanupResources);
-});
-```
-
-`rsi/doctor` returns a `DoctorResult` for the effective Recipe binding. `rsi/cleanup` receives `experimentId`, `bindingId`, `pluginId`, `dryRun`, `facts`, `dataDirectory` and `signal`. Return a `CleanupResult[]` with a key and `preview`, `complete` or `pending` per resource. Return `[]` when nothing remains. Honor `dryRun` and make execution safe to repeat. The framework waits for `dispose()` on each retired or finished instance to release its handles.
+Plugin instances subscribe to lifecycle events through `ctx.event` in `create(config, ctx)`. They can publish events and call services in `execute(input, ctx)` or a listener.
 
 ## 1. Four dispatch modes
 
@@ -126,6 +117,22 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 | `rsi/candidate-recorded`   | After the candidate is saved.                                                                                      | `emit`   | `callId: string`: ID of the call that recorded this data.<br>`bindingId: string`: Name of the binding that recorded this data.<br>`candidateRef: string`: Reference to the saved candidate.<br>`parentRef: string \| null`: Parent candidate reference, or `null` for an initial candidate.                                                                                                                        |
 | `rsi/measurement-recorded` | After the measurement is validated and saved.                                                                      | `emit`   | `callId: string`: ID of the call that recorded this data.<br>`bindingId: string`: Name of the binding that recorded this data.<br>`measurementRef: string`: Reference to the saved measurement.                                                                                                                                                                                                                    |
 | `rsi/revision-activated`   | After activation persistence, effective binding updates, and subscription switching for existing plugin instances. | `emit`   | `activationId: string`: ID of this revision activation record.<br>`bindingIds: readonly string[]`: Names of the bindings affected by this activation.<br>`revisionRefs: Readonly<Record<string, string>>`: Map of revisions activated in this operation, keyed by binding name.<br>`policyRevisionRef?: string`: Optional Policy revision reference reserved by the contract; the current Runtime does not set it. |
+
+### Plugin diagnostics and resource cleanup
+
+Plugins can subscribe to either event at registration. The framework dispatches by binding and waits for the handler's reply. A loaded plugin can clean up resources for its original binding even when a resumed experiment reuses every evaluation result.
+
+```js
+registry.registerOperation(myPlugin, (events) => {
+  events.on('rsi/doctor', checkEnvironment);
+  events.on('rsi/cleanup', cleanupResources);
+});
+```
+
+- `rsi/doctor` returns a `DoctorResult` for the effective Recipe binding. RSI aggregates these results.
+- `rsi/cleanup` receives `experimentId`, `bindingId`, `pluginId`, `dryRun`, `facts`, `dataDirectory` and `signal`. Return a `CleanupResult[]` with a resource `key` and a status of `preview`, `complete` or `pending` for each entry. Return `[]` when nothing remains. Preview when `dryRun` is `true` and make cleanup safe to repeat.
+
+When an instance is replaced or its run ends, the framework waits for its `dispose()` to release its handles.
 
 ## 3. Subscribe to built-in events
 

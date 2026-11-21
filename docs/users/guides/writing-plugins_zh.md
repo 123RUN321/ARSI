@@ -43,10 +43,19 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 | `contract`             | 声明插件遵循的公共契约。        | 必填，填写导入的契约对象，如 `proposerContract`。                                    |
 | `configSchema`         | 校验该实现的配置。              | 必填，填写 JSON Schema；没有配置时也声明对象 Schema。                                |
 | `create`               | 根据配置创建插件实例。          | 必填，填写异步函数 `create(config, context)`，返回含 `execute` 和 `dispose` 的对象。 |
-| `doctor`               | 在实验前诊断该组件的运行前提。  | 兼容已有定义。新插件在注册时订阅 `rsi/doctor`。 |
+| `doctor`               | 在实验前诊断该组件的运行前提。  | 可选的兼容字段。Registry 将已有实现接入 `rsi/doctor`。                               |
 | `implementationDigest` | 记录实现版本，供实验追溯。      | 可选，填写覆盖实际实现代码的摘要；代码变化时更新。                                   |
 
 - 省略 `implementationDigest` 时，Registry 根据 `create` 函数文本、契约和配置 Schema 生成摘要。
+
+### 可选的注册事件
+
+`doctor` 和 `cleanup` 都是可选能力。在 `registry.registerOperation` 回调中，插件可按需注册其中一个或两个事件的处理器。示例见[插件诊断与资源清理](runtime-events_zh.md#插件诊断与资源清理)。
+
+| 能力      | 注册方式                                     | 处理器返回值                                          |
+| --------- | -------------------------------------------- | ----------------------------------------------------- |
+| `doctor`  | `events.on('rsi/doctor', checkEnvironment)`  | `DoctorResult`，包含当前绑定的诊断结果。              |
+| `cleanup` | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，包含当前绑定的资源清理或预览结果。 |
 
 ### configSchema
 
