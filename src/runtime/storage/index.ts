@@ -152,6 +152,7 @@ export class FileFacts implements FactStore {
     json(value);
     await atomic(this.path(kind, id), structuredClone(value));
   }
+  /** Enumerate IDs from filenames even when individual records cannot be read. */
   async listIds(kind: string): Promise<string[]> {
     const directory = join(this.directory, safeId(kind));
     let names: string[];

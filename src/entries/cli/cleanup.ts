@@ -7,7 +7,7 @@ import type { Manager } from '../../runtime/manager/index.js';
 import { acquireExecutionLock } from '../../runtime/manager/execution-lock.js';
 import { readExperimentRecord } from '../../runtime/manager/records.js';
 import { acquireResourceGate } from '../../runtime/revisions/exclusion.js';
-import { safeId } from '../../runtime/storage/index.js';
+import { FileFacts, safeId } from '../../runtime/storage/index.js';
 import { errorText } from '../../shared/errors.js';
 import { string } from '../../shared/json.js';
 
@@ -113,11 +113,12 @@ export async function cleanupWorkspace(
   signal: AbortSignal,
 ): Promise<{ dryRun: boolean; experiments: WorkspaceCleanupEntry[] }> {
   const experiments: WorkspaceCleanupEntry[] = [];
-  const ids = manager.facts.listIds
-    ? await manager.facts.listIds('experiments')
-    : (await manager.list()).map((record) =>
-        string(record.id, 'experiment ID'),
-      );
+  const ids =
+    manager.facts instanceof FileFacts
+      ? await manager.facts.listIds('experiments')
+      : (await manager.list()).map((record) =>
+          string(record.id, 'experiment ID'),
+        );
   for (const experimentId of ids) {
     if (signal.aborted) break;
     const results: CleanupReceiptResult[] = [];

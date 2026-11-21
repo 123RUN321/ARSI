@@ -14,8 +14,6 @@ export interface FactStore {
   read(kind: string, id: string): Promise<JsonObject>;
   write(kind: string, id: string, value: JsonObject): Promise<void>;
   list(kind: string): Promise<JsonObject[]>;
-  /** Lists stored keys without having to read each record body. */
-  listIds?(kind: string): Promise<string[]>;
   /** Iterates facts without retaining all record bodies in memory. */
   scan?(kind: string): AsyncIterable<JsonObject>;
 }
