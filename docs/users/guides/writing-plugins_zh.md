@@ -55,7 +55,7 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 | 能力      | 注册方式                                     | 处理器返回值                                          |
 | --------- | -------------------------------------------- | ----------------------------------------------------- |
 | `doctor`  | `events.on('rsi/doctor', checkEnvironment)`  | `DoctorResult`，包含当前绑定的诊断结果。              |
-| `cleanup` | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，包含当前绑定的资源清理或预览结果。 |
+| `cleanup` | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，列出清理或预览结果。无资源时返回 `[]`。 |
 
 ### configSchema
 

@@ -99,7 +99,7 @@ Runtime restores budget usage, compatible effective revisions, call receipts, an
 
 Experiments created before the Runtime saved control-flow decisions require a new experiment ID.
 
-- Completed experiments return their saved result. Resume retries outstanding resource cleanup without repeating business calls or charges.
+- Resuming a successful experiment invokes cleanup handlers again and returns the saved result with its original usage.
 - Keep the ordered Policy step IDs, types, nesting, and required plugin contract IDs. New calls use the currently registered input and output schemas.
 - The Runtime reuses completed Policy steps and committed results. It retries unfinished steps using the supplied bindings, configuration, and code. For an in-progress branch, loop iteration, or foreach, it preserves the previously selected branch, iteration, or items. A retried plugin call uses a fresh attempt directory and acquires fresh instances.
 - Retry keeps recorded usage and the original start time. Update the Recipe budget if the experiment exhausted it.
@@ -107,7 +107,7 @@ Experiments created before the Runtime saved control-flow decisions require a ne
 
 ## Clean up experiment resources
 
-After success, RSI dispatches cleanup to each plugin and binding used across the experiment’s attempts, including evaluations fully reused on resume. AgentBench and OperatorBench release eligible SDK resources. Failure, cancellation, and interruption leave resources available for retry or manual cleanup.
+After success, RSI collects bindings from the current and archived Recipes. It calls each registered cleanup handler once per distinct `(bindingId, pluginId)` pair, even if the plugin instance never started. AgentBench and OperatorBench release eligible SDK resources. Failure, cancellation, and interruption leave resources available for retry or manual cleanup.
 
 - `arsi cleanup` or `arsi cleanup --dry-run` previews eligible resources in the current `.rsi` workspace.
 - `arsi cleanup terminal-skills-01 --dry-run` previews one experiment. Run `arsi cleanup terminal-skills-01` to release its eligible resources.

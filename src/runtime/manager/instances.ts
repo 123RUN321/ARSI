@@ -28,10 +28,6 @@ export class Instances {
     private readonly registry: Registry,
     private readonly events: ManagedEvents,
     private readonly context: (bindingId: string) => RuntimeContext,
-    private readonly recordUse?: (
-      bindingId: string,
-      pluginId: string,
-    ) => Promise<void>,
   ) {}
 
   prepare(
@@ -52,7 +48,6 @@ export class Instances {
   ): Promise<Instance> {
     const scope = this.events.prepare(bindingId);
     try {
-      await this.recordUse?.(bindingId, binding.plugin);
       const operation = await this.registry.createManagedOperation(
         binding.plugin,
         structuredClone(binding.config),

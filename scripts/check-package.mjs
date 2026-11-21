@@ -278,25 +278,26 @@ export function register(registry){
   );
 
   const cleanupWorkspace = join(temporary, 'cleanup-workspace');
-  const cleanupStore = join(cleanupWorkspace, '.rsi', 'facts');
-  for (const [kind, id, record] of [
-    ['experiments', 'saved', { id: 'saved', status: 'failed' }],
-    [
-      'calls',
-      'prior',
-      {
-        experimentId: 'saved',
-        bindingId: 'custom',
-        pluginId: 'proposer.consumer-doctor',
-      },
-    ],
-  ]) {
-    await mkdir(join(cleanupStore, kind), { recursive: true });
-    await writeFile(
-      join(cleanupStore, kind, id + '.json'),
-      JSON.stringify(record),
-    );
-  }
+  await mkdir(cleanupWorkspace);
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        [
+          command,
+          'run',
+          doctorRecipePath,
+          '--id',
+          'saved',
+          '--plugin-dir',
+          doctorExtension,
+        ],
+        { ...doctorOptions, cwd: cleanupWorkspace },
+      ),
+    (error) =>
+      error.status === 1 &&
+      /Doctor must not instantiate the Application/.test(error.stderr),
+  );
   for (const dryRun of [true, false]) {
     const report = JSON.parse(
       execFileSync(

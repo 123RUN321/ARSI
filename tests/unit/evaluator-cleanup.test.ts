@@ -165,7 +165,7 @@ function cleanupContext(ctx: RuntimeContext, pluginId: string): CleanupContext {
 
 const agentConfig = { benchmark: 'terminalbench', services: {} };
 
-test('an experiment without a Docker evaluator never reads its cleanup receipts, including on completed resume', async (t) => {
+test('only configured Evaluators look for cleanup inputs, even when their instances never started', async (t) => {
   const f = await managerFixture(async () => ({ done: true }));
   t.after(() => f.dispose());
   await registerBuiltins(f.manager.options.registry);
@@ -175,6 +175,11 @@ test('an experiment without a Docker evaluator never reads its cleanup receipts,
   const recipePath = join(f.manager.rootDirectory, 'recipe.yaml');
   const saved = await f.manager.run(recipePath, { id: 'test', resume: true });
   assert.deepEqual(saved, result);
+  const cleanupScans = () =>
+    scan.mock.calls
+      .map(({ arguments: [kind] }) => kind)
+      .filter((kind) => /^evaluator-(?:cleanup|images)-/.test(kind));
+  assert.deepEqual(cleanupScans(), []);
   const policyPath = join(f.manager.rootDirectory, 'policy.yaml');
   const policy = parseDocument(await readFile(policyPath, 'utf8'));
   const recipe = parseDocument(await readFile(recipePath, 'utf8'));
@@ -189,11 +194,10 @@ test('an experiment without a Docker evaluator never reads its cleanup receipts,
     (await f.manager.run(recipePath, { id: 'unused' })).status,
     'succeeded',
   );
-  assert.ok(
-    scan.mock.calls.every(
-      (call) => !/^evaluator-(?:cleanup|images)-/.test(call.arguments[0]),
-    ),
-  );
+  assert.deepEqual(cleanupScans(), [
+    'evaluator-cleanup-unused',
+    'evaluator-images-unused',
+  ]);
 });
 
 test('disposing an evaluator instance leaves its experiment resources pending', async (t) => {

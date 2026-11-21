@@ -55,7 +55,7 @@ Both `doctor` and `cleanup` are optional. In the `registry.registerOperation` ca
 | Capability | Registration                                 | Handler result                                                     |
 | ---------- | -------------------------------------------- | ------------------------------------------------------------------ |
 | `doctor`   | `events.on('rsi/doctor', checkEnvironment)`  | `DoctorResult` with diagnostics for the binding.                   |
-| `cleanup`  | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results for the binding. |
+| `cleanup`  | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results, or `[]` if none. |
 
 ### configSchema
 

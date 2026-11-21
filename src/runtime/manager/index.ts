@@ -15,16 +15,7 @@ import { RuntimeContext } from '../../contracts/runtime/context.js';
 import { object, string, digest } from '../../shared/json.js';
 import { createCallExecutor, type CallExecutor } from './calls.js';
 import { Instances } from './instances.js';
-import {
-  BindingHistory,
-  readUsedBindings,
-  type UsedBinding,
-} from './binding-history.js';
-import {
-  cleanAfterSuccess,
-  cleanupFacts,
-  resourceCleanupComplete,
-} from './resource-cleanup.js';
+import { cleanAfterSuccess, cleanupFacts } from './resource-cleanup.js';
 import { acquireExecutionLock } from './execution-lock.js';
 import { ManagedEvents } from '../services/events.js';
 import {
@@ -38,6 +29,7 @@ import { Recipe } from '../loaders/recipe.js';
 import { Policy } from '../policy/index.js';
 import {
   assertDefinitionLock,
+  definitionArchiveId,
   lockDefinition,
   parseLockedReflection,
   readResourceOrigins,
@@ -215,22 +207,14 @@ export class Manager {
     let restore: JsonObject | undefined;
     const checkpoints = new PolicyCheckpoints(this.facts, id);
     const resources = join(this.directory, 'experiments', id, 'resources');
-    let history: BindingHistory;
-    const cleanupResources = (
-      bindings: readonly UsedBinding[],
-      signal: AbortSignal,
-    ) =>
-      cleanAfterSuccess(
-        this.options.registry,
-        {
-          experimentId: id,
-          dataDirectory: this.directory,
-          facts: cleanupFacts(this.facts, controller.signal, false),
-          dryRun: false,
-          signal,
-        },
-        bindings,
-      );
+    const cleanupResources = (signal: AbortSignal) =>
+      cleanAfterSuccess(this.options.registry, {
+        experimentId: id,
+        dataDirectory: this.directory,
+        facts: cleanupFacts(this.facts, controller.signal, false),
+        dryRun: false,
+        signal,
+      });
     try {
       if (continuing) {
         resumedRecord = readExperimentRecord(await this.get(id));
@@ -240,25 +224,14 @@ export class Manager {
         assertDefinitionLock(locked);
         if (resumedRecord.status === 'succeeded') {
           await assertCleanupResolved(this.facts, id);
-          if (!(await resourceCleanupComplete(this.facts, id))) {
-            const signal = options.signal
-              ? AbortSignal.any([controller.signal, options.signal])
-              : controller.signal;
-            signal.throwIfAborted();
-            await cleanupResources(
-              await readUsedBindings(this.facts, id),
-              signal,
-            );
-          }
+          const signal = options.signal
+            ? AbortSignal.any([controller.signal, options.signal])
+            : controller.signal;
+          signal.throwIfAborted();
+          await cleanupResources(signal);
           await releaseLock();
           return resumedRecord;
         }
-        history = new BindingHistory(
-          this.facts,
-          id,
-          await readUsedBindings(this.facts, id),
-        );
-
         const readPolicy = (source = locked) =>
           new Policy(source.policy, {
             sourcePath: string(source.policySourcePath),
@@ -297,7 +270,7 @@ export class Manager {
             );
         }
         retryRef = 'retry-' + randomUUID();
-        const archiveId = digest({ id, definition: locked.digest });
+        const archiveId = definitionArchiveId(id, locked);
         definition = await lockDefinition(
           recipe,
           this.options.registry,
@@ -326,7 +299,6 @@ export class Manager {
         await this.facts.write('definitions', id, definition);
         resourceOrigins = readResourceOrigins(definition);
       } else {
-        history = new BindingHistory(this.facts, id, []);
         await assertCleanupResolved(this.facts, id);
         try {
           await this.get(id);
@@ -450,7 +422,6 @@ export class Manager {
       this.options.registry,
       events,
       (bindingId) => context(bindingId, 'instance-' + randomUUID()),
-      (bindingId, pluginId) => history.record(bindingId, pluginId),
     );
     const cleanup = new CleanupLifecycle(
       id,
@@ -1030,7 +1001,6 @@ export class Manager {
         terminal === 'succeeded'
           ? () =>
               cleanupResources(
-                history.entries,
                 AbortSignal.any([controller.signal, cleanup.signal]),
               )
           : undefined,

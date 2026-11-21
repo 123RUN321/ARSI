@@ -2,7 +2,7 @@ import type { DoctorContext, DoctorResult } from './doctor.js';
 import type { JsonObject } from './json.js';
 import type { FactStore } from './runtime/services.js';
 
-/** One historical binding, dispatched under experiment ownership when executing. */
+/** A binding from a saved Recipe. Its plugin instance may never have started. */
 export interface CleanupContext {
   readonly experimentId: string;
   readonly bindingId: string;
