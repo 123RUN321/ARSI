@@ -603,6 +603,58 @@ test('interruption cancels an owned subprocess, cleans storage and stops dispatc
   }
 });
 
+test('doctor reads original artifacts and keeps probe writes in temporary storage', async () => {
+  const f = await fixture();
+  try {
+    const artifacts = f.runtime.context.artifacts;
+    const original = await artifacts.putJson({ source: 'original' });
+    const input = join(f.root, 'input');
+    await mkdir(input);
+    await writeFile(join(input, 'seed.txt'), 'original file');
+    const files = await artifacts.capture(input);
+    f.doctors({
+      'test.application': async ({ runtime, directory }) => {
+        assert.deepEqual(await runtime.artifacts.readJson(original), {
+          source: 'original',
+        });
+        const copy = join(directory, 'copy');
+        await runtime.artifacts.materialize(files, copy);
+        assert.equal(
+          await readFile(join(copy, 'seed.txt'), 'utf8'),
+          'original file',
+        );
+        await writeFile(join(copy, 'seed.txt'), 'probe file');
+        const captured = await runtime.artifacts.capture(copy);
+        const written = await runtime.artifacts.putJson({ source: 'probe' });
+        assert.deepEqual(await runtime.artifacts.readJson(written), {
+          source: 'probe',
+        });
+        await assert.rejects(artifacts.readJson(captured), { code: 'ENOENT' });
+        await assert.rejects(artifacts.readJson(written), { code: 'ENOENT' });
+        return {
+          checks: [
+            { id: 'artifacts', status: 'passed', details: { directory } },
+          ],
+        };
+      },
+    });
+    const report = await doctorRecipe(f.runtime, f.path);
+    const check = report.checks.find(
+      ({ id }) => id === 'application.artifacts',
+    );
+    assert.equal(check?.status, 'passed', JSON.stringify(report));
+    await assert.rejects(access(String(check?.details?.directory)), {
+      code: 'ENOENT',
+    });
+    assert.equal(
+      await readFile(join(input, 'seed.txt'), 'utf8'),
+      'original file',
+    );
+  } finally {
+    await f.dispose();
+  }
+});
+
 test('doctor aggregates complete valid results and isolates callback errors by binding', async () => {
   const f = await fixture();
   try {

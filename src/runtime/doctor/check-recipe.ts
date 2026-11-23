@@ -1,7 +1,8 @@
 import type { DoctorReport } from '../../contracts/index.js';
 import { RuntimeCleanupInterruptedError } from '../../shared/errors.js';
 import type { Runtime } from '../context.js';
-import { doctorFailure, doctorRecipe } from './index.js';
+import { doctorRecipe } from './index.js';
+import { doctorFailure } from './report.js';
 
 /** The caller owns the Runtime if diagnosis throws before releasing it. */
 export async function checkRecipe(
