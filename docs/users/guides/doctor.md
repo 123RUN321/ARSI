@@ -13,8 +13,6 @@ arsi doctor my-experiment/recipe.yaml
 - From a source checkout, run `pnpm build` first. Set the environment variables required by the selected components before running `pnpm arsi doctor my-experiment/recipe.yaml`.
 - `doctor` combines Recipe validation with component-specific checks. It can catch missing prompts or baselines, incompatible bindings, proposal model connection failures, and evaluator configuration, runtime or download-route problems reported by the SDK.
 
-- For a quick check of the effective configuration and declared local paths, add `--static`.
-
 ## 2. How it works
 
 ### Loading and dispatch
@@ -31,7 +29,7 @@ flowchart TD
     F -- No --> G["Record recipe.validate failure"]
     F -- Yes --> H["Prepare a temporary Runtime<br/>Visit the Application, bindings and Reflection"]
     H --> I["Check declared local paths"]
-    I --> J{"Full check and valid local paths?"}
+    I --> J{"Declared local paths valid?"}
     J -- Yes --> K["Create the binding and call its optional rsi/doctor"]
     K --> Q["Record results, missing handler or failure"]
     J -- No --> L["Mark the plugin check unchecked"]
@@ -50,14 +48,14 @@ flowchart TD
    - Probes use the configuration produced by merging Policy defaults and Recipe overrides.
    - A loading error produces a failed diagnostic and stops component probes.
 3. **Check declared local paths.** For the Application, each effective binding and the configured Reflection implementation, doctor checks local files and directories marked with `x-rsi-path` for existence, type and readability.
-4. **Run component checks.** If a declared local path fails validation, doctor marks the binding’s `plugin` check `unchecked` and continues with the next binding. For bindings with valid paths, full doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`. `--static` runs only the common checks and skips instance creation.
+4. **Run component checks.** If a declared local path fails validation, doctor marks the binding’s `plugin` check `unchecked` and links it to the failed path and continues with the next binding. For bindings with valid paths, doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`.
 5. **Clean up and report.** RSI checks use isolated temporary storage, propagate cancellation, release the instances and processes they create, and remove temporary files. Checks can read existing artifacts as inputs. RSI keeps its captures and writes in the temporary Runtime.
 
 ### Reading the summary and JSON report
 
 By default, `doctor` writes a readable summary to stdout. It gives the check counts, explains failures and unchecked checks, and reports available fixes. For a missing file, it shows the path, the configuration field to update, and any blocked checks.
 
-For scripts or full probe evidence, request the JSON report. `--json` can be combined with `--static`.
+For scripts or full probe evidence, request the JSON report.
 
 ```sh
 arsi doctor my-experiment/recipe.yaml --json

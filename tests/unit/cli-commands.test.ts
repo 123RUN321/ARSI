@@ -156,7 +156,7 @@ test('CLI prints command-specific and nested help to stdout', () => {
     if (args.length === 0) assert.match(result.stdout, /Run facts are saved/);
     if (args.includes('run')) assert.match(result.stdout, /--resume/);
     if (args.includes('doctor')) {
-      assert.match(result.stdout, /--static/);
+      assert.doesNotMatch(result.stdout, /--static/);
       assert.match(result.stdout, /--json/);
     }
     if (args.includes('cleanup')) {
@@ -176,6 +176,7 @@ test('CLI reports invalid input and focused help to stderr before runtime initia
     [['cleanup', 'id', 'other'], /too many arguments/, ' cleanup'],
     [['run', 'r', '--resume'], /requires --id/, ' run'],
     [['run', 'r', '--id', 'run', '--retry'], /unknown option/, ' run'],
+    [['doctor', 'r', '--static'], /unknown option '--static'/, ' doctor'],
     [['show', 'id', 'extra'], /too many arguments/, ' show'],
     [['catalog', '--bad'], /unknown option/, ' catalog'],
     [['list', 'bad'], /allowed choices/i, ' list'],

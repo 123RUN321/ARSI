@@ -244,6 +244,12 @@ export function register(registry){
   assert.deepEqual(Object.keys(doctorReport).sort(), ['checks', 'recipeId']);
   assert.ok(doctorReport.checks.every(({ status }) => status !== 'failed'));
   assert.equal(
+    doctorReport.checks.find(
+      (check) => check.id === 'custom.resource.inputFile',
+    )?.status,
+    'passed',
+  );
+  assert.equal(
     doctorReport.checks.find((check) => check.id === 'custom.read-input')
       ?.status,
     'passed',
@@ -265,39 +271,16 @@ export function register(registry){
       return true;
     },
   );
-  const staticReport = JSON.parse(
-    execFileSync(
-      process.execPath,
-      [...doctorJsonArgs, '--static'],
-      doctorOptions,
-    ),
-  );
-  assert.ok(staticReport.checks.every(({ status }) => status !== 'failed'));
-  assert.equal(
-    staticReport.checks.find(
-      (check) => check.id === 'custom.resource.inputFile',
-    )?.status,
-    'passed',
-  );
-  assert.equal(
-    staticReport.checks.find((check) => check.id === 'custom.plugin')?.status,
-    'unchecked',
-  );
   const inputPath = join(doctorExtension, 'input.txt');
   await rm(inputPath);
   assert.throws(
-    () =>
-      execFileSync(
-        process.execPath,
-        [...doctorJsonArgs, '--static'],
-        doctorOptions,
-      ),
+    () => execFileSync(process.execPath, doctorJsonArgs, doctorOptions),
     (error) => {
       assert.equal(error.status, 1);
       const report = JSON.parse(String(error.stdout));
       assert.deepEqual(Object.keys(report).sort(), ['checks', 'recipeId']);
       assert.deepEqual(
-        report.checks.find((check) => check.status === 'failed')
+        report.checks.find((check) => check.id === 'custom.resource.inputFile')
           ?.missingResource,
         {
           field: 'custom.config.inputFile',
@@ -309,7 +292,7 @@ export function register(registry){
     },
   );
   console.log(
-    'Installed component doctor: registration, full checks and static mode passed.',
+    'Installed component doctor: registration, text and JSON diagnostics passed.',
   );
 
   const cleanupWorkspace = join(temporary, 'cleanup-workspace');

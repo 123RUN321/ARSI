@@ -13,8 +13,6 @@ arsi doctor my-experiment/recipe.yaml
 - 在源码仓库中，完成 `pnpm build` 后使用 `pnpm arsi doctor my-experiment/recipe.yaml`，运行前设置所选组件需要的环境变量。
 - `doctor` 将 Recipe 校验与组件专用检查结合起来，可以发现提示词或基线缺失、绑定不兼容、提案侧模型连接失败，以及 SDK 报告的评测配置、运行前提或下载路线问题。
 
-- 只需快速检查生效配置和已声明的本地路径时，可以加上 `--static`。
-
 ## 2. doctor 的机制简介
 
 ### 加载与分发
@@ -31,7 +29,7 @@ flowchart TD
     F -- 否 --> G["记录 recipe.validate 失败"]
     F -- 是 --> H["准备隔离临时 Runtime<br/>遍历 Application、绑定和 Reflection"]
     H --> I["检查当前组件声明的本地路径"]
-    I --> J{"完整检查且本地路径均有效？"}
+    I --> J{"声明的本地路径均有效？"}
     J -- 是 --> K["创建绑定实例，调用其可选的 rsi/doctor"]
     K --> Q["汇总结果、未订阅或初始化失败"]
     J -- 否 --> L["将该组件的 plugin 检查<br/>记为 unchecked"]
@@ -50,14 +48,14 @@ flowchart TD
    - 探测使用合并 Policy 默认配置与 Recipe 覆盖后的配置。
    - 加载失败时输出失败诊断，不再执行组件探测。
 3. **检查已声明的本地路径。** 对 Application、每个生效绑定及已配置的 Reflection 实现，检查 Schema 中用 `x-rsi-path` 标记的本地文件或目录是否存在、类型是否正确、是否可读。
-4. **执行组件检查。** 若声明的本地路径检查失败，doctor 将该绑定的 `plugin` 检查记为 `unchecked`，然后继续检查下一个绑定。路径检查通过时，完整检查会创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。使用 `--static` 只进行公共检查，跳过实例创建。
+4. **执行组件检查。** 若声明的本地路径检查失败，doctor 将该绑定的 `plugin` 检查记为 `unchecked`，指向失败的路径，然后继续检查下一个绑定。路径检查通过时，doctor 会创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。
 5. **清理并输出。** RSI 检查使用隔离临时存储，传递取消信号，释放自己创建的实例与进程，并删除临时文件。原有 artifacts 可作为输入读取，RSI 产生的捕获与写入留在临时 Runtime 内。
 
 ### 阅读摘要和 JSON 报告
 
 `doctor` 默认向 stdout 输出可读摘要。摘要给出各状态的数量，解释失败项和未检查项，并显示已有的修复建议。遇到缺失文件时，摘要会指出路径、需要修改的配置字段，以及受阻的检查。
 
-脚本或需要完整探测证据时，可以请求 JSON 报告。`--json` 可以和 `--static` 一起使用。
+脚本或需要完整探测证据时，可以请求 JSON 报告。
 
 ```sh
 arsi doctor my-experiment/recipe.yaml --json

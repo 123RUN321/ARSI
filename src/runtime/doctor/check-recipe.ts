@@ -8,12 +8,10 @@ export async function checkRecipe(
   file: string,
   {
     signal,
-    staticOnly,
     openRuntime,
     releaseRuntime,
   }: {
     signal: AbortSignal;
-    staticOnly: boolean;
     openRuntime(): Promise<Runtime>;
     releaseRuntime(): Promise<void>;
   },
@@ -26,13 +24,12 @@ export async function checkRecipe(
     return doctorFailure('runtime.registration', error);
   }
 
-  const report = await doctorRecipe(runtime, file, {
-    signal,
-    staticOnly,
-  }).catch((error: unknown) => {
-    signal.throwIfAborted();
-    return doctorFailure('doctor.runtime', error);
-  });
+  const report = await doctorRecipe(runtime, file, { signal }).catch(
+    (error: unknown) => {
+      signal.throwIfAborted();
+      return doctorFailure('doctor.runtime', error);
+    },
+  );
   try {
     await releaseRuntime();
   } catch (error) {

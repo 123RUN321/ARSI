@@ -31,7 +31,6 @@ Follow [TerminalBench runtime preparation](terminalbench-runtime.md) and the bun
 - The user authorizes the benchmark cost. The recipe limits each evaluator run to 300 seconds and the RSI stage to 900000 ms with cleanup reserve. RSI `modelCalls` counts editor calls, **not all benchmark solver requests**. Establish a separate solver/gateway spending limit before real execution; if unavailable, stop at prepared configuration.
 
 ```sh
-arsi doctor .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension --static
 # Analyze execution/preparation concurrency, then diagnose on the execution host.
 arsi doctor .rsi/skill-demo/terminalbench-recipe.yaml --plugin-dir .rsi/skill-demo/terminalbench-extension
 # Present readiness findings and obtain configuration/execution confirmation before run.

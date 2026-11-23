@@ -21,7 +21,7 @@ Current registered Policies include Harness², WikiSkill and vLLM autotune. They
 Before sizing concurrency or launching preparation, check the written Recipe and its referenced resources:
 
 - Compare effective Policy defaults and binding overrides with the requested objective, baseline, editable scope, metric direction, task IDs/splits, rounds and budgets. Name the field and consequence of any mismatch; maximizing raw latency, for example, rewards slower candidates.
-- Run `arsi doctor recipe.yaml --static` with the intended `--plugin-dir` options. This checks configuration and declared paths while leaving component diagnostics unchecked.
+- Load the Recipe with the intended plugin registrations using [`Recipe.load`](programmatic.md), then inspect the resolved local inputs. Run component diagnostics during [execution-host preparation](#diagnose-and-prepare-on-the-execution-host).
 - For SDK-backed evaluation, validate the equivalent native configuration with the installed SDK's public loader or documented validation command. Include the actual solver/application inputs, environment references and network settings. The RSI adapter's broad schema is not proof that nested SDK configuration is valid. Do not pass an RSI Recipe directly to the Evaluator CLI.
 
 Fix configuration errors before proceeding. Record what was actually checked; static validation does not establish data authorization, usable model routes or Docker readiness.

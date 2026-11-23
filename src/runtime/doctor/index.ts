@@ -109,7 +109,6 @@ export async function doctorRecipe(
   path: string,
   options: {
     signal?: AbortSignal;
-    staticOnly?: boolean;
   } = {},
 ): Promise<DoctorReport> {
   const signal = options.signal ?? new AbortController().signal;
@@ -323,14 +322,11 @@ export async function doctorRecipe(
         addCheck(check);
         if (check.status === 'failed') pathBlocker ??= check.id;
       }
-      if (options.staticOnly || pathBlocker) {
+      if (pathBlocker) {
         addCheck({
           id: 'plugin',
           status: 'unchecked',
-          ...(!options.staticOnly && pathBlocker ? { blockedBy: pathBlocker } : {}),
-          reason: options.staticOnly
-            ? 'Component diagnostics were skipped by --static.'
-            : 'Component diagnostics were skipped because a declared local path failed validation.',
+          blockedBy: pathBlocker,
         });
         continue;
       }

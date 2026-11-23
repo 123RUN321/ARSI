@@ -55,7 +55,6 @@ export async function runCommand(
   program
     .command('doctor <recipe.yaml>')
     .description('Check experiment configuration and runtime prerequisites')
-    .option('--static', 'Check configuration and declared local paths only')
     .option('--json', 'Output the full report as JSON')
     .action(runDoctor);
   program
@@ -153,14 +152,13 @@ export async function runCommand(
 
   async function runDoctor(
     file: string,
-    options: { static?: boolean; json?: boolean },
+    options: { json?: boolean },
   ): Promise<void> {
     const { checkRecipe } = await import(
       '../../runtime/doctor/check-recipe.js'
     );
     const report = await checkRecipe(file, {
       signal: context.signal,
-      staticOnly: options.static ?? false,
       openRuntime: () =>
         context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir),
       releaseRuntime: context.releaseRuntime,
