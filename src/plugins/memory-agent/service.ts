@@ -4,7 +4,7 @@ import type {
   MemoryOutput,
   OperationDefinition,
 } from '../../contracts/index.js';
-import { json, string } from '../../shared/json.js';
+import { string } from '../../shared/json.js';
 import { editResource } from '../shared/agent-editing/index.js';
 import { buildComparisonContext } from './comparison.js';
 import { errorText } from '../../shared/errors.js';
@@ -18,7 +18,6 @@ export const createMemoryAgent: OperationDefinition<
   ctx.event?.on('rsi/doctor', (request) => checkAgentEditor(request));
   return {
     async execute(input, context) {
-      json(input);
       try {
         const comparison =
           input.comparison === undefined
@@ -27,7 +26,7 @@ export const createMemoryAgent: OperationDefinition<
         const updated = await editResource(
           config,
           input,
-          input.memoryRef === null ? null : string(input.memoryRef),
+          input.memoryRef,
           context,
           comparison,
         );

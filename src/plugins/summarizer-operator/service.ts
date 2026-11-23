@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises';
 import {
-  operatorSummarizerContract,
   type JsonObject,
   type OperationDefinition,
   type OperatorSummarizerInput,
@@ -37,7 +36,7 @@ import {
   type OperatorHistoryArtifact,
   type OperatorSummary,
 } from '../shared/operator-attempt/schema.js';
-import { configSchema, type OperatorSummarizerConfig } from './schema.js';
+import type { OperatorSummarizerConfig } from './schema.js';
 import {
   candidateMetricFeedback,
   projectMetricProfile,
@@ -150,12 +149,7 @@ export const createOperatorSummarizer: OperationDefinition<
   OperatorSummarizerInput,
   OperatorSummarizerOutput,
   OperatorSummarizerConfig
->['create'] = async (rawConfig) => {
-  const config = parseConfig<OperatorSummarizerConfig>(
-    configSchema,
-    rawConfig,
-    'Operator Summarizer config',
-  );
+>['create'] = async (config) => {
   const prompt = await readFile(config.promptFile, 'utf8');
   if (!prompt.trim())
     throw new Error('Operator summary promptFile must not be empty');
@@ -232,11 +226,6 @@ export const createOperatorSummarizer: OperationDefinition<
 
   return {
     async execute(input, context) {
-      validate(
-        operatorSummarizerContract.input_schema,
-        input,
-        'Operator Summarizer input',
-      );
       context.signal.throwIfAborted();
       if (input.phase === 'static') {
         validateActions(input, input.entryCandidateRef);

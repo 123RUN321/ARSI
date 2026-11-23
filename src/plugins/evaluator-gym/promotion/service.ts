@@ -3,8 +3,7 @@ import type {
   Operation,
   RuntimeContext,
 } from '../../../contracts/index.js';
-import { object, string } from '../../../shared/json.js';
-import { validate } from '../../../shared/schema.js';
+import { string } from '../../../shared/json.js';
 import { expandGymEnvironment } from '../internal/config.js';
 import {
   GymPromotionClient,
@@ -62,9 +61,7 @@ export function resolvePromotionConfig(
 export async function createGymPromotion(
   config: GymPromotionConfig,
   _context: RuntimeContext,
-  schema: JsonObject,
 ): Promise<Operation<GymPromotionInput, GymPromotionOutput>> {
-  validate(schema, config, 'gym promotion config');
   const settings = resolvePromotionConfig(config);
   const client = new GymPromotionClient({
     baseUrl: settings.baseUrl,
@@ -73,15 +70,7 @@ export async function createGymPromotion(
 
   return {
     async execute(input, context): Promise<GymPromotionOutput> {
-      const source = object(input, 'gym release input');
-      const candidateRef = string(
-        source.candidateRef,
-        'gym release input.candidateRef',
-      );
-      const incumbentRef = string(
-        source.incumbentRef,
-        'gym release input.incumbentRef',
-      );
+      const { candidateRef, incumbentRef } = input;
       context.signal.throwIfAborted();
 
       if (candidateRef === incumbentRef) {

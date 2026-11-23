@@ -8,14 +8,20 @@ import { validate } from '../../src/shared/schema.js';
 import { operatorbenchConfigSchema as configSchema } from '../../src/plugins/evaluator-operatorbench/schema.js';
 import { RuntimeContext } from '../../src/contracts/index.js';
 import { createOperatorbench } from '../../src/plugins/evaluator-operatorbench/service.js';
+import { operatorbenchDefinition } from '../../src/plugins/evaluator-operatorbench/index.js';
+import { Registry } from '../../src/runtime/registry/index.js';
 
-test('operatorbench requires its task directory and an SDK benchmark', async () => {
+test('operatorbench requires its task directory and an SDK benchmark', async (t) => {
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  registry.registerOperation(operatorbenchDefinition);
+  const definition = registry.get(operatorbenchDefinition.id);
   await assert.rejects(
-    createOperatorbench({ benchmark: 'kernel' }, new RuntimeContext()),
+    definition.create({ benchmark: 'kernel' }, new RuntimeContext()),
     /required property 'task'/,
   );
   await assert.rejects(
-    createOperatorbench(
+    definition.create(
       { mode: 'sdk', task: { directory: '/unused' } },
       new RuntimeContext(),
     ),

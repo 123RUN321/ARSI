@@ -4,12 +4,9 @@ import type {
   Operation,
   RuntimeContext,
 } from '../../contracts/index.js';
-import { validate } from '../../shared/schema.js';
-import { gymConfigSchema } from './evaluate/schema.js';
 import { createGym as createGymEvaluate } from './evaluate/service.js';
-import { promotionConfigSchema } from './promotion/schema.js';
 import { createGymPromotion } from './promotion/service.js';
-import { gymPluginConfigSchema, type GymPluginConfig } from './schema.js';
+import type { GymPluginConfig } from './schema.js';
 import { gymDoctor } from './evaluate/doctor.js';
 import { gymPromotionDoctor } from './promotion/doctor.js';
 
@@ -17,17 +14,12 @@ export async function createGymOperation(
   config: GymPluginConfig,
   context: RuntimeContext,
 ): Promise<Operation<GymInput, GymOutput>> {
-  validate(gymPluginConfigSchema, config, 'gym plugin config');
   if (config.mode === 'evaluate') {
     context.event?.on('rsi/doctor', (request) =>
       gymDoctor({ ...request, binding: { ...request.binding, config } }),
     );
     const { mode: _mode, ...evaluateConfig } = config;
-    const operation = await createGymEvaluate(
-      evaluateConfig,
-      context,
-      gymConfigSchema,
-    );
+    const operation = await createGymEvaluate(evaluateConfig, context);
     return {
       async execute(input, executionContext): Promise<GymOutput> {
         if (input.action !== 'evaluate') {
@@ -48,11 +40,7 @@ export async function createGymOperation(
     gymPromotionDoctor({ ...request, binding: { ...request.binding, config } }),
   );
   const { mode: _mode, ...promotionConfig } = config;
-  const operation = await createGymPromotion(
-    promotionConfig,
-    context,
-    promotionConfigSchema,
-  );
+  const operation = await createGymPromotion(promotionConfig, context);
   return {
     async execute(input, executionContext): Promise<GymOutput> {
       if (input.action !== 'promote') {

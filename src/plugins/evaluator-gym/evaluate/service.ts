@@ -5,8 +5,6 @@ import type {
   Operation,
   RuntimeContext,
 } from '../../../contracts/index.js';
-import { object, string, strings } from '../../../shared/json.js';
-import { validate } from '../../../shared/schema.js';
 import { expandGymEnvironment } from '../internal/config.js';
 import {
   GymEvaluationClient,
@@ -37,20 +35,11 @@ export function resolveGymConfig(
 export async function createGym(
   config: GymConfig,
   _context: RuntimeContext,
-  schema: JsonObject,
 ): Promise<Operation<AgentbenchInput, AgentbenchOutput>> {
-  validate(schema, config, 'gym evaluator config');
   const settings = resolveGymConfig(config);
   return {
     async execute(input, context): Promise<AgentbenchOutput> {
-      const source = object(input, 'gym evaluator input');
-      const candidateRef = string(
-        source.candidateRef,
-        'gym evaluator input.candidateRef',
-      );
-      const taskIds = strings(source.taskIds, 'gym evaluator input.taskIds');
-      if (new Set(taskIds).size !== taskIds.length)
-        throw new Error('gym evaluator input.taskIds: duplicate task id');
+      const { candidateRef, taskIds } = input;
       const startedAt = new Date().toISOString();
       return context.withInstance(
         candidateRef,

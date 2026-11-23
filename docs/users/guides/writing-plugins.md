@@ -95,9 +95,9 @@ Runtime merges Policy and Recipe configuration, fills defaults, validates it, an
 
 ### The object returned by create
 
-The `create(config, context)` function in the table initializes the plugin with validated configuration and returns an object called a **plugin instance**.
+The Registry validates a copy of the configuration and fills its Schema defaults before passing it to `create(config, context)`. The function initializes the plugin and returns an object called a **plugin instance**.
 
-Runtime executes this object's `execute(input, context)` for each plugin call. It can reuse the same object and calls `dispose()` to release resources when the instance is no longer needed. The methods have the following responsibilities:
+Runtime validates the input against the contract before calling `execute(input, context)` and validates its output afterward. It can reuse the same object and calls `dispose()` to release resources when the instance is no longer needed. The methods have the following responsibilities:
 
 | Method                    | Purpose                                                                                   | How to write it                                                                                               |
 | ------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |

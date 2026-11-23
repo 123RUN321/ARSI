@@ -21,33 +21,20 @@ import type {
   AgentOutput,
   RuntimeContext,
 } from '../../contracts/index.js';
-import { json, object } from '../../shared/json.js';
+import { object } from '../../shared/json.js';
 import { createProjectSubagentTool, readProjectRole } from './subagent.js';
 import { piObservations } from './observations.js';
 import { projectTools } from './project-tools.js';
-import {
-  parseConfig,
-  validate,
-  validateSchemaDefinition,
-} from '../../shared/schema.js';
-import {
-  configSchema,
-  type AgentPiConfig,
-  type ResolvedAgentPiConfig,
-} from './schema.js';
+import { validate, validateSchemaDefinition } from '../../shared/schema.js';
+import type { ResolvedAgentPiConfig } from './schema.js';
 
 /** Resolve only for execution; persisted config keeps environment references. */
 export function resolveModelConfig(
-  config: AgentPiConfig,
+  config: ResolvedAgentPiConfig,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): { model: string; base_url: string; api_key: string } {
-  const settings = parseConfig<ResolvedAgentPiConfig>(
-    configSchema,
-    config,
-    'agent.pi config',
-  );
   const resolve = (field: 'model' | 'base_url' | 'api_key'): string => {
-    const value = settings[field].replace(
+    const value = config[field].replace(
       /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
       (_match, name: string) => {
         const replacement = environment[name];
@@ -75,7 +62,7 @@ export type PiTask = AgentInput & {
   parentRunId: string | null;
 };
 export async function createPiSession(
-  rawConfig: AgentPiConfig,
+  config: ResolvedAgentPiConfig,
   delegate: (
     role: string,
     goal: string,
@@ -86,17 +73,9 @@ export async function createPiSession(
   execute(request: PiTask, context: RuntimeContext): Promise<AgentOutput>;
   dispose(): Promise<void>;
 }> {
-  const config = parseConfig<ResolvedAgentPiConfig>(
-    configSchema,
-    rawConfig,
-    'agent.pi config',
-  );
-  if (config.maxTokens !== undefined && config.maxTokens > config.contextWindow)
-    throw new Error('agent.pi maxTokens must not exceed contextWindow');
   const thinkingLevel = config.thinkingLevel;
   return {
     async execute(request, context) {
-      json(request);
       const {
         model: modelName,
         base_url: endpoint,

@@ -6,6 +6,11 @@ import { agentFixture } from '../fixtures/agent-execution.js';
 import { createAgentClaudeCode } from '../../src/plugins/agent-claudecode/service.js';
 import { createAgentDsh } from '../../src/plugins/agent-dsh/service.js';
 import { createAgentOpenCode } from '../../src/plugins/agent-opencode/service.js';
+import { claudeCodeDefinition } from '../../src/plugins/agent-claudecode/index.js';
+import { dshDefinition } from '../../src/plugins/agent-dsh/index.js';
+import { openCodeDefinition } from '../../src/plugins/agent-opencode/index.js';
+import { Registry } from '../../src/runtime/registry/index.js';
+import type { JsonObject } from '../../src/contracts/index.js';
 
 for (const [name, create, events, pattern] of [
   [
@@ -103,19 +108,32 @@ for (const [name, create, events, pattern] of [
   });
 }
 
-for (const [name, create] of [
-  ['Claude Code', createAgentClaudeCode],
-  ['DSH', createAgentDsh],
-  ['OpenCode', createAgentOpenCode],
+for (const [name, definition] of [
+  ['Claude Code', claudeCodeDefinition],
+  ['DSH', dshDefinition],
+  ['OpenCode', openCodeDefinition],
 ] as const) {
   test(`${name} preserves launch failures and rejects invalid configuration`, async (t) => {
+    const registry = new Registry();
+    t.after(() => registry.dispose());
+    registry.registerOperation(definition);
     const f = await agentFixture(async () => {
       throw new Error('Native launch failed');
     });
     t.after(() => f.close());
-    for (const invalid of [{ executable: '' }, { unsupported: true }])
-      await assert.rejects(create(invalid, f.context), /config/);
-    const agent = await create({ executable: process.execPath }, f.context);
+    const invalidConfigs: JsonObject[] = [
+      { executable: '' },
+      { unsupported: true },
+    ];
+    for (const invalid of invalidConfigs)
+      await assert.rejects(
+        registry.get(definition.id).create(invalid, f.context),
+        /config/,
+      );
+    const agent = await definition.create(
+      { executable: process.execPath },
+      f.context,
+    );
     await assert.rejects(f.execute(agent), /Native launch failed/);
   });
 }

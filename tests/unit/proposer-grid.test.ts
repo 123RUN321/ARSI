@@ -11,11 +11,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  Candidate,
-  JsonObject,
-  OperationDefinition,
-} from '../../src/contracts/index.js';
+import type { Candidate, JsonObject } from '../../src/contracts/index.js';
 import {
   FileArtifacts,
   FileFacts,
@@ -27,6 +23,9 @@ import { gridProposerContract } from '../../src/contracts/plugin-types/proposer-
 import type { GridProposerConfig } from '../../src/plugins/proposer-grid/schema.js';
 import { parseConfig, validate } from '../../src/shared/schema.js';
 import { canonical, object, string } from '../../src/shared/json.js';
+import { Registry } from '../../src/runtime/registry/index.js';
+import { createRuntime } from '../../src/runtime/context.js';
+import { runCommand } from '../../src/entries/cli/commands.js';
 
 for (const mode of ['values', 'json', 'sixteen'] as const) {
   test(`grid ${mode} enumerates lazily with an explicit cursor, preserves JSON fields and releases edit workspaces`, async () => {
@@ -260,8 +259,11 @@ for (const mode of ['values', 'json', 'sixteen'] as const) {
   });
 }
 
-test('grid rejects invalid spaces and unsafe paths before allocating resources', async () => {
-  const definition: OperationDefinition = gridProposerDefinition;
+test('grid rejects invalid spaces and unsafe paths before allocating resources', async (t) => {
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  registry.registerOperation(gridProposerDefinition);
+  const definition = registry.get(gridProposerDefinition.id);
   const configs: JsonObject[] = [
     {
       path: '../escape.json',
@@ -292,8 +294,11 @@ test('grid rejects invalid spaces and unsafe paths before allocating resources',
   }
 });
 
-test('grid rejects invalid JSON choices and obsolete interval fields', async () => {
-  const definition: OperationDefinition = gridProposerDefinition;
+test('grid rejects invalid JSON choices and obsolete interval fields', async (t) => {
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  registry.registerOperation(gridProposerDefinition);
+  const definition = registry.get(gridProposerDefinition.id);
   const invalidAxes: JsonObject[] = [
     { name: 'x', values: [] },
     { name: 'x', values: [1, 1] },
@@ -326,6 +331,94 @@ test('grid rejects invalid JSON choices and obsolete interval fields', async () 
       ),
       /searchSpace|values|number|finite JSON|Forbidden|additional properties/,
     );
+});
+
+test('arsi run reports grid configuration and execution constraint failures directly', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'rsi-grid-cli-'));
+  const runtime = await createRuntime({
+    rootDirectory: root,
+    homeDirectory: false,
+  });
+  t.after(async () => {
+    await runtime.dispose();
+    await rm(root, { recursive: true, force: true });
+  });
+  await mkdir(join(root, 'baseline'));
+  await writeFile(
+    join(root, 'baseline/kernel.py'),
+    'def kernel(x):\n    return x\n',
+  );
+  const policyPath = join(root, 'policy.yaml');
+  await writeFile(
+    policyPath,
+    JSON.stringify({
+      schemaVersion: 'rsi.policy/v1',
+      id: 'test.grid-cli',
+      input_schema: { type: 'object' },
+      output_schema: { type: 'object' },
+      require: { proposer: { contract: gridProposerContract.id } },
+      steps: [
+        {
+          id: 'propose',
+          type: 'invoke',
+          use: 'proposer',
+          with: { parent: '${{ application.initialCandidate }}', cursor: 0 },
+        },
+      ],
+      output: {},
+    }),
+  );
+  runtime.registry.registerPolicy('test.grid-cli', policyPath);
+  const recipePath = join(root, 'recipe.yaml');
+  const axis = { name: 'x', values: [1] };
+  for (const [id, searchSpace, reason] of [
+    ['invalid-config', [], /Binding proposer.*searchSpace/],
+    ['duplicate-axes', [axis, axis], /searchSpace\.x: duplicate/],
+  ] as const) {
+    await writeFile(
+      recipePath,
+      JSON.stringify({
+        schemaVersion: 'rsi.recipe/v1',
+        id: 'grid-cli',
+        policy: { id: 'test.grid-cli' },
+        application: {
+          plugin: 'application.kernel',
+          config: {
+            target: {
+              schema: {
+                schemaVersion: 'rsi.target/v1',
+                id: 'kernel-target',
+                entries: [
+                  {
+                    path: 'kernel.py',
+                    kind: 'file',
+                    description: 'Kernel source',
+                    changes: ['modify'],
+                  },
+                ],
+              },
+            },
+            baseline: { directory: './baseline' },
+            entryFile: 'kernel.py',
+          },
+        },
+        bindings: {
+          proposer: {
+            plugin: gridProposerDefinition.id,
+            config: { path: 'tuning.json', searchSpace },
+          },
+        },
+      }),
+    );
+    await assert.rejects(
+      runCommand(['run', recipePath, '--id', id], {
+        openRuntime: async () => runtime,
+        releaseRuntime: () => runtime.dispose(),
+        signal: new AbortController().signal,
+      }),
+      reason,
+    );
+  }
 });
 
 test('grid supports large spaces when their cursors are safe integers', async () => {

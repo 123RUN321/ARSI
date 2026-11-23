@@ -148,7 +148,12 @@ function isStepAligned(
 }
 
 export function parseOptunaConfig(value: unknown): ResolvedOptunaConfig {
-  const raw = parseConfig<OptunaConfig>(configSchema, value, 'Optuna config');
+  return resolveOptunaConfig(
+    parseConfig<OptunaConfig>(configSchema, value, 'Optuna config'),
+  );
+}
+
+export function resolveOptunaConfig(raw: OptunaConfig): ResolvedOptunaConfig {
   const path = safePath(raw.path);
   if (path.includes(':'))
     throw new Error('path must not contain a drive or alternate data stream');

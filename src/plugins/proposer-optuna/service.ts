@@ -7,12 +7,10 @@ import type {
   RuntimeContext,
 } from '../../contracts/index.js';
 import { canonical, digest, object } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
-import { iterativeProposerContract } from '../../contracts/plugin-types/proposer-iterative.js';
 import { commitParameters } from '../shared/parameter-editing/index.js';
 import { readDecisionFeedback } from '../shared/metric-decision/index.js';
 import {
-  parseOptunaConfig,
+  resolveOptunaConfig,
   validateParameters,
   type OptunaConfig,
   type ResolvedOptunaConfig,
@@ -81,7 +79,7 @@ export async function createOptunaProposer(
   ctx.event?.on('rsi/doctor', (request) =>
     checkOptunaDependencies(request, worker),
   );
-  const config = parseOptunaConfig(raw);
+  const config = resolveOptunaConfig(raw);
   const workerDigest = digest(await readFile(workerPath, 'utf8'));
   const settings = object(config);
   const configuration = digest({ settings, workerDigest });
@@ -118,11 +116,6 @@ export async function createOptunaProposer(
   };
   return {
     async execute(input, context): Promise<IterativeProposerOutput> {
-      validate(
-        iterativeProposerContract.input_schema,
-        input,
-        'Iterative parameter proposal input',
-      );
       context.signal.throwIfAborted();
       if (input.action === 'initialize') {
         await context.readCandidate(input.parent);

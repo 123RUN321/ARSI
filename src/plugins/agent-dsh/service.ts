@@ -10,24 +10,18 @@ import type {
   Operation,
 } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
-import { parseConfig } from '../../shared/schema.js';
 import { checkDshAgent } from './doctor.js';
 
-import { configSchema, type AgentDshConfig } from './schema.js';
+import type { AgentDshConfig } from './schema.js';
 import { runDshProcess } from './process.js';
 import { dshObservations } from './observations.js';
 
 export const createAgentDsh: OperationDefinition<
   AgentInput,
   AgentOutput,
-  AgentDshConfig
->['create'] = async (rawConfig, ctx) => {
+  AgentDshConfig & { executable: string }
+>['create'] = async (config, ctx) => {
   ctx.event?.on('rsi/doctor', checkDshAgent);
-  const config = parseConfig<AgentDshConfig & { executable: string }>(
-    configSchema,
-    rawConfig,
-    'agent.dsh config',
-  );
   const operation: Operation<AgentInput, AgentOutput> = {
     async execute(request, context) {
       if (request.role !== undefined)

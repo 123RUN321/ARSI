@@ -5,7 +5,7 @@ import type {
   ArtifactSelectorOutput,
   OperationDefinition,
 } from '../../contracts/index.js';
-import { digest, json, string } from '../../shared/json.js';
+import { digest } from '../../shared/json.js';
 import {
   loadAgentPrompt,
   operationSchema,
@@ -21,9 +21,6 @@ export const createArtifactSelector: OperationDefinition<
   services.event?.on('rsi/doctor', (request) => checkAgentEditor(request));
   return {
     async execute(input, context) {
-      json(input);
-      if (!Array.isArray(input.candidates) || !input.candidates.length)
-        throw new Error('No selection candidates');
       const candidates = input.candidates
         .map((candidate, index) => ({
           ...candidate,
@@ -40,7 +37,7 @@ export const createArtifactSelector: OperationDefinition<
       const views = await Promise.all(
         candidates.map(async (c, index) => ({
           label: index,
-          delivery: await context.readEvidence([string(c.measurementRef)], {
+          delivery: await context.readEvidence([c.measurementRef], {
             view: 'delivery',
           }),
         })),
@@ -54,7 +51,7 @@ export const createArtifactSelector: OperationDefinition<
         [],
       );
       const request: AgentInput = {
-        goal: string(input.rubric),
+        goal: input.rubric,
         cwd,
         outputSchema: operationSchema(
           {

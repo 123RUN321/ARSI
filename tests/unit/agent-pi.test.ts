@@ -5,17 +5,14 @@ import { createServer, type ServerResponse } from 'node:http';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  RuntimeContext,
-  type JsonObject,
-  type OperationDefinition,
-} from '../../src/contracts/index.js';
-import {
-  createAgentPi,
-  resolveModelConfig,
-} from '../../src/plugins/agent-pi/service.js';
+import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
+import { resolveModelConfig } from '../../src/plugins/agent-pi/service.js';
 import { piDefinition } from '../../src/plugins/agent-pi/index.js';
-import type { AgentPiConfig } from '../../src/plugins/agent-pi/schema.js';
+import type {
+  AgentPiConfig,
+  ResolvedAgentPiConfig,
+} from '../../src/plugins/agent-pi/schema.js';
+import { parseConfig } from '../../src/shared/schema.js';
 
 import { Registry } from '../../src/runtime/registry/index.js';
 
@@ -212,6 +209,7 @@ async function modelFixture(
       }
     },
     chargeAttempts: () => chargeAttempts,
+    definition: registry.get(piDefinition.id),
     run: () =>
       operation.execute(
         {
@@ -248,31 +246,33 @@ test('Agent uses SDK model fields and resolves environment references without pe
     MODEL_HOST: 'model.example',
   };
   const config = {};
-  assert.deepEqual(resolveModelConfig(config, env), {
+  const resolved = (
+    raw: AgentPiConfig,
+    environment: Readonly<Record<string, string | undefined>> = env,
+  ) =>
+    resolveModelConfig(
+      parseConfig<ResolvedAgentPiConfig>(piDefinition.configSchema, raw),
+      environment,
+    );
+  assert.deepEqual(resolved(config), {
     model: 'test-model',
     base_url: 'https://model.example/v1',
     api_key: 'test-credential',
   });
   assert.deepEqual(config, {});
   assert.equal(
-    resolveModelConfig(
-      { model: 'explicit-model', base_url: 'https://${MODEL_HOST}/v1' },
-      env,
-    ).model,
+    resolved({ model: 'explicit-model', base_url: 'https://${MODEL_HOST}/v1' })
+      .model,
     'explicit-model',
   );
   assert.equal(
-    resolveModelConfig({ base_url: 'https://${MODEL_HOST}/v1' }, env).base_url,
+    resolved({ base_url: 'https://${MODEL_HOST}/v1' }).base_url,
     'https://model.example/v1',
   );
-  assert.throws(() => resolveModelConfig({}, {}), /MODEL_NAME/);
+  assert.throws(() => resolved({}, {}), /MODEL_NAME/);
   assert.throws(
-    () => resolveModelConfig({}, { ...env, MODEL_API_KEY: '  ' }),
+    () => resolved({}, { ...env, MODEL_API_KEY: '  ' }),
     /api_key.*empty/,
-  );
-  assert.throws(
-    () => resolveModelConfig({ api_key: 'literal-secret' }, env),
-    /api_key/,
   );
 });
 
@@ -402,11 +402,11 @@ test('Pi preserves every configured reasoning level including xhigh', async () =
 test('Pi rejects invalid settings at creation before resolving credentials or invoking a model', async () => {
   const f = await modelFixture([{}]);
   try {
-    const definition: OperationDefinition = piDefinition;
     const invalidConfigs: JsonObject[] = [
       { thinkingLevel: 'invalid' },
       { bashMode: 'invalid' },
       { modelEnv: 'OLD_MODEL' },
+      { api_key: 'literal-secret' },
       { contextWindow: 0 },
       { contextWindow: 8192, maxTokens: 32768 },
       { retries: -1 },
@@ -417,8 +417,8 @@ test('Pi rejects invalid settings at creation before resolving credentials or in
     ];
     for (const invalid of invalidConfigs) {
       await assert.rejects(
-        definition.create(invalid, f.services),
-        /thinkingLevel|bashMode|contextWindow|retries|retryBaseDelayMs|maxTokens|additional properties/,
+        f.definition.create(invalid, f.services),
+        /thinkingLevel|bashMode|contextWindow|retries|retryBaseDelayMs|maxTokens|api_key|additional properties/,
       );
     }
     assert.equal(f.requests.length, 0);
@@ -569,7 +569,7 @@ test('Pi validates per-request timeouts before charging and accepts the timer ma
   try {
     for (const timeoutMs of [0, -1, 1.5, 2147483648])
       await assert.rejects(
-        createAgentPi({ timeoutMs }, f.services),
+        f.definition.create({ timeoutMs }, f.services),
         /timeoutMs/,
       );
     assert.deepEqual(f.charges, []);

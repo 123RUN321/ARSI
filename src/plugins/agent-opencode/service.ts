@@ -5,27 +5,17 @@ import type {
   OperationDefinition,
   Operation,
 } from '../../contracts/index.js';
-import { parseConfig } from '../../shared/schema.js';
 import { checkOpenCodeAgent } from './doctor.js';
 
-import {
-  configSchema,
-  type AgentOpenCodeConfig,
-  type ResolvedAgentOpenCodeConfig,
-} from './schema.js';
+import type { ResolvedAgentOpenCodeConfig } from './schema.js';
 import { runSession } from './session.js';
 
 export const createAgentOpenCode: OperationDefinition<
   AgentInput,
   AgentOutput,
-  AgentOpenCodeConfig
->['create'] = async (rawConfig, ctx) => {
+  ResolvedAgentOpenCodeConfig
+>['create'] = async (config, ctx) => {
   ctx.event?.on('rsi/doctor', checkOpenCodeAgent);
-  const config = parseConfig<ResolvedAgentOpenCodeConfig>(
-    configSchema,
-    rawConfig,
-    'agent.opencode config',
-  );
   const operation: Operation<AgentInput, AgentOutput> = {
     async execute(request, context) {
       if (request.role !== undefined)

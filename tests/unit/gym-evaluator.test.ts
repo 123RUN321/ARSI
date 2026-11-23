@@ -24,10 +24,7 @@ import {
   createGym,
   resolveGymConfig,
 } from '../../src/plugins/evaluator-gym/evaluate/service.js';
-import {
-  gymConfigSchema,
-  type GymConfig,
-} from '../../src/plugins/evaluator-gym/evaluate/schema.js';
+import type { GymConfig } from '../../src/plugins/evaluator-gym/evaluate/schema.js';
 
 const BUNDLE_DIGEST = `sha256:${'c'.repeat(64)}`;
 const ENVIRONMENT_DIGEST = `sha256:${'b'.repeat(64)}`;
@@ -410,11 +407,7 @@ test('gym evaluator sends the candidate directory and kind, submits its digest, 
   const execution = await bundle(root);
   const { services, measurements, stored, charges } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     const output = await operation.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a'] },
       context(root, services),
@@ -509,11 +502,7 @@ test('gym evaluator counts failed rollouts as zero and keeps the evaluation comp
   const execution = await bundle(root);
   const { services, measurements } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await operation.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a', 'task/b'] },
       context(root, services),
@@ -552,11 +541,7 @@ test('legacy Gym records without rollouts_attempted keep their raw rates scalabl
   const execution = await bundle(root);
   const { services, measurements } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await operation.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a'] },
       context(root, services),
@@ -621,11 +606,7 @@ test('gym evaluator turns train items into task-level feedback for the proposer'
   const execution = await bundle(root);
   const { services, measurements, stored } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await operation.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a', 'task/b'] },
       context(root, services),
@@ -667,11 +648,7 @@ test('gym evaluator keeps polling while a submitted result is not visible yet', 
   const execution = await bundle(root);
   const { services, measurements } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     const output = await operation.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a'] },
       context(root, services),
@@ -692,11 +669,7 @@ test('untrusted Gym results are recorded but rejected as non-comparable', async 
   const execution = await bundle(root);
   const { services, measurements } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await assert.rejects(
       operation.execute(
         { candidateRef: 'candidate:a', taskIds: ['task/a'] },
@@ -724,11 +697,7 @@ test('a missing Gym overfit-guard decision fails closed', async () => {
   const execution = await bundle(root);
   const { services, measurements } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await assert.rejects(
       operation.execute(
         { candidateRef: 'candidate:a', taskIds: ['task/a'] },
@@ -752,11 +721,7 @@ test('a Gym result for a different candidate digest is not accepted', async () =
   const execution = await bundle(root);
   const { services, measurements } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await assert.rejects(
       operation.execute(
         { candidateRef: 'candidate:a', taskIds: ['task/a'] },
@@ -778,11 +743,7 @@ test('in-band rejected submissions become failed measurements', async () => {
   const execution = await bundle(root);
   const { services, measurements } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await assert.rejects(
       operation.execute(
         { candidateRef: 'candidate:a', taskIds: ['task/a'] },
@@ -805,11 +766,7 @@ test('an interrupted poll resumes by eval id without submitting a second rollout
   const execution = await bundle(root);
   const { services, measurements, charges } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     const controller = new AbortController();
     const aborted = context(root, services, 'call-1').extend({
       signal: controller.signal,
@@ -845,11 +802,7 @@ test('a lost Gym submission response records an unknown submission', async () =>
   const execution = await bundle(root);
   const { services, facts } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     const input = { candidateRef: 'candidate:a', taskIds: ['task/a'] };
     const callContext = context(root, services);
     await assert.rejects(operation.execute(input, callContext));
@@ -869,7 +822,6 @@ test('gym measurement identity includes budget and evaluation digest', async () 
     const first = await createGym(
       { ...config(gym.baseUrl), budget: { maxRollouts: 1 } },
       services,
-      gymConfigSchema,
     );
     await first.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a'] },
@@ -878,7 +830,6 @@ test('gym measurement identity includes budget and evaluation digest', async () 
     const second = await createGym(
       { ...config(gym.baseUrl), budget: { maxRollouts: 2 } },
       services,
-      gymConfigSchema,
     );
     await second.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a'] },
@@ -888,7 +839,6 @@ test('gym measurement identity includes budget and evaluation digest', async () 
     const third = await createGym(
       { ...config(gym.baseUrl), budget: { maxRollouts: 2 } },
       services,
-      gymConfigSchema,
     );
     await third.execute(
       { candidateRef: 'candidate:b', taskIds: ['task/a'] },
@@ -927,11 +877,7 @@ test('gym coverage requires every requested task to attempt a rollout', async ()
   const execution = await bundle(root);
   const { services, measurements, stored } = harness(root, execution);
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await assert.rejects(
       operation.execute(
         { candidateRef: 'candidate:a', taskIds: ['task/a', 'task/b'] },
@@ -961,11 +907,7 @@ test('gym evaluator keeps the result when submission persistence warns', async (
     failFactWrites: [2],
   });
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     await operation.execute(
       { candidateRef: 'candidate:a', taskIds: ['task/a'] },
       context(root, services),
@@ -992,11 +934,7 @@ test('a prepared submission remains retryable when eval-id persistence fails', a
     failFactWrites: [2, 3],
   });
   try {
-    const operation = await createGym(
-      config(gym.baseUrl),
-      services,
-      gymConfigSchema,
-    );
+    const operation = await createGym(config(gym.baseUrl), services);
     const input = { candidateRef: 'candidate:a', taskIds: ['task/a'] };
     const callContext = context(root, services);
     await assert.rejects(operation.execute(input, callContext));

@@ -13,11 +13,7 @@ import type {
   IterativeProposerWork,
 } from '../../contracts/plugin-types/proposer-iterative.js';
 import { literalPathPattern } from '../shared/file-application/target.js';
-import {
-  configSchema,
-  type PromptModule,
-  type ParetoEvolutionConfig,
-} from './schema.js';
+import { type PromptModule, type ParetoEvolutionConfig } from './schema.js';
 import {
   readParetoEvolutionState,
   writeParetoEvolutionState,
@@ -26,7 +22,7 @@ import {
 } from './state.js';
 import { digest, object, string, strings } from '../../shared/json.js';
 import { metricDefinitionSchema } from '../../contracts/models/measurement.js';
-import { parseConfig, validate } from '../../shared/schema.js';
+import { validate } from '../../shared/schema.js';
 import type { SingleProposerOutput } from '../../contracts/plugin-types/proposer.js';
 import {
   Rng,
@@ -909,15 +905,10 @@ export const createParetoEvolutionProposer: OperationDefinition<
   IterativeProposerOutput,
   ParetoEvolutionConfig
 >['create'] = async (
-  raw,
+  settings,
   ctx,
 ): Promise<Operation<IterativeProposerInput, IterativeProposerOutput>> => {
   ctx.event?.on('rsi/doctor', checkParetoEvolutionProposer);
-  const settings = parseConfig<ParetoEvolutionConfig>(
-    configSchema,
-    raw,
-    'Pareto evolution proposer config',
-  );
   const configuration = digest(settings);
   return {
     async execute(input, context): Promise<IterativeProposerOutput> {

@@ -5,7 +5,7 @@ import type {
   ReflectionInput,
   ReflectionOutput,
 } from '../../contracts/index.js';
-import { json, object, string } from '../../shared/json.js';
+import { object, string } from '../../shared/json.js';
 import { editResource } from '../shared/agent-editing/index.js';
 import { prepareDocumentPreviews } from './document-previews.js';
 import { checkReflectionAgent } from './doctor.js';
@@ -25,7 +25,6 @@ export const createReflectionAgent: OperationDefinition<
   ctx.event?.on('rsi/doctor', checkReflectionAgent);
   return {
     async execute(input, context) {
-      json(input);
       const files: Record<string, string> = {};
       const indexes = [];
       const sources = [];
@@ -64,7 +63,7 @@ export const createReflectionAgent: OperationDefinition<
       const updated = await editResource(
         config,
         input,
-        string(input.resourceRef),
+        input.resourceRef,
         context,
         {
           files,
