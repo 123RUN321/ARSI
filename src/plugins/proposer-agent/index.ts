@@ -1,6 +1,6 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   OperationDefinition,
-  OperationEvents,
   ProposerInput,
   ProposerOutput,
 } from '../../contracts/index.js';
@@ -20,8 +20,8 @@ export const proposerDefinition: OperationDefinition<
   create: createProposerAgent,
 };
 
-export function proposerEvents(
-  events: OperationEvents<AgentEditingConfig>,
-): void {
-  events.on('rsi/doctor', checkProposerAgent);
+export function register(registry: Registry): void {
+  registry.registerOperation(proposerDefinition, (events) => {
+    events.on('rsi/doctor', checkProposerAgent);
+  });
 }

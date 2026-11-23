@@ -1,8 +1,8 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   AgentInput,
   AgentOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { configSchema, type AgentPiConfig } from './schema.js';
 import { agentContract } from '../../contracts/plugin-types/index.js';
@@ -20,6 +20,8 @@ export const piDefinition: OperationDefinition<
   create: createAgentPi,
 };
 
-export function piEvents(events: OperationEvents<AgentPiConfig>): void {
-  events.on('rsi/doctor', checkPiAgent);
+export function register(registry: Registry): void {
+  registry.registerOperation(piDefinition, (events) => {
+    events.on('rsi/doctor', checkPiAgent);
+  });
 }

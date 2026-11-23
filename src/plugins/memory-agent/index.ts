@@ -1,8 +1,8 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   MemoryInput,
   MemoryOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { configSchema, type AgentEditingConfig } from './schema.js';
 import { memoryContract } from '../../contracts/plugin-types/index.js';
@@ -20,8 +20,8 @@ export const memoryDefinition: OperationDefinition<
   create: createMemoryAgent,
 };
 
-export function memoryEvents(
-  events: OperationEvents<AgentEditingConfig>,
-): void {
-  events.on('rsi/doctor', checkAgentEditor);
+export function register(registry: Registry): void {
+  registry.registerOperation(memoryDefinition, (events) => {
+    events.on('rsi/doctor', checkAgentEditor);
+  });
 }

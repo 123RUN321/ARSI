@@ -1,8 +1,8 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   ApplicationInput,
   ApplicationOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { configSchema, type AgentbundleConfig } from './schema.js';
 import { applicationContract } from '../../contracts/plugin-types/index.js';
@@ -21,8 +21,8 @@ export const agentbundleDefinition: OperationDefinition<
   create: createApplicationAgentbundle,
 };
 
-export function agentbundleEvents(
-  events: OperationEvents<AgentbundleConfig>,
-): void {
-  events.on('rsi/doctor', checkAgentbundleApplication);
+export function register(registry: Registry): void {
+  registry.registerOperation(agentbundleDefinition, (events) => {
+    events.on('rsi/doctor', checkAgentbundleApplication);
+  });
 }

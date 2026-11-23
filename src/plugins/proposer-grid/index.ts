@@ -1,7 +1,5 @@
-import type {
-  OperationDefinition,
-  OperationEvents,
-} from '../../contracts/index.js';
+import type { Registry } from '../../runtime/registry/index.js';
+import type { OperationDefinition } from '../../contracts/index.js';
 import {
   gridProposerContract,
   type GridProposerInput,
@@ -23,8 +21,8 @@ export const gridProposerDefinition: OperationDefinition<
   create: createGridProposer,
 };
 
-export function gridProposerEvents(
-  events: OperationEvents<GridProposerConfig>,
-): void {
-  events.on('rsi/doctor', checkOperationConfiguration);
+export function register(registry: Registry): void {
+  registry.registerOperation(gridProposerDefinition, (events) => {
+    events.on('rsi/doctor', checkOperationConfiguration);
+  });
 }

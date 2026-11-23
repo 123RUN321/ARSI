@@ -1,8 +1,8 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   MetricSelectorInput,
   MetricSelectorOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { metricSelectorContract } from '../../contracts/plugin-types/index.js';
 import { checkOperationConfiguration } from '../shared/doctor/checks.js';
@@ -22,8 +22,8 @@ export const inferenceSelectorDefinition: OperationDefinition<
   create: createInferenceSelector,
 };
 
-export function inferenceSelectorEvents(
-  events: OperationEvents<MetricSelectorConfig>,
-): void {
-  events.on('rsi/doctor', checkOperationConfiguration);
+export function register(registry: Registry): void {
+  registry.registerOperation(inferenceSelectorDefinition, (events) => {
+    events.on('rsi/doctor', checkOperationConfiguration);
+  });
 }

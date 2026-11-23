@@ -1,3 +1,4 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   OperationDefinition,
   OperatorSummarizerInput,
@@ -17,3 +18,7 @@ export const operatorSummarizerDefinition: OperationDefinition<
   configSchema,
   create: createOperatorSummarizer,
 };
+
+export function register(registry: Registry): void {
+  registry.registerOperation(operatorSummarizerDefinition);
+}

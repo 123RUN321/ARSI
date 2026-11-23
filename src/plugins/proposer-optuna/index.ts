@@ -1,6 +1,6 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   OperationDefinition,
-  OperationEvents,
   IterativeProposerInput,
   IterativeProposerOutput,
 } from '../../contracts/index.js';
@@ -20,8 +20,8 @@ export const optunaProposerDefinition: OperationDefinition<
   create: createOptunaProposer,
 };
 
-export function optunaProposerEvents(
-  events: OperationEvents<OptunaConfig>,
-): void {
-  events.on('rsi/doctor', checkOptunaDependencies);
+export function register(registry: Registry): void {
+  registry.registerOperation(optunaProposerDefinition, (events) => {
+    events.on('rsi/doctor', checkOptunaDependencies);
+  });
 }

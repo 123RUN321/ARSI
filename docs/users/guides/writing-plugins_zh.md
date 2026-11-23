@@ -49,7 +49,7 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 
 ### 可选的注册事件
 
-`doctor` 和 `cleanup` 都是可选能力。在 `registry.registerOperation` 回调中，插件可按需注册其中一个或两个事件的处理器。示例见[插件诊断与资源清理](runtime-events_zh.md#插件诊断与资源清理)。
+用 `registry.registerOperation(definition)` 注册一次插件即可。`doctor` 和 `cleanup` 都是可选能力，需要时给这次调用传入回调，在其中订阅要实现的事件。示例见[插件诊断与资源清理](runtime-events_zh.md#插件诊断与资源清理)。
 
 | 能力      | 注册方式                                     | 处理器返回值                                          |
 | --------- | -------------------------------------------- | ----------------------------------------------------- |
@@ -198,7 +198,7 @@ export const keepParentDefinition: OperationDefinition<
 
 Runtime 通过注册 ID 查找插件。创建文件或在 Recipe 中填写 ID 都不会自动加载代码，需要针对新增的插件进行注册操作。
 
-> 维护框架内置插件时，也可将实现放在 `src/plugins/`，在[内置注册文件](../../../src/runtime/builtins.ts)中注册，并执行 `pnpm build` 随框架构建。
+> 开发内置插件时，在 `src/plugins/<name>/index.ts` 中导出 `register(registry)`，将该模块加入[内置插件清单](../../../src/runtime/builtins.ts)，然后执行 `pnpm build`。
 
 1. 使用自定义插件工程自己的构建命令生成 `dist/proposer-keep-parent/`。创建 `~/.arsi/plugins/my-extension/`，再将编译结果及运行时依赖部署到该目录，保留相对目录结构。
 

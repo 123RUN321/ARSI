@@ -1,9 +1,9 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
 import type {
   AgentbenchInput,
   AgentbenchOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { configSchema, type AgentbenchConfig } from './schema.js';
 import { agentbenchContract } from '../../contracts/plugin-types/index.js';
@@ -21,11 +21,11 @@ export const agentbenchDefinition: OperationDefinition<
   create: createAgentbench,
 };
 
-export function agentbenchEvents(
-  events: OperationEvents<AgentbenchConfig>,
-): void {
-  events.on('rsi/doctor', agentbenchDoctor);
-  events.on('rsi/cleanup', (context) =>
-    cleanupEvaluatorBinding(context, 'agentbundle'),
-  );
+export function register(registry: Registry): void {
+  registry.registerOperation(agentbenchDefinition, (events) => {
+    events.on('rsi/doctor', agentbenchDoctor);
+    events.on('rsi/cleanup', (context) =>
+      cleanupEvaluatorBinding(context, 'agentbundle'),
+    );
+  });
 }

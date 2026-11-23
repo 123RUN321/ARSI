@@ -1,10 +1,10 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   DoctorContext,
   DoctorResult,
   GymInput,
   GymOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { gymContract } from '../../contracts/plugin-types/index.js';
 import { gymDoctor } from './evaluate/doctor.js';
@@ -40,6 +40,8 @@ export const gymDefinition: OperationDefinition<
   create: (config, context) => createGymOperation(config, context),
 };
 
-export function gymEvents(events: OperationEvents<GymPluginConfig>): void {
-  events.on('rsi/doctor', doctor);
+export function register(registry: Registry): void {
+  registry.registerOperation(gymDefinition, (events) => {
+    events.on('rsi/doctor', doctor);
+  });
 }

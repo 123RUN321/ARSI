@@ -1,9 +1,9 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import { checkClaudeCodeAgent } from './doctor.js';
 import type {
   AgentInput,
   AgentOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { agentContract } from '../../contracts/plugin-types/index.js';
 import { configSchema, type AgentClaudeCodeConfig } from './schema.js';
@@ -21,8 +21,8 @@ export const claudeCodeDefinition: OperationDefinition<
   create: createAgentClaudeCode,
 };
 
-export function claudeCodeEvents(
-  events: OperationEvents<AgentClaudeCodeConfig>,
-): void {
-  events.on('rsi/doctor', checkClaudeCodeAgent);
+export function register(registry: Registry): void {
+  registry.registerOperation(claudeCodeDefinition, (events) => {
+    events.on('rsi/doctor', checkClaudeCodeAgent);
+  });
 }

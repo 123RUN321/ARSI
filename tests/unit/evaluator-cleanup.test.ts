@@ -29,6 +29,8 @@ import {
   createAgentbench,
   prepareEvaluationConfig,
 } from '../../src/plugins/evaluator-agentbench/service.js';
+import { register as registerAgentbench } from '../../src/plugins/evaluator-agentbench/index.js';
+import { register as registerOperatorbench } from '../../src/plugins/evaluator-operatorbench/index.js';
 import { prepareEvaluationConfig as prepareKernelConfig } from '../../src/plugins/evaluator-operatorbench/service.js';
 import { registerBuiltins } from '../../src/runtime/builtins.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
@@ -143,13 +145,6 @@ function report(...statuses: string[]): JsonObject {
       },
     ],
   };
-}
-
-async function builtinRegistry(t: test.TestContext): Promise<Registry> {
-  const registry = new Registry();
-  t.after(() => registry.dispose());
-  await registerBuiltins(registry);
-  return registry;
 }
 
 function cleanupContext(ctx: RuntimeContext, pluginId: string): CleanupContext {
@@ -485,7 +480,9 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
     async () => assert.fail('AgentBench consumed a kernel input'),
   );
   assert.deepEqual((await f.read(callId)).attempts, []);
-  const registry = await builtinRegistry(t);
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  registerOperatorbench(registry);
   const owner = cleanupContext(context, 'evaluator.operatorbench');
   await registry.dispatch(owner.pluginId, 'rsi/cleanup', {
     ...owner,
@@ -547,7 +544,9 @@ test('the registered AgentBench handler cleans its binding through the installed
     if (previous === undefined) delete process.env.NODE_OPTIONS;
     else process.env.NODE_OPTIONS = previous;
   });
-  const registry = await builtinRegistry(t);
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  registerAgentbench(registry);
   await assert.rejects(readFile(log), { code: 'ENOENT' });
   const owner = cleanupContext(f.context, 'evaluator.agentbench');
   const results = await registry.dispatch(owner.pluginId, 'rsi/cleanup', owner);

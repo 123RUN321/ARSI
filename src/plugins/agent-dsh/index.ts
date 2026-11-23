@@ -1,9 +1,9 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import { checkDshAgent } from './doctor.js';
 import type {
   AgentInput,
   AgentOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { agentContract } from '../../contracts/plugin-types/index.js';
 import { configSchema, type AgentDshConfig } from './schema.js';
@@ -21,6 +21,8 @@ export const dshDefinition: OperationDefinition<
   create: createAgentDsh,
 };
 
-export function dshEvents(events: OperationEvents<AgentDshConfig>): void {
-  events.on('rsi/doctor', checkDshAgent);
+export function register(registry: Registry): void {
+  registry.registerOperation(dshDefinition, (events) => {
+    events.on('rsi/doctor', checkDshAgent);
+  });
 }

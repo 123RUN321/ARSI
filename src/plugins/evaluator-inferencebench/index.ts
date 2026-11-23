@@ -1,8 +1,8 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   InferencebenchInput,
   InferencebenchOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { configSchema, type EvaluatorConfig } from './schema.js';
 import { inferencebenchContract } from '../../contracts/plugin-types/index.js';
@@ -21,8 +21,8 @@ export const inferencebenchDefinition: OperationDefinition<
   create: createInferencebench,
 };
 
-export function inferencebenchEvents(
-  events: OperationEvents<EvaluatorConfig>,
-): void {
-  events.on('rsi/doctor', inferencebenchDoctor);
+export function register(registry: Registry): void {
+  registry.registerOperation(inferencebenchDefinition, (events) => {
+    events.on('rsi/doctor', inferencebenchDoctor);
+  });
 }

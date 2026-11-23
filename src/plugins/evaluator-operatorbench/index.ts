@@ -1,8 +1,6 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
-import type {
-  OperationDefinition,
-  OperationEvents,
-} from '../../contracts/index.js';
+import type { OperationDefinition } from '../../contracts/index.js';
 import {
   operatorbenchContract,
   type OperatorbenchInput,
@@ -28,11 +26,11 @@ export const operatorbenchDefinition: OperationDefinition<
   create: createOperatorbench,
 };
 
-export function operatorbenchEvents(
-  events: OperationEvents<OperatorbenchConfig>,
-): void {
-  events.on('rsi/doctor', operatorbenchDoctor);
-  events.on('rsi/cleanup', (context) =>
-    cleanupEvaluatorBinding(context, 'kernel'),
-  );
+export function register(registry: Registry): void {
+  registry.registerOperation(operatorbenchDefinition, (events) => {
+    events.on('rsi/doctor', operatorbenchDoctor);
+    events.on('rsi/cleanup', (context) =>
+      cleanupEvaluatorBinding(context, 'kernel'),
+    );
+  });
 }

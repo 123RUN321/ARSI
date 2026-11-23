@@ -1,8 +1,8 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import type {
   ApplicationInput,
   ApplicationOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { configSchema, type InferenceConfig } from './schema.js';
 import { applicationContract } from '../../contracts/plugin-types/index.js';
@@ -21,8 +21,8 @@ export const inferenceDefinition: OperationDefinition<
   create: createApplicationInference,
 };
 
-export function inferenceEvents(
-  events: OperationEvents<InferenceConfig>,
-): void {
-  events.on('rsi/doctor', checkInferenceApplication);
+export function register(registry: Registry): void {
+  registry.registerOperation(inferenceDefinition, (events) => {
+    events.on('rsi/doctor', checkInferenceApplication);
+  });
 }

@@ -49,7 +49,7 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 
 ### Optional registration events
 
-Both `doctor` and `cleanup` are optional. In the `registry.registerOperation` callback, register a handler for each event your plugin supports. See [Plugin diagnostics and resource cleanup](runtime-events.md#plugin-diagnostics-and-resource-cleanup) for an example.
+Register the plugin once with `registry.registerOperation(definition)`. For optional `doctor` or `cleanup` support, pass a callback to that same call and subscribe to the events you implement. See [Plugin diagnostics and resource cleanup](runtime-events.md#plugin-diagnostics-and-resource-cleanup) for an example.
 
 | Capability | Registration                                 | Handler result                                                     |
 | ---------- | -------------------------------------------- | ------------------------------------------------------------------ |
@@ -198,7 +198,7 @@ export const keepParentDefinition: OperationDefinition<
 
 Runtime finds plugins by registered ID. Creating a file or adding an ID to a Recipe does not load code automatically. Register each new plugin before using it.
 
-> When maintaining built-in framework plugins, you can place implementations in `src/plugins/`, register them in the [built-in registration file](../../../src/runtime/builtins.ts), and run `pnpm build` to build them with the framework.
+> For a built-in plugin, export `register(registry)` from `src/plugins/<name>/index.ts`. Add the module to the [built-in plugin list](../../../src/runtime/builtins.ts) and run `pnpm build`.
 
 1. Run your custom plugin project's own build command to generate `dist/proposer-keep-parent/`. Create `~/.arsi/plugins/my-extension/`, then deploy the compiled files and runtime dependencies there, preserving the relative directory structure.
 

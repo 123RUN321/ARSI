@@ -1,9 +1,9 @@
+import type { Registry } from '../../runtime/registry/index.js';
 import { checkOpenCodeAgent } from './doctor.js';
 import type {
   AgentInput,
   AgentOutput,
   OperationDefinition,
-  OperationEvents,
 } from '../../contracts/index.js';
 import { agentContract } from '../../contracts/plugin-types/index.js';
 import { configSchema, type AgentOpenCodeConfig } from './schema.js';
@@ -21,8 +21,8 @@ export const openCodeDefinition: OperationDefinition<
   create: createAgentOpenCode,
 };
 
-export function openCodeEvents(
-  events: OperationEvents<AgentOpenCodeConfig>,
-): void {
-  events.on('rsi/doctor', checkOpenCodeAgent);
+export function register(registry: Registry): void {
+  registry.registerOperation(openCodeDefinition, (events) => {
+    events.on('rsi/doctor', checkOpenCodeAgent);
+  });
 }
