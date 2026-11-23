@@ -259,6 +259,7 @@ export async function doctorRecipe(
           ];
         else report.missingResources.push(item);
       };
+      let pathsValid = true;
       for (const field of configPathFields(
         binding.definition.configSchema,
         binding.config,
@@ -295,19 +296,22 @@ export async function doctorRecipe(
           { signal },
         );
         addCheck(check);
+        if (check.status === 'failed') pathsValid = false;
         if (missing)
           addMissing({
             field: `config${field.pointer.replaceAll('/', '.')}`,
             kind: field.kind,
             reference,
-            checksNotRun: [],
+            checksNotRun: options.staticOnly ? [] : ['plugin'],
           });
       }
-      if (options.staticOnly) {
+      if (options.staticOnly || !pathsValid) {
         addCheck({
           id: 'plugin',
           status: 'unchecked',
-          reason: 'Component diagnostics were skipped by --static.',
+          reason: options.staticOnly
+            ? 'Component diagnostics were skipped by --static.'
+            : 'Component diagnostics were skipped because a declared local path failed validation.',
         });
         continue;
       }

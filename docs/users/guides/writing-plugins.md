@@ -147,7 +147,7 @@ import type { KeepParentConfig } from './schema.js';
 
 export async function createKeepParent(
   config: KeepParentConfig,
-  _context: RuntimeContext,
+  _context: RuntimeContext<KeepParentConfig>,
 ): Promise<Operation<ProposerInput, ProposerOutput>> {
   return {
     // Check cancellation and the parent candidate, then return it unchanged.
@@ -198,7 +198,7 @@ export const keepParentDefinition: OperationDefinition<
 
 Runtime finds plugins by registered ID. Creating a file or adding an ID to a Recipe does not load code automatically. Register each new plugin before using it.
 
-> For a built-in plugin, export `register(registry)` from `src/plugins/<name>/index.ts`. Add the module to the [built-in plugin list](../../../src/runtime/builtins.ts) and run `pnpm build`.
+> For a built-in plugin, export its `OperationDefinition` from `src/plugins/<name>/index.ts`. Import the definition in `src/runtime/builtins.ts`, add it to the [`definitions` array](../../../src/runtime/builtins.ts), and run `pnpm build`.
 
 1. Run your custom plugin project's own build command to generate `dist/proposer-keep-parent/`. Create `~/.arsi/plugins/my-extension/`, then deploy the compiled files and runtime dependencies there, preserving the relative directory structure.
 

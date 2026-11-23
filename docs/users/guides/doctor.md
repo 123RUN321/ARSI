@@ -31,7 +31,7 @@ flowchart TD
     F -- No --> G["Record recipe.validate failure"]
     F -- Yes --> H["Prepare a temporary Runtime<br/>Visit the Application, bindings and Reflection"]
     H --> I["Check declared local paths"]
-    I --> J{"Full check?"}
+    I --> J{"Full check and valid local paths?"}
     J -- Yes --> K["Create the binding and call its optional rsi/doctor"]
     K --> Q["Record results, missing handler or failure"]
     J -- No --> L["Mark the plugin check unchecked"]
@@ -50,7 +50,7 @@ flowchart TD
    - Probes use the configuration produced by merging Policy defaults and Recipe overrides.
    - A loading error produces a failed diagnostic and stops component probes.
 3. **Check declared local paths.** For the Application, each effective binding and the configured Reflection implementation, doctor checks local files and directories marked with `x-rsi-path` for existence, type and readability.
-4. **Run component checks.** Full doctor creates a temporary instance for each effective binding, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`. `--static` runs only the common checks and skips instance creation.
+4. **Run component checks.** If a declared local path fails validation, doctor marks the binding’s `plugin` check `unchecked` and continues with the next binding. For bindings with valid paths, full doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`. `--static` runs only the common checks and skips instance creation.
 5. **Clean up and report.** RSI checks use isolated temporary storage, propagate cancellation, release the instances and processes they create, and remove temporary files. Checks can read existing artifacts as inputs. RSI keeps its captures and writes in the temporary Runtime.
 
 ### Reading the JSON report
@@ -141,7 +141,7 @@ Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/co
 | `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                                                        |
 | `DoctorResult`       | The component's results. Each entry in `checks` gives an ID, status and optional explanation. The result can include `missingResources` for missing inputs. The framework prefixes IDs with the binding name and combines the results into the JSON report. |
 
-- `C` is the component configuration type. Below, `CustomConfig` defines `inputFile: string`, so TypeScript infers `context.binding.config.inputFile` as `string`.
+- `C` is the component configuration type. Here `schema.ts` exports `type CustomConfig = { inputFile: string }`, so TypeScript infers `context.binding.config.inputFile` as `string`.
 
 In this example, the existing `configSchema` declares a required string named `inputFile` with the annotation `'x-rsi-path': 'file'`. The common check validates the path. The following `doctor.ts` checks the file contents.
 
@@ -149,8 +149,7 @@ In this example, the existing `configSchema` declares a required string named `i
 import { readFile } from 'node:fs/promises';
 import { runDoctorCheck } from 'arsi';
 import type { OperationDoctor } from 'arsi/contracts';
-
-type CustomConfig = { inputFile: string };
+import type { CustomConfig } from './schema.js';
 
 export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
   const inputContent = await runDoctorCheck(
@@ -170,7 +169,7 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 
 - In the example above, `runDoctorCheck` is an optional helper that sets a deadline for one probe and returns a check result.
 
-Import `checkCustom` in `service.ts` and add this line to the existing `create(config, ctx)` function. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.
+In `service.ts`, type the factory parameter as `ctx: RuntimeContext<CustomConfig>`. Import `RuntimeContext` from `arsi/contracts` and subscribe to `checkCustom` from `./doctor.js` inside the factory. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.
 
 ```ts
 ctx.event.on('rsi/doctor', checkCustom);

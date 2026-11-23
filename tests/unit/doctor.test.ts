@@ -205,6 +205,46 @@ test('an initialization failure belongs to its binding, static mode skips creati
   ]);
 });
 
+test('a rejected Target path skips the Application factory and still probes other bindings', async (t) => {
+  const f = await fixture();
+  t.after(f.dispose);
+  const target = join(f.root, 'invalid-target');
+  if (process.platform === 'win32') await mkdir(target);
+  else await promisify(execFile)('mkfifo', [target]);
+
+  let creations = 0;
+  f.runtime.registry.registerOperation({
+    ...f.runtime.registry.get('application.agentbundle'),
+    id: 'test.file-application',
+    async create() {
+      creations++;
+      throw new Error('Invalid Target reached the factory');
+    },
+  });
+  const recipe = object(JSON.parse(await readFile(f.path, 'utf8')));
+  recipe.application = {
+    plugin: 'test.file-application',
+    config: { target: { schema: target }, baseline: { directory: f.root } },
+  };
+  await writeFile(f.path, JSON.stringify(recipe));
+  const report = await doctorRecipe(f.runtime, f.path);
+  const byId = new Map(report.checks.map((check) => [check.id, check]));
+  assert.equal(creations, 0);
+  assert.equal(report.summary.failed, 1);
+  assert.equal(
+    byId.get('application.resource.target.schema')?.status,
+    'failed',
+  );
+  assert.equal(
+    byId.get('application.resource.baseline.directory')?.status,
+    'passed',
+  );
+  assert.equal(byId.get('application.plugin')?.status, 'unchecked');
+  assert.equal(byId.get('left.configuration')?.status, 'passed');
+  assert.equal(byId.get('right.configuration')?.status, 'passed');
+  verifyReport(report);
+});
+
 test('doctor checks effective per-binding overrides and reports uncovered implementations without experiments', async () => {
   const f = await fixture();
   try {

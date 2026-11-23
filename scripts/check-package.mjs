@@ -892,7 +892,7 @@ export function checkExecution(context:Parameters<OperationDefinition['create']>
   await writeFile(
     join(consumer, 'doctor-consumer.ts'),
     `
-import {proposerContract,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorResult} from 'arsi/contracts';
+import {proposerContract,type RuntimeContext,type Operation,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorResult} from 'arsi/contracts';
 import {runDoctorCheck,type OperationDoctor as RootOperationDoctor,type DoctorResult as RootDoctorResult} from 'arsi';
 type Config={inputFile:string};
 export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Config>):Promise<DoctorResult>=>{
@@ -902,13 +902,13 @@ export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Con
  return result;
 };
 const rootDoctor:RootOperationDoctor<Config>=checkCustom;void rootDoctor;
+async function createCustom(_config:Config, ctx:RuntimeContext<Config>):Promise<Operation<ProposerInput,ProposerOutput>> {
+ ctx.event.on('rsi/doctor', checkCustom);
+ ctx.event.on('rsi/cleanup', ({bindingId, dryRun}) => [{key: bindingId, status: dryRun ? 'preview' : 'complete'}]);
+ return {async execute(input){return{status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'};},async dispose(){}};
+}
 export const doctorDefinition:OperationDefinition<ProposerInput,ProposerOutput,Config>={
- id:'proposer.custom',contract:proposerContract,configSchema:{type:'object'},
- async create(_config, ctx){
-   ctx.event.on('rsi/doctor', context => checkCustom(context));
-   ctx.event.on('rsi/cleanup', ({bindingId, dryRun}) => [{key: bindingId, status: dryRun ? 'preview' : 'complete'}]);
-   return {async execute(input){return{status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'};},async dispose(){}};
- }
+ id:'proposer.custom',contract:proposerContract,configSchema:{type:'object'},create:createCustom,
 };
 export function register(registry: import('arsi').Registry): void {
  registry.registerOperation(doctorDefinition);

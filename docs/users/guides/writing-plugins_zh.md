@@ -147,7 +147,7 @@ import type { KeepParentConfig } from './schema.js';
 
 export async function createKeepParent(
   config: KeepParentConfig,
-  _context: RuntimeContext,
+  _context: RuntimeContext<KeepParentConfig>,
 ): Promise<Operation<ProposerInput, ProposerOutput>> {
   return {
     // 检查取消信号和父候选，返回保留父候选的结果。
@@ -198,7 +198,7 @@ export const keepParentDefinition: OperationDefinition<
 
 Runtime 通过注册 ID 查找插件。创建文件或在 Recipe 中填写 ID 都不会自动加载代码，需要针对新增的插件进行注册操作。
 
-> 开发内置插件时，在 `src/plugins/<name>/index.ts` 中导出 `register(registry)`，将该模块加入[内置插件清单](../../../src/runtime/builtins.ts)，然后执行 `pnpm build`。
+> 开发内置插件时，从 `src/plugins/<name>/index.ts` 导出插件的 `OperationDefinition`，在 `src/runtime/builtins.ts` 中导入该定义并加入 [`definitions` 数组](../../../src/runtime/builtins.ts)，然后执行 `pnpm build`。
 
 1. 使用自定义插件工程自己的构建命令生成 `dist/proposer-keep-parent/`。创建 `~/.arsi/plugins/my-extension/`，再将编译结果及运行时依赖部署到该目录，保留相对目录结构。
 

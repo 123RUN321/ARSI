@@ -11,6 +11,7 @@ import type {
 } from '../../../contracts/index.js';
 import { errorText } from '../../../shared/errors.js';
 import { digest, object, string } from '../../../shared/json.js';
+import { evaluatorNetworkConfigPath } from './configuration.js';
 import { clone, redact } from './data.js';
 
 type CleanupContext = Pick<
@@ -266,8 +267,11 @@ export async function runEvaluatorCleanup(
       if (!path) throw new Error('Invalid Evaluator cleanup call identity');
       if (digest(await readFile(path, 'utf8')) !== entry.inputDigest)
         throw new Error('Evaluator input changed after the recorded call');
+      // The SDK creates missing defaults during implicit network configuration lookup.
+      const networkConfigPath = evaluatorNetworkConfigPath();
       const loaded = await loadConfig(path, {}, process.env, {
         allowMissingAuth: true,
+        networkConfigPath,
       });
       if (cleanupTarget(loaded, process.env) !== entry.targetDigest)
         throw new Error(
@@ -295,6 +299,7 @@ export async function runEvaluatorCleanup(
       outcome = cleanupResult(
         await run({
           configPath: path,
+          networkConfigPath,
           execute: !dryRun,
           signal,
         }),

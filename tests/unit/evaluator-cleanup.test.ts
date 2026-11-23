@@ -5,13 +5,15 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rename,
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
+import { Evaluator } from 'arsi-evaluator';
 import {
   RuntimeContext,
   type JsonObject,
@@ -264,6 +266,10 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   );
   await runEvaluatorCleanup(f.context, agentCleanup, async (options) => {
     assert.equal(options.execute, true);
+    assert.equal(
+      options.networkConfigPath,
+      process.env.EVALUATOR_NETWORK_CONFIG,
+    );
     paths.push(options.configPath);
     return options.configPath === first.path ? partial : report('retained');
   });
@@ -284,6 +290,50 @@ test('cleanup preserves per-attempt SDK outcomes and only retries pending inputs
   await runEvaluatorCleanup(f.context, agentCleanup, async () =>
     assert.fail('completed input was replayed'),
   );
+});
+
+test('cleanup preview leaves a missing default network configuration pending at either SDK read', async (t) => {
+  const f = await fixture(t);
+  const home = join(f.context.dataDirectory, 'home');
+  const homeVariable = process.platform === 'win32' ? 'USERPROFILE' : 'HOME';
+  const previousHome = process.env[homeVariable];
+  process.env[homeVariable] = home;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env[homeVariable];
+    else process.env[homeVariable] = previousHome;
+  });
+  delete process.env.EVALUATOR_NETWORK_CONFIG;
+  assert.equal(homedir(), home);
+  const directory = join(home, '.arsi-evaluator');
+  const networkConfigPath = join(directory, 'network.yaml');
+  const saved = join(f.context.dataDirectory, 'saved-network');
+  await mkdir(directory, { recursive: true });
+  await writeFile(networkConfigPath, '{}\n');
+  const { key } = await f.register();
+  const receipt = await f.read(key);
+  const preview = { ...agentCleanup, dryRun: true };
+
+  for (const stage of ['preflight', 'cleanup']) {
+    if (stage === 'preflight') await rename(directory, saved);
+    else await rename(saved, directory);
+    let calls = 0;
+    const result = await runEvaluatorCleanup(
+      f.context,
+      preview,
+      async (options) => {
+        calls++;
+        assert.equal(options.networkConfigPath, networkConfigPath);
+        await rename(directory, saved);
+        return new Evaluator().cleanup(options);
+      },
+    );
+    assert.equal(calls, stage === 'preflight' ? 0 : 1);
+    assert.equal(result[0]?.status, 'pending');
+    assert.match(result[0]?.error ?? '', /ENOENT/);
+    assert.ok(result[0]?.error?.includes(networkConfigPath));
+    assert.deepEqual(await readdir(home), []);
+    assert.deepEqual(await f.read(key), receipt);
+  }
 });
 
 test('manual preview reports an unverified receipt and leaves both bindings untouched', async (t) => {

@@ -61,7 +61,7 @@ arsi doctor my-experiment/recipe.yaml
 arsi run my-experiment/recipe.yaml --id terminal-skills-01
 ```
 
-- `doctor` checks the Recipe, plugin configuration, contract compatibility, Policy compilation and declared Reflection resources, then dispatches `rsi/doctor` to each effective binding with a handler. Its single JSON report contains `recipeId`, `summary`, `checks` and `missingResources`.
+- `doctor` checks the Recipe, plugin configuration, contract compatibility, Policy compilation and declared Reflection resources, then dispatches `rsi/doctor` to bindings with valid local paths and a handler. Its single JSON report contains `recipeId`, `summary`, `checks` and `missingResources`.
   - Statuses are `passed`, `failed` and `unchecked`.
   - For the diagnostic flow, report interpretation, built-in checks and custom-component integration, see the [doctor guide](doctor.md).
 
@@ -113,7 +113,7 @@ RSI retains reusable resources after every run. When you request cleanup, RSI co
 - `arsi cleanup terminal-skills-01 --dry-run` previews one experiment. Run `arsi cleanup terminal-skills-01` to release its eligible resources.
 - `arsi cleanup --all` releases eligible resources across the workspace and skips experiments in use.
 
-For custom plugins, pass the same `--plugin-dir` used to run the experiment. A missing plugin or a failed instance initialization is reported as `pending` and other bindings are still checked.
+For custom plugins, pass the same `--plugin-dir` used to run the experiment. A missing plugin or a failed instance initialization is reported as `pending` and other bindings are still checked. Evaluator cleanup uses `EVALUATOR_NETWORK_CONFIG` or `~/.arsi-evaluator/network.yaml`. If the file is missing, the receipt stays `pending`. Restore the configuration and retry.
 
 Cleanup preserves checkpoints, results, logs, and resources still in use by other experiments. A later `--resume` or another experiment of the same type may take longer to start if it needs to pull or rebuild images.
 
