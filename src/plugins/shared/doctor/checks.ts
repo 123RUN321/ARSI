@@ -1,12 +1,4 @@
 import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
-import { agentContract } from '../../../contracts/plugin-types/agent.js';
-
-export function resolveAgent(context: DoctorContext, reference: string): void {
-  const binding = context.recipe.bindings[reference];
-  if (!binding)
-    throw new Error(`agentRef: Agent binding ${reference} is not declared`);
-  context.registry.assertContract(agentContract, binding.pluginId, reference);
-}
 
 export function missingPath(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;

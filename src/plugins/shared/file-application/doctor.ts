@@ -51,6 +51,13 @@ export async function checkBaselineDirectory(
   check: DoctorResult['checks'][number];
   directory?: string;
 }> {
+  const blockedBy = [
+    'resource.target.schema',
+    'resource.baseline.directory',
+  ].find((id) => context.failedPrerequisites?.includes(id));
+  if (blockedBy)
+    return { check: { id: 'baseline', status: 'unchecked', blockedBy } };
+
   let baselineDirectory: string | undefined;
   const check = await runDoctorCheck(
     'baseline',
@@ -60,8 +67,6 @@ export async function checkBaselineDirectory(
         context.binding.config,
         `${context.binding.name}.config`,
       );
-      if (typeof config.target.schema === 'string')
-        await requirePath(config.target.schema, 'target.schema', 'file');
       const { target } = await readTarget(
         config,
         context.runtime.rootDirectory,
@@ -72,7 +77,6 @@ export async function checkBaselineDirectory(
           context.runtime.rootDirectory,
           config.baseline.directory,
         );
-        await requirePath(directory, 'baseline.directory', 'directory');
       } else {
         directory = join(context.directory, 'baseline-input');
         try {
@@ -135,18 +139,19 @@ export async function checkFileApplication(
   const result = { checks };
   if (!baseline.directory) {
     const reason = 'Baseline or Target prerequisites failed.';
+    const blockedBy = baseline.check.blockedBy ?? baseline.check.id;
     checks.push(
       {
         id: verification,
         status: 'unchecked',
         reason,
-        blockedBy: baseline.check.id,
+        blockedBy,
       },
       {
         id: 'acquire-instance',
         status: 'unchecked',
         reason,
-        blockedBy: baseline.check.id,
+        blockedBy,
       },
     );
     return result;

@@ -113,7 +113,7 @@ for (const id of [
     const workingResult = await runDoctor(working);
     assert.deepEqual(
       workingResult.checks.map((check) => check.status),
-      ['passed', 'passed', 'passed'],
+      ['passed', 'passed'],
     );
     const projects = await readdir(join(f.root, 'probe/agent-projects'));
     const instructions = await readFile(
@@ -153,16 +153,8 @@ for (const id of [
   });
 }
 
-test('editor checks resolve the selected Agent and reject duplicate roles and skills', async (t) => {
+test('editor checks diagnose missing guidance and reject duplicate roles and skills', async (t) => {
   const f = await fixture(t);
-  const missingAgent = f.probe('memory.agent', {
-    agentRef: 'absent',
-    prompt: f.prompt,
-  });
-  const missingAgentResult = await runDoctor(missingAgent);
-  assert.match(missingAgentResult.checks[0]!.reason!, /agentRef.*absent/);
-  assert.equal(missingAgentResult.checks.at(-1)?.status, 'passed');
-
   const missingGuidance = f.probe('memory.agent', {
     agentRef: 'agent',
     prompt: f.prompt,
@@ -401,7 +393,7 @@ test('proposer.operator loads task, stage prompts and knowledge without retrieva
   const workingResult = await runDoctor(working);
   assert.deepEqual(
     workingResult.checks.map((check) => check.status),
-    ['passed', 'passed', 'passed'],
+    ['passed', 'passed'],
   );
   await rm(join(prompts, 'repair.md'));
   const missingPrompt = f.probe('proposer.operator', config);

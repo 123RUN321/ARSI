@@ -9,6 +9,7 @@ import { errorText } from '../../shared/errors.js';
 import type { Runtime } from '../context.js';
 import { Recipe } from '../loaders/recipe.js';
 import type { Registry } from '../registry/index.js';
+import { checkDeclaredBindings } from './declared-bindings.js';
 import { diagnoseBinding } from './dispatch.js';
 import { checkDeclaredPaths } from './declared-paths.js';
 import { openProbeRuntime } from './probe-runtime.js';
@@ -99,6 +100,11 @@ async function checkBinding(
     reportBuilder.addBindingCheck(binding, check);
     if (check.status === 'failed') pathBlocker ??= check.id;
   }
+  const failedPrerequisites: string[] = [];
+  for await (const check of checkDeclaredBindings(context)) {
+    reportBuilder.addBindingCheck(binding, check);
+    if (check.status === 'failed') failedPrerequisites.push(check.id);
+  }
   if (pathBlocker) {
     reportBuilder.addBindingCheck(binding, {
       id: 'plugin',
@@ -109,9 +115,12 @@ async function checkBinding(
   }
 
   try {
-    const bindingResult = await diagnoseBinding(context.registry, context);
+    const bindingResult = await diagnoseBinding(context.registry, {
+      ...context,
+      failedPrerequisites: Object.freeze(failedPrerequisites),
+    });
     signal.throwIfAborted();
-    reportBuilder.addBindingResult(binding, bindingResult);
+    reportBuilder.addBindingResult(binding, bindingResult, failedPrerequisites);
   } catch (error) {
     signal.throwIfAborted();
     reportBuilder.addBindingCheck(binding, {

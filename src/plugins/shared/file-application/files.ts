@@ -27,7 +27,7 @@ export const fileConfigProperties: JsonObject = {
   target: {
     type: 'object',
     properties: {
-      schema: { type: ['string', 'object'], 'x-rsi-path': 'file' },
+      schema: { type: ['string', 'object'], 'x-rsi-path': 'local-file' },
     },
     required: ['schema'],
     additionalProperties: false,
@@ -35,7 +35,7 @@ export const fileConfigProperties: JsonObject = {
   baseline: {
     type: 'object',
     properties: {
-      directory: { ...ref, 'x-rsi-path': 'directory' },
+      directory: { ...ref, 'x-rsi-path': 'local-directory' },
       artifactRef: ref,
     },
     oneOf: [

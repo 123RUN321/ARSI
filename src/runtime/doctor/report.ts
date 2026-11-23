@@ -123,14 +123,19 @@ export class DoctorReportBuilder {
     this.addCheck(qualifyBindingCheck(binding, localCheck));
   }
 
-  addBindingResult(binding: DoctorBinding, bindingResult: DoctorResult): void {
+  addBindingResult(
+    binding: DoctorBinding,
+    bindingResult: DoctorResult,
+    failedPrerequisites: readonly string[],
+  ): void {
     validate(doctorResultSchema, bindingResult, 'Doctor result');
     // Validate the whole callback result before recording any of its checks.
-    const failedLocalIds = new Set(
-      bindingResult.checks
+    const failedLocalIds = new Set([
+      ...failedPrerequisites,
+      ...bindingResult.checks
         .filter(({ status }) => status === 'failed')
         .map(({ id }) => id),
-    );
+    ]);
     const batchIds = new Set<string>();
     const validatedChecks: DoctorCheck[] = [];
     for (const localCheck of bindingResult.checks) {

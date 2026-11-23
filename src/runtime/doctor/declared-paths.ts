@@ -1,44 +1,46 @@
 import { constants } from 'node:fs';
-import { access, stat } from 'node:fs/promises';
-import type {
-  DoctorBinding,
-  DoctorResult,
-  JsonObject,
-  JsonValue,
-} from '../../contracts/index.js';
+import { access, lstat, stat } from 'node:fs/promises';
+import { parse, sep } from 'node:path';
+import type { DoctorBinding, DoctorResult } from '../../contracts/index.js';
 import {
   DoctorMissingResourceError,
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
 import { configPathFields, isResourceUrl } from '../../shared/paths.js';
 
-function readConfigValue(config: JsonObject, pointer: string): JsonValue {
-  let value: JsonValue = config;
-  for (const part of pointer.slice(1).split('/')) {
-    const key = part.replaceAll('~1', '/').replaceAll('~0', '~');
-    if (value === null || typeof value !== 'object')
-      throw new Error(`Invalid resolved path ${pointer}`);
-    value = Array.isArray(value) ? value[Number(key)] : value[key];
-  }
-  return value;
-}
+const directorySuffix = sep === '\\' ? /(?:[\\/]\.?)+$/ : /(?:\/\.?)+$/;
 
 export async function* checkDeclaredPaths(
   binding: DoctorBinding,
   signal: AbortSignal,
 ): AsyncGenerator<DoctorResult['checks'][number]> {
-  for (const { pointer, kind } of configPathFields(
+  for (const { pointer, kind, reference, localOnly } of configPathFields(
     binding.definition.configSchema,
     binding.config,
   )) {
-    const reference = readConfigValue(binding.config, pointer);
-    if (typeof reference !== 'string' || isResourceUrl(reference)) continue;
+    const isUrl = isResourceUrl(reference);
+    if (isUrl && !localOnly) continue;
     const configField = pointer.slice(1).replaceAll('/', '.');
     yield runDoctorCheck(
       `resource.${configField}`,
       async () => {
+        if (isUrl)
+          throw new Error(
+            `${configField}: expected a local ${kind}: ${reference}`,
+          );
+        let path = reference;
+        if (localOnly && kind === 'directory') {
+          // A trailing slash or dot can make lstat follow the final symlink.
+          const { root } = parse(reference);
+          path =
+            root + reference.slice(root.length).replace(directorySuffix, '');
+        }
         try {
-          const pathInfo = await stat(reference);
+          const pathInfo = await (localOnly ? lstat(path) : stat(path));
+          if (pathInfo.isSymbolicLink())
+            throw new Error(
+              `${configField}: symbolic links are not allowed: ${reference}`,
+            );
           if (!(kind === 'file' ? pathInfo.isFile() : pathInfo.isDirectory()))
             throw new Error(`${pointer}: expected ${kind}: ${reference}`);
           await access(reference, constants.R_OK);

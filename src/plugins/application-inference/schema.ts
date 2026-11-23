@@ -44,7 +44,7 @@ export const configSchema: JsonSchema = {
     remote: {
       type: 'object',
       properties: {
-        script: { type: 'string', minLength: 1, 'x-rsi-path': 'file' },
+        script: { type: 'string', minLength: 1, 'x-rsi-path': 'local-file' },
         executable: { type: 'string', minLength: 1 },
         parametersFile: { type: 'string', minLength: 1 },
         timeoutMs: { type: 'integer', minimum: 1 },

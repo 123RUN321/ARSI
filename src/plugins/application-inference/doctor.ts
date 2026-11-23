@@ -25,7 +25,37 @@ export async function checkInferenceApplication(
       id: 'launch-prerequisites',
       status: 'unchecked',
       reason: 'Baseline or Target prerequisites failed.',
-      blockedBy: check.id,
+      blockedBy: check.blockedBy ?? check.id,
+    });
+    return { checks };
+  }
+  const config = context.binding.config;
+  const remote =
+    config.remote === undefined ? undefined : object(config.remote);
+  let blockedBy: string | undefined = context.failedPrerequisites?.find(
+    (id) => id === 'resource.remote.script',
+  );
+  if (remote) {
+    const executableCheck = await runDoctorCheck(
+      'remote-executable',
+      async (signal) => {
+        const executable =
+          remote.executable === undefined
+            ? 'python3'
+            : string(remote.executable);
+        await executablePath(executable, process.cwd());
+        await runCommand(executable, ['--version'], { signal });
+      },
+      { signal: context.signal },
+    );
+    checks.push(executableCheck);
+    if (executableCheck.status === 'failed') blockedBy ??= executableCheck.id;
+  }
+  if (blockedBy) {
+    checks.push({
+      id: 'launch-prerequisites',
+      status: 'unchecked',
+      blockedBy,
     });
     return { checks };
   }
@@ -33,16 +63,7 @@ export async function checkInferenceApplication(
     await runDoctorCheck(
       'launch-prerequisites',
       async (signal) => {
-        const config = context.binding.config;
-        if (config.remote !== undefined) {
-          const remote = object(config.remote);
-          const executable =
-            remote.executable === undefined
-              ? 'python3'
-              : string(remote.executable);
-          await executablePath(executable, process.cwd());
-          await runCommand(executable, ['--version'], { signal });
-          await requirePath(string(remote.script), 'remote.script', 'file');
+        if (remote) {
           const parameters = join(
             baseline,
             safePath(remote.parametersFile ?? 'tuning.json'),

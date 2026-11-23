@@ -50,7 +50,7 @@ const hash: JsonObject = { type: 'string', pattern: '^[a-f0-9]{64}$' };
 
 export const configSchema = recordSchema(
   {
-    agentRef: { ...ref, default: 'agent' },
+    agentRef: { ...ref, default: 'agent', 'x-rsi-binding': 'contract.agent' },
     promptsDirectory: { ...ref, 'x-rsi-path': 'directory' },
     hardwareContextFile: { ...ref, 'x-rsi-path': 'file' },
     historyWindow: { type: 'integer', minimum: 0, default: 5 },

@@ -230,6 +230,12 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       );
       assert.equal(
         report.checks.find(
+          (check) => check.id === 'reflection.binding.agentRef',
+        )?.status,
+        'passed',
+      );
+      assert.equal(
+        report.checks.find(
           (check) => check.id === 'domainProposer.prepare-project',
         )?.status,
         'passed',

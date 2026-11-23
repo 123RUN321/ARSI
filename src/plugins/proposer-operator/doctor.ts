@@ -4,7 +4,7 @@ import {
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
-import { missingPath, resolveAgent } from '../shared/doctor/checks.js';
+import { missingPath } from '../shared/doctor/checks.js';
 import { loadOperatorTask } from '../shared/operator-task.js';
 import type { OperatorProposerConfig } from './schema.js';
 import { loadOperatorResources, readHardwareContext } from './resources.js';
@@ -18,11 +18,6 @@ export async function checkOperatorProposer(
     `${context.binding.name}.config`,
   );
   const options = { signal: context.signal };
-  const agentBinding = await runDoctorCheck(
-    'agent-binding',
-    async () => resolveAgent(context, config.agentRef),
-    options,
-  );
   const operatorTask = await runDoctorCheck(
     'operator-task',
     async (signal) => {
@@ -67,7 +62,7 @@ export async function checkOperatorProposer(
     },
     options,
   );
-  const checks = [agentBinding, operatorTask, resources];
+  const checks = [operatorTask, resources];
   const hardwareContextFile = config.hardwareContextFile;
   if (hardwareContextFile)
     checks.push(

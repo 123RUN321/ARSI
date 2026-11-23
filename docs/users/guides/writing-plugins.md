@@ -77,10 +77,12 @@ The table lists common rule fields used when writing `configSchema`:
 | `items` / `minItems` / `uniqueItems` | Specify array element types, minimum length, and whether duplicates are allowed. | `items: { type: 'string' }, minItems: 1, uniqueItems: true`.                       |
 | `oneOf`                              | Define structures where exactly one must match.                                  | An array of Schemas, often used to distinguish inputs and outputs by `action`.     |
 | `x-rsi-path`                         | Mark a configuration field as a file or directory path.                          | Set `'x-rsi-path': 'file'` or `'directory'` on a string field.                     |
+| `x-rsi-binding`                      | Declare the contract required by a binding reference.                            | Set `'x-rsi-binding': 'contract.agent'` on a field that names an Agent binding. |
 
 Runtime merges Policy and Recipe configuration, fills defaults, validates it, and passes the result to `create`.
 
 - Relative paths marked with `x-rsi-path` are resolved against the file declaring the configuration.
+- Use `'local-file'` or `'local-directory'` for an input that requires a local file or directory. Doctor rejects URLs and paths that are themselves symbolic links for these declarations.
 
 - Plugins can also support reading configuration from environment variables. For example, `agent.pi` accepts the following `api_key` setting:
 

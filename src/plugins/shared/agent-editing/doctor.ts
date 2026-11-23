@@ -6,7 +6,7 @@ import {
   runDoctorCheck,
 } from '../../../shared/doctor-check.js';
 import { parseConfig } from '../../../shared/schema.js';
-import { missingPath, resolveAgent } from '../doctor/checks.js';
+import { missingPath } from '../doctor/checks.js';
 import { loadAgentPrompt } from './index.js';
 import { prepareAgentProject, type AgentRole } from './project.js';
 import type { AgentEditingConfig } from './schema.js';
@@ -23,11 +23,6 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
     `${context.binding.name}.config`,
   );
   const options = { signal: context.signal };
-  const agentBinding = await runDoctorCheck(
-    'agent-binding',
-    async () => resolveAgent(context, config.agentRef ?? 'agent.default'),
-    options,
-  );
   let prompt = '';
   const roles = checkedRoles(config);
   const loaded = await runDoctorCheck(
@@ -70,7 +65,6 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
   if (loaded.status !== 'passed') {
     return {
       checks: [
-        agentBinding,
         loaded,
         {
           id: 'prepare-project',
@@ -97,5 +91,5 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
     },
     options,
   );
-  return { checks: [agentBinding, loaded, prepared] };
+  return { checks: [loaded, prepared] };
 }

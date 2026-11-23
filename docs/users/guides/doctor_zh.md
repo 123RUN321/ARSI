@@ -28,7 +28,7 @@ flowchart TD
     E --> F{"校验成功？"}
     F -- 否 --> G["记录 recipe.validate 失败"]
     F -- 是 --> H["准备隔离临时 Runtime<br/>遍历 Application、绑定和 Reflection"]
-    H --> I["检查当前组件声明的本地路径"]
+    H --> I["检查已声明的路径和绑定引用"]
     I --> J{"声明的本地路径均有效？"}
     J -- 是 --> K["创建绑定实例，调用其可选的 rsi/doctor"]
     K --> Q["汇总结果、未订阅或初始化失败"]
@@ -47,7 +47,7 @@ flowchart TD
 2. **加载生效 Recipe。** `Recipe.load` 校验 Schema、绑定、契约兼容性、Policy 编译、预算和已声明的 Reflection 资源。
    - 探测使用合并 Policy 默认配置与 Recipe 覆盖后的配置。
    - 加载失败时输出失败诊断，不再执行组件探测。
-3. **检查已声明的本地路径。** 对 Application、每个生效绑定及已配置的 Reflection 实现，检查 Schema 中用 `x-rsi-path` 标记的本地文件或目录是否存在、类型是否正确、是否可读。
+3. **检查已声明的前提。** 对 Application、每个生效绑定及已配置的 Reflection 实现，检查 Schema 中用 `x-rsi-path` 标记的本地文件或目录是否存在、类型是否正确、是否可读，并检查用 `x-rsi-binding` 标记的字段是否指向实现了指定契约的 Recipe 绑定。
 4. **执行组件检查。** 若声明的本地路径检查失败，doctor 将该绑定的 `plugin` 检查记为 `unchecked`，指向失败的路径，然后继续检查下一个绑定。路径检查通过时，doctor 会创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。
 5. **清理并输出。** RSI 检查使用隔离临时存储，传递取消信号，释放自己创建的实例与进程，并删除临时文件。原有 artifacts 可作为输入读取，RSI 产生的捕获与写入留在临时 Runtime 内。
 
@@ -146,6 +146,8 @@ arsi doctor my-experiment/recipe.yaml --json
 | `OperationDoctor<C>` | `rsi/doctor` 异步处理器的类型，接收 `DoctorContext<C>` 并返回 `Promise<DoctorResult>`。                                                                  |
 | `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。                               |
 | `DoctorResult`       | 组件通过 `checks` 返回检查结果。失败项可附上 `missingResource`，未检查项可用 `blockedBy` 引用失败项的局部 ID。框架为检查 ID 和引用添加绑定名前缀。 |
+
+组件在执行依赖检查前，可以从 `context.failedPrerequisites` 查找失败的通用检查。路径和绑定引用检查的局部 ID 分别为 `resource.<field>` 和 `binding.<field>`。组件可以用它们作为 `unchecked` 结果的 `blockedBy`。
 
 `missingResource.field` 使用相对于绑定配置的字段名，例如 `inputFile`。本地资源的引用使用解析后的路径。报告会为字段加上绑定名和 `config` 前缀。
 

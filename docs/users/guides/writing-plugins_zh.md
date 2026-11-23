@@ -77,10 +77,12 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 | `items` / `minItems` / `uniqueItems` | 指定数组元素类型、最少数量及是否允许重复。 | `items: { type: 'string' }, minItems: 1, uniqueItems: true`。    |
 | `oneOf`                              | 定义只能满足其中一种的结构。               | 填写 Schema 数组，常用于按 `action` 区分输入和输出。             |
 | `x-rsi-path`                         | 标记配置中的文件或目录路径。               | 在字符串字段上填写 `'x-rsi-path': 'file'` 或 `'directory'`。     |
+| `x-rsi-binding`                      | 声明绑定引用所需的契约。                   | 在填写 Agent 绑定名的字段上设置 `'x-rsi-binding': 'contract.agent'`。 |
 
 Runtime 合并 Policy 和 Recipe 的配置后，补齐默认值、校验配置，并将结果传给 `create`。
 
-- 标记了 `x-rsi-path` 的相对路径按声明配置的文件定位：
+- 标记了 `x-rsi-path` 的相对路径按声明配置的文件定位。
+- 要求本地文件或目录的输入使用 `'local-file'` 或 `'local-directory'`。对于这些声明，doctor 会拒绝 URL 以及本身是符号链接的路径。
 
 - 插件也可以支持从环境变量读取配置。例如，`agent.pi` 的 `api_key` 可以这样填写：
 
