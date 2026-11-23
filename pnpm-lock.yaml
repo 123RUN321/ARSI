@@ -163,7 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  agent-bundle-core: git+https://github.com/ARSI-LAB/agentbundle.git#0.0.1&path:/packages/core
+  agent-bundle-core: git+https://github.com/ARSI-LAB/agentbundle.git#0.0.2&path:/packages/core
 
 importers:
 
@@ -179,8 +179,8 @@ importers:
         specifier: 10.1.7
         version: 10.1.7
       agent-bundle-core:
-        specifier: git+https://github.com/ARSI-LAB/agentbundle.git#0.0.1&path:/packages/core
-        version: git+https://github.com/ARSI-LAB/agentbundle.git#3034a3ba6292e9b01f1b28799aec90d8e11e106f&path:/packages/core
+        specifier: git+https://github.com/ARSI-LAB/agentbundle.git#0.0.2&path:/packages/core
+        version: https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/2072b7c58e59a70dcba8f7355bcdf222e23d847b#path:/packages/core
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -188,8 +188,8 @@ importers:
         specifier: 15.0.0
         version: 15.0.0
       arsi-evaluator:
-        specifier: git+https://github.com/ARSI-LAB/ARSI-Evaluator.git#58330358abfe0e4d3f116c4f919089bace60f2d5
-        version: https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/58330358abfe0e4d3f116c4f919089bace60f2d5(@aws-sdk/credential-provider-node@3.972.86)(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)(@smithy/signature-v4@5.7.4)(ws@8.22.0)(zod@4.6.7)
+        specifier: git+https://github.com/ARSI-LAB/ARSI-Evaluator.git#0.0.6
+        version: https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/ed4515d6b8937effc6c1f5320aa2b61bc1337e92(@aws-sdk/credential-provider-node@3.972.86)(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)(@smithy/signature-v4@5.7.4)(ws@8.22.0)(zod@4.6.7)
       exceljs:
         specifier: 4.4.0
         version: 4.4.0
@@ -1279,13 +1279,8 @@ packages:
     resolution: {integrity: sha512-TQf59BsZnytt8GdJKLPfUZ54g/iaUL2OWDSFCCvMOhsHduDQxO8xC4PNeyIkVcA5KwL2phPSv0douC0fgWzmnA==}
     engines: {node: '>= 20'}
 
-  agent-bundle-core@git+https://github.com/ARSI-LAB/agentbundle.git#3034a3ba6292e9b01f1b28799aec90d8e11e106f&path:/packages/core:
-    resolution: {commit: 3034a3ba6292e9b01f1b28799aec90d8e11e106f, path: /packages/core, repo: https://github.com/ARSI-LAB/agentbundle.git, type: git}
-    version: 0.5.0
-    engines: {node: '>=22'}
-
-  agent-bundle-core@https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/3034a3ba6292e9b01f1b28799aec90d8e11e106f#path:/packages/core:
-    resolution: {gitHosted: true, integrity: sha512-9h1sNtE2t7zerF3Bg3AAv4nLsxzhZiJEjB8cUPSBB84xYcXwMlfrGbohPXzSH7ahKSeAthX0UvGnMkgI3aKahw==, path: /packages/core, tarball: https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/3034a3ba6292e9b01f1b28799aec90d8e11e106f}
+  agent-bundle-core@https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/2072b7c58e59a70dcba8f7355bcdf222e23d847b#path:/packages/core:
+    resolution: {gitHosted: true, integrity: sha512-lO2q5awsXLXDX3jd6O75TqWpe488YyX3Xns8F/SedaIVzR5+RTgF1yyY5uMFegMgQbNhLmHkBi6XdiarU0fqmA==, path: /packages/core, tarball: https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/2072b7c58e59a70dcba8f7355bcdf222e23d847b}
     version: 0.5.0
     engines: {node: '>=22'}
 
@@ -1633,8 +1628,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  arsi-evaluator@https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/58330358abfe0e4d3f116c4f919089bace60f2d5:
-    resolution: {gitHosted: true, integrity: sha512-oLJbsIS9HJVtYuW0xfvN4upRwIpVsCTVeXCpIAP2lUePq7ajryr5AZtPZ0Ejols6MI3bz719APDi06GBt0JszQ==, tarball: https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/58330358abfe0e4d3f116c4f919089bace60f2d5}
+  arsi-evaluator@https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/ed4515d6b8937effc6c1f5320aa2b61bc1337e92:
+    resolution: {gitHosted: true, integrity: sha512-H9lfTM7z7m2VsYldENkAjT0Axbpf0Vp2W0v8K7TQO1I/xvdbYoZRNaq0HTZXaVljrY6J04ZxIuLB1ZPQ4kz86w==, tarball: https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/ed4515d6b8937effc6c1f5320aa2b61bc1337e92}
     version: 0.1.0
     engines: {node: '>=24.19.0'}
     hasBin: true
@@ -4155,11 +4150,7 @@ snapshots:
 
   agent-base@9.0.0: {}
 
-  agent-bundle-core@git+https://github.com/ARSI-LAB/agentbundle.git#3034a3ba6292e9b01f1b28799aec90d8e11e106f&path:/packages/core:
-    dependencies:
-      yaml: 2.9.1
-
-  agent-bundle-core@https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/3034a3ba6292e9b01f1b28799aec90d8e11e106f#path:/packages/core:
+  agent-bundle-core@https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/2072b7c58e59a70dcba8f7355bcdf222e23d847b#path:/packages/core:
     dependencies:
       yaml: 2.9.1
 
@@ -4516,7 +4507,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  arsi-evaluator@https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/58330358abfe0e4d3f116c4f919089bace60f2d5(@aws-sdk/credential-provider-node@3.972.86)(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)(@smithy/signature-v4@5.7.4)(ws@8.22.0)(zod@4.6.7):
+  arsi-evaluator@https://codeload.github.com/ARSI-LAB/ARSI-Evaluator/tar.gz/ed4515d6b8937effc6c1f5320aa2b61bc1337e92(@aws-sdk/credential-provider-node@3.972.86)(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)(@smithy/signature-v4@5.7.4)(ws@8.22.0)(zod@4.6.7):
     dependencies:
       '@deepseek-ai/cordis': 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
       '@earendil-works/chord': 1.1.0
@@ -4529,7 +4520,7 @@ snapshots:
       '@earendil-works/pi-tui': 1.1.0
       '@iarna/toml': 2.2.5
       '@modelcontextprotocol/sdk': 1.32.1(zod@4.6.7)
-      agent-bundle-core: https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/3034a3ba6292e9b01f1b28799aec90d8e11e106f#path:/packages/core
+      agent-bundle-core: https://codeload.github.com/ARSI-LAB/agentbundle/tar.gz/2072b7c58e59a70dcba8f7355bcdf222e23d847b#path:/packages/core
       commander: 15.0.0
       cross-spawn: 7.0.6
       hyparquet: 1.31.1

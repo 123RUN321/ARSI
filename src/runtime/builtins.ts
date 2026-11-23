@@ -80,44 +80,33 @@ import {
 } from '../plugins/evaluator-operatorbench/index.js';
 /** Startup code is the sole built-in registration list. Registration never runs an experiment. */
 export async function registerBuiltins(registry: Registry): Promise<void> {
-  registry.registerOperation(agentbundleDefinition, agentbundleEvents);
-  registry.registerOperation(inferenceDefinition, inferenceEvents);
-  registry.registerOperation(piDefinition, piEvents);
-  registry.registerOperation(codexDefinition, codexEvents);
-  registry.registerOperation(claudeCodeDefinition, claudeCodeEvents);
-  registry.registerOperation(dshDefinition, dshEvents);
-  registry.registerOperation(openCodeDefinition, openCodeEvents);
-  registry.registerOperation(proposerDefinition, proposerEvents);
-  registry.registerOperation(
-    operatorProposerDefinition,
-    operatorProposerEvents,
-  );
-  registry.registerOperation(operatorSummarizerDefinition);
-  registry.registerOperation(gridProposerDefinition, gridProposerEvents);
-  registry.registerOperation(optunaProposerDefinition, optunaProposerEvents);
-  registry.registerOperation(
-    paretoEvolutionProposerDefinition,
-    paretoEvolutionProposerEvents,
-  );
-  registry.registerOperation(memoryDefinition, memoryEvents);
-  registry.registerOperation(reflectionDefinition, reflectionEvents);
-  registry.registerOperation(gymDefinition, gymEvents);
-  registry.registerOperation(
-    inferenceSelectorDefinition,
-    inferenceSelectorEvents,
-  );
-  registry.registerOperation(metricSelectorDefinition, metricSelectorEvents);
-  registry.registerOperation(
-    artifactSelectorDefinition,
-    artifactSelectorEvents,
-  );
-  registry.registerOperation(
-    kernelApplicationDefinition,
-    kernelApplicationEvents,
-  );
-  registry.registerOperation(agentbenchDefinition, agentbenchEvents);
-  registry.registerOperation(inferencebenchDefinition, inferencebenchEvents);
-  registry.registerOperation(operatorbenchDefinition, operatorbenchEvents);
+  const definitions: Parameters<Registry['registerOperation']>[] = [
+    [agentbundleDefinition, agentbundleEvents],
+    [inferenceDefinition, inferenceEvents],
+    [piDefinition, piEvents],
+    [codexDefinition, codexEvents],
+    [claudeCodeDefinition, claudeCodeEvents],
+    [dshDefinition, dshEvents],
+    [openCodeDefinition, openCodeEvents],
+    [proposerDefinition, proposerEvents],
+    [operatorProposerDefinition, operatorProposerEvents],
+    [operatorSummarizerDefinition],
+    [gridProposerDefinition, gridProposerEvents],
+    [optunaProposerDefinition, optunaProposerEvents],
+    [paretoEvolutionProposerDefinition, paretoEvolutionProposerEvents],
+    [memoryDefinition, memoryEvents],
+    [reflectionDefinition, reflectionEvents],
+    [agentbenchDefinition, agentbenchEvents],
+    [gymDefinition, gymEvents],
+    [inferencebenchDefinition, inferencebenchEvents],
+    [inferenceSelectorDefinition, inferenceSelectorEvents],
+    [metricSelectorDefinition, metricSelectorEvents],
+    [artifactSelectorDefinition, artifactSelectorEvents],
+    [kernelApplicationDefinition, kernelApplicationEvents],
+    [operatorbenchDefinition, operatorbenchEvents],
+  ];
+  for (const [definition, subscribe] of definitions)
+    registry.registerOperation(definition, subscribe);
   for (const path of [
     'harness2/policy.yaml',
     'wikiskill/policy.yaml',

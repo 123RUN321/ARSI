@@ -55,6 +55,4 @@ Keep generated state in `.rsi/`. Preserve resource origins and credentials as en
 
 ## Deliver evidence
 
-When the experiment status is `succeeded`, report the result and ask whether the user wants to release resources for that experiment ID. Explain that future experiments of the same type may take longer to start if images need to be pulled or rebuilt. Run `arsi cleanup <experiment-id>` only if the user agrees.
-
 Report tested package revision, commands, resulting experiment ID, selected candidate/measurement, usage, cleanup and unresolved limits. Distinguish schema validity, startup acceptance, successful execution and measured improvement. The starter's text-predicate score verifies wiring only; it is not benchmark quality or model improvement. Online evolution requires later execution within the same unfinished task, with evidence of writing, loading, delivery and actual use.

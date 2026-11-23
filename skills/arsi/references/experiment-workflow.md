@@ -78,4 +78,4 @@ Stop when required targets are verified, major evidenced bottlenecks are handled
 
 Deliver runnable Recipes/host/extensions, the best correct candidate, complete attempt records, reproduction and resume/rollback instructions, baseline/final measurements and unresolved blockers. Distinguish validated configuration, actual execution, cleanup, correctness and achieved improvement. Offline trace analysis during resource blockage may improve the optimizer, but does not establish a new hardware performance result.
 
-For a successful run, follow the [post-run cleanup confirmation](../SKILL.md#deliver-evidence). If the user wants a preview, run `arsi cleanup <experiment-id> --dry-run` from the experiment's workspace with its original `--plugin-dir` options. Use the same workspace and options for an approved cleanup.
+After reporting a successful run, ask whether to release the experiment's resources. Pulling or rebuilding images may slow the next experiment of the same type. Use the original workspace and `--plugin-dir` options for a requested preview (`arsi cleanup <experiment-id> --dry-run`) or an approved cleanup (`arsi cleanup <experiment-id>`).
