@@ -107,6 +107,31 @@ function page<T>(items: T[], offset: number, limit: number): Page<T> {
 }
 
 /** Reads through existing stores; never writes facts, executes plugins, or interprets Policy outputs. */
+function selectionFields(
+  output: JsonValue | undefined,
+): Pick<ExperimentOverview, 'selection'> {
+  if (
+    !output ||
+    typeof output !== 'object' ||
+    Array.isArray(output) ||
+    typeof output.finalFeasible !== 'boolean'
+  )
+    return {};
+  const ref = (value: JsonValue | undefined, prefix: string): string | null =>
+    typeof value === 'string' &&
+    new RegExp('^' + prefix + '-[a-f0-9]+$').test(value)
+      ? value
+      : null;
+  return {
+    selection: {
+      candidateRef: ref(output.candidateRef, 'candidate'),
+      searchBestCandidateRef: ref(output.searchBestCandidateRef, 'candidate'),
+      finalMeasurementRef: ref(output.finalMeasurementRef, 'measurement'),
+      finalFeasible: output.finalFeasible,
+    },
+  };
+}
+
 export class ObservationQueries {
   constructor(
     private readonly facts: Pick<FactStore, 'read' | 'list' | 'scan'>,
@@ -382,6 +407,7 @@ export class ObservationQueries {
       configuration: this.preview(record.recipe, secrets),
       result,
       resultReferences,
+      ...selectionFields(record.output),
     };
   }
 
@@ -573,6 +599,7 @@ export class ObservationQueries {
       ...(await this.summary(record, secrets)),
       observedAt: new Date().toISOString(),
       usage,
+      ...selectionFields(record.output),
       limits: numbers(record.recipe ? object(record.recipe).budget : undefined),
       output: this.preview(record.output, secrets),
     };

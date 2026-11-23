@@ -42,6 +42,7 @@ export async function createInferencebench(
             context.signal.throwIfAborted();
             await mkdir(context.directory, { recursive: true });
             const evaluationConfig = prepareEvaluationConfig(config, {
+              concurrency: input.concurrency,
               execution,
               directory: context.directory,
             });
@@ -81,6 +82,8 @@ export async function createInferencebench(
                 context,
                 diagnostic,
               );
+              if (input.returnFailedMeasurement && !context.signal.aborted)
+                return { measurementRef };
               throw Object.assign(
                 new Error(
                   error instanceof Error ? error.message : String(error),
@@ -100,6 +103,12 @@ export async function createInferencebench(
               context,
             );
             const raw = object(result);
+            if (
+              input.returnFailedMeasurement &&
+              !context.signal.aborted &&
+              (raw.snapshot === undefined || raw.exitCode !== 0)
+            )
+              return { measurementRef };
             if (raw.snapshot === undefined)
               throw Object.assign(
                 new Error(
@@ -149,9 +158,11 @@ export function prepareEvaluationConfig(
   {
     execution,
     directory,
+    concurrency,
   }: {
     execution: JsonObject;
     directory: string;
+    concurrency?: number;
   },
 ): SdkEvaluatorConfig {
   const config = object(rawConfig, 'evaluator config');
@@ -160,6 +171,16 @@ export function prepareEvaluationConfig(
     typeof prepared.benchmark === 'string'
       ? { name: prepared.benchmark }
       : object(prepared.benchmark, 'benchmark');
+  if (concurrency !== undefined) {
+    const settings = object(benchmark.config ?? {}, 'benchmark.config');
+    benchmark.config = {
+      ...settings,
+      workload: {
+        ...object(settings.workload ?? {}, 'benchmark.config.workload'),
+        concurrency,
+      },
+    };
+  }
   const solver: JsonObject =
     typeof benchmark.solver === 'string'
       ? { name: benchmark.solver }

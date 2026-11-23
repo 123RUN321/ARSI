@@ -32,3 +32,9 @@ export {
   ControlStep,
   ReflectionStep,
 } from './runtime/policy/steps.js';
+
+// Extensions can request edits without committing candidates before domain validation.
+export {
+  requestEdit,
+  agentConfigSchema,
+} from './plugins/shared/agent-editing/index.js';

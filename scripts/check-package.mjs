@@ -359,6 +359,7 @@ export function register(registry) {
       'application.inference',
       'application.kernel',
       'evaluator.agentbench',
+      'evaluator.gym',
       'evaluator.inferencebench',
       'evaluator.operatorbench',
       'memory.agent',
@@ -379,6 +380,7 @@ export function register(registry) {
     [...catalog.policies].sort(),
     [
       'policy.gepa',
+      'policy.gym-rsi',
       'policy.harness2',
       'policy.operator-search',
       'policy.parameter-agent',
@@ -498,6 +500,8 @@ import {fileURLToPath} from 'node:url';
 import * as publicApi from 'arsi';
 import {createRuntime,Recipe,Policy,Binding,proposerContract,operatorProposerContract,operatorSummarizerContract,gridProposerContract,iterativeProposerContract,applicationContract,defineContract,RuntimeContext,prepareAgentProject} from 'arsi';
 import {RuntimeContext as ContractContext,iterativeProposerContract as ContractsIterativeProposerContract} from 'arsi/contracts';
+assert.equal(typeof publicApi.requestEdit,'function');
+assert.equal(publicApi.agentConfigSchema.type,'object');
 assert.equal(RuntimeContext,ContractContext);
 assert.equal(iterativeProposerContract,ContractsIterativeProposerContract);
 assert.equal(Object.hasOwn(publicApi,'validateRecipe'),false);

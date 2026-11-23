@@ -77,6 +77,22 @@ function numbers(value: unknown): Record<string, number> {
     Object.entries(record(value)).map(([key, item]) => [key, number(item)]),
   );
 }
+function selectionFields(
+  value: unknown,
+): Pick<ExperimentOverview, 'selection'> {
+  if (value === undefined) return {};
+  const data = record(value);
+  if (typeof data.finalFeasible !== 'boolean')
+    throw new Error('Invalid final confirmation');
+  return {
+    selection: {
+      candidateRef: nullable(data.candidateRef),
+      searchBestCandidateRef: nullable(data.searchBestCandidateRef),
+      finalMeasurementRef: nullable(data.finalMeasurementRef),
+      finalFeasible: data.finalFeasible,
+    },
+  };
+}
 function preview(value: unknown): JsonPreview | null {
   if (value === null) return null;
   const data = record(value);
@@ -116,6 +132,7 @@ export function parseOverview(raw: unknown): ExperimentOverview {
   const data = record(raw);
   return {
     ...parseExperiment(data),
+    ...selectionFields(data.selection),
     observedAt: text(data.observedAt),
     usage: data.usage === null ? null : numbers(data.usage),
     limits: numbers(data.limits),
@@ -269,6 +286,7 @@ export function parseDetails(raw: unknown): ExperimentDetails {
   return {
     configuration: preview(data.configuration),
     result: preview(data.result),
+    ...selectionFields(data.selection),
     resultReferences: array(data.resultReferences, (raw) => {
       const reference = record(raw);
       if (reference.kind !== 'candidate' && reference.kind !== 'measurement')

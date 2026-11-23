@@ -40,10 +40,14 @@ async function inferencebenchConfiguration(
   config: EvaluatorConfig,
   execution: JsonObject,
   directory: string,
+  concurrency?: number,
 ): Promise<JsonObject> {
   return captureEvaluatorConfiguration(
     await createInferencebench(config, new RuntimeContext()),
-    { candidateRef: 'candidate' },
+    {
+      candidateRef: 'candidate',
+      ...(concurrency === undefined ? {} : { concurrency }),
+    },
     execution,
     directory,
   );
@@ -386,7 +390,16 @@ test('inferencebench resolves the bundled AISBench SSH profile with the owned en
       credentialRef: 'VLLM_API_KEY',
     },
     directory,
+    8,
   );
+  assert.deepEqual(object(object(native.benchmark).config).workload, {
+    inputLength: 512,
+    concurrency: 8,
+  });
+  assert.deepEqual(object(object(config.benchmark).config).workload, {
+    inputLength: 512,
+    concurrency: 4,
+  });
   assert.deepEqual(object(native.benchmark).solver, {
     service: 'workload',
     config: solverConfig,

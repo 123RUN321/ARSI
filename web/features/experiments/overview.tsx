@@ -45,6 +45,7 @@ export function Overview({
       {inference ? (
         <InferenceReport
           id={data.id}
+          policySelection={data.selection}
           measurements={measurements.data!.items}
           candidates={candidates.data?.items ?? []}
         />

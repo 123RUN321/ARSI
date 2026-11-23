@@ -3,6 +3,7 @@ import type {
   CandidateSummary,
   MeasurementSummary,
   ResultReference,
+  ExperimentOverview,
 } from '../../api/observation-client';
 import { route } from '../../app/routing';
 import { Status } from '../../components/observation-feedback';
@@ -28,10 +29,12 @@ export function InferenceReport({
   measurements,
   candidates,
   resultReferences,
+  policySelection,
 }: {
   id: string;
   measurements: MeasurementSummary[];
   candidates: CandidateSummary[];
+  policySelection?: ExperimentOverview['selection'];
   resultReferences?: ResultReference[];
 }): React.JSX.Element | null {
   const [condition, setCondition] = useState('');
@@ -51,6 +54,13 @@ export function InferenceReport({
     218 - ((value - low) / (high - low)) * 180;
   const detail = (ref: string): string =>
     route(id, 'measurements', undefined, undefined, { measurement: ref });
+  const selected =
+    policySelection?.candidateRef ??
+    resultReferences?.find(
+      (ref) => ref.path === '/candidateRef' && ref.kind === 'candidate',
+    )?.ref;
+  const searchBest = policySelection?.searchBestCandidateRef;
+  const confirmation = policySelection?.finalMeasurementRef;
   const ordered = [...measurements].sort(
     (a, b) =>
       (a.startedAt ?? '').localeCompare(b.startedAt ?? '') ||
@@ -87,6 +97,30 @@ export function InferenceReport({
             ))}
           </select>
         </label>
+      ) : null}
+      {selected || searchBest || confirmation ? (
+        <section className="inference-delivery" aria-label="Policy selection">
+          <h3>Policy selection</h3>
+          {selected ? (
+            <a href={route(id, 'candidates', selected)}>
+              Selected {labels.candidate(selected)}
+            </a>
+          ) : searchBest ? (
+            <a href={route(id, 'candidates', searchBest)}>
+              Search winner {labels.candidate(searchBest)}
+            </a>
+          ) : null}
+          {confirmation ? (
+            <a href={detail(confirmation)}>
+              Fixed-workload confirmation
+              {typeof policySelection?.finalFeasible === 'boolean'
+                ? policySelection?.finalFeasible
+                  ? ' · Passed'
+                  : ' · Failed'
+                : ''}
+            </a>
+          ) : null}
+        </section>
       ) : null}
       <section className="inference-scoreboard" aria-label="Throughput summary">
         <div className="inference-best">

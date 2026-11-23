@@ -21,7 +21,15 @@ export interface JsonPreview {
   text: string;
   truncated: boolean;
 }
+export interface PolicySelection {
+  candidateRef: string | null;
+  searchBestCandidateRef: string | null;
+  finalMeasurementRef: string | null;
+  finalFeasible: boolean;
+}
+
 export interface ExperimentOverview extends ExperimentSummary {
+  selection?: PolicySelection;
   observedAt: string;
   usage: Record<string, number> | null;
   limits: Record<string, number>;
@@ -86,6 +94,7 @@ export interface MetricRecord extends MeasurementSummary {
 
 /** Saved experiment content only; no live configuration or host filesystem reads. */
 export interface ExperimentDetails {
+  selection?: PolicySelection;
   configuration: JsonPreview | null;
   result: JsonPreview | null;
   resultReferences: ResultReference[];
