@@ -102,6 +102,8 @@ The following built-in implementations provide a `rsi/doctor` handler. Doctor ch
 | `agent.dsh` | Check CLI options and compose the headless configuration to detect composition errors. This may refresh native caches; dynamic model routes, stored credentials and model access are not verified. |
 | `agent.opencode` | Check the V2 CLI version, required options, and composition of native configuration with the RSI read-only Agent. Uses a private instance and may refresh native caches. |
 
+For `application.inference`, Recipe loading checks that `healthcheck.path` and `endpoint.basePath` begin with a single `/`. Remote mode requires paths without query strings or fragments. These rules apply to both `doctor` and `run` before launch.
+
 ### Proposers, Memory, Reflection and Selectors
 
 | Implementation              | Checks performed                                                                                                                                                                                                                |

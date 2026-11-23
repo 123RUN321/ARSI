@@ -14,6 +14,7 @@ import type { ApplicationBackend } from '../shared/file-application/files.js';
 import { safePath } from '../shared/file-application/target.js';
 import { digest, object, string } from '../../shared/json.js';
 import { InferenceStartupError } from '../../shared/errors.js';
+import type { RemoteInferenceConfig } from './schema.js';
 
 const namespace = 'application-inference-remote';
 interface RemoteBackend extends ApplicationBackend {
@@ -68,18 +69,6 @@ function endpointOrigin(raw: unknown): string {
     throw new Error('endpoint.origin must be a credential-free HTTP(S) origin');
   return url.origin;
 }
-function path(raw: unknown, fallback: string, field: string): string {
-  const value = raw === undefined ? fallback : string(raw, field);
-  if (
-    !value.startsWith('/') ||
-    value.startsWith('//') ||
-    value.includes('?') ||
-    value.includes('#')
-  )
-    throw new Error(`${field}: expected absolute URL path`);
-  return value;
-}
-
 /** A script request is a bounded command, never the lifetime owner of the remote server. */
 async function command(
   executable: string,
@@ -196,15 +185,13 @@ function verifiedResources(response: JsonObject): JsonObject {
 }
 
 export async function createRemoteBackend(
-  config: JsonObject,
+  config: RemoteInferenceConfig,
   services: RuntimeContext,
 ): Promise<RemoteBackend> {
-  const remote = object(config.remote);
-  const endpoint = object(config.endpoint);
-  const health = object(config.healthcheck ?? {});
+  const { remote, endpoint, healthcheck: health = {} } = config;
   const origin = endpointOrigin(endpoint.origin);
-  const basePath = path(endpoint.basePath, '/v1', 'endpoint.basePath');
-  const healthPath = path(health.path, '/health', 'healthcheck.path');
+  const basePath = endpoint.basePath ?? '/v1';
+  const healthPath = health.path ?? '/health';
   const script = resolve(services.rootDirectory, string(remote.script));
   const executable =
     remote.executable === undefined ? 'python3' : string(remote.executable);

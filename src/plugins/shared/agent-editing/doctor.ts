@@ -17,27 +17,47 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
   context: DoctorContext,
   checkedRoles: (config: C) => readonly CheckedRole[] = () => [],
 ): Promise<DoctorResult> {
+  context.signal.throwIfAborted();
   const config = parseConfig<C>(
     context.binding.definition.configSchema,
     context.binding.config,
     `${context.binding.name}.config`,
   );
+  const skills = config.skills ?? [];
+  const roles = checkedRoles(config);
+  const inputPathChecks = [
+    'resource.prompt',
+    'resource.guidance',
+    ...skills.map((_, index) => `resource.skills.${index}`),
+    ...roles.map(({ promptField }) => `resource.${promptField}`),
+  ];
+  const blockedBy = context.failedPrerequisites?.find((id) =>
+    inputPathChecks.includes(id),
+  );
+  if (blockedBy)
+    return {
+      checks: ['editing-inputs', 'prepare-project'].map((id) => ({
+        id,
+        status: 'unchecked',
+        blockedBy,
+      })),
+    };
+
   const options = { signal: context.signal };
   let prompt = '';
-  const roles = checkedRoles(config);
   const loaded = await runDoctorCheck(
     'editing-inputs',
     async (signal) => {
       try {
         signal.throwIfAborted();
         prompt = await loadAgentPrompt(config);
-        for (const directory of config.skills ?? [])
+        for (const directory of skills)
           await readFile(join(directory, 'SKILL.md'), { signal });
         for (const { role } of roles) await readFile(role.prompt, { signal });
       } catch (error) {
         const path = missingPath(error);
         if (path) {
-          const skillIndex = (config.skills ?? []).findIndex(
+          const skillIndex = skills.findIndex(
             (directory) =>
               path === directory || path === join(directory, 'SKILL.md'),
           );
@@ -84,7 +104,7 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
         context.runtime.extend({ signal }),
         prompt,
         {},
-        config.skills ?? [],
+        skills,
         roles.map(({ role }) => role),
       );
       signal.throwIfAborted();

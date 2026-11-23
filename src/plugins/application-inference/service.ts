@@ -321,8 +321,6 @@ export const createApplicationInference: OperationDefinition<
       });
       const origin = `http://127.0.0.1:${allocated}`,
         path = health.path ?? '/health';
-      if (!path.startsWith('/') || path.startsWith('//'))
-        throw new Error('healthcheck.path must be a local absolute path');
       const deadline =
         health.timeoutMs === undefined
           ? undefined
@@ -364,13 +362,10 @@ export const createApplicationInference: OperationDefinition<
         }
         await delay(interval, undefined, { signal: context.signal });
       }
-      const basePath = endpoint.basePath ?? '/v1';
-      if (!basePath.startsWith('/') || basePath.startsWith('//'))
-        throw new Error('endpoint.basePath must be a local absolute path');
       return {
         kind: 'inference-endpoint',
         instanceId,
-        baseUrl: origin + basePath,
+        baseUrl: origin + (endpoint.basePath ?? '/v1'),
         model: endpoint.model,
         resources,
         credentialRef: credentials.apiKeyEnv ?? null,

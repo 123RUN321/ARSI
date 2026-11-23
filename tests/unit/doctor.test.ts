@@ -485,6 +485,144 @@ test('doctor reports failures for the inference launch script and executable ind
   verifyReport(report);
 });
 
+test('doctor and run reject invalid inference URL paths when loading the Recipe', async (t) => {
+  const f = await fixture();
+  t.after(f.dispose);
+  await mkdir(join(f.root, 'baseline'));
+  await writeFile(join(f.root, 'baseline', 'tuning.json'), '{}');
+  const recipe = object(JSON.parse(await readFile(f.path, 'utf8')));
+  const common = {
+    baseline: { directory: './baseline' },
+    target: {
+      schema: {
+        schemaVersion: 'rsi.target/v1',
+        id: 'fixture',
+        entries: [
+          {
+            path: 'tuning.json',
+            kind: 'file',
+            description: 'Parameters',
+            changes: ['modify'],
+          },
+        ],
+      },
+    },
+  };
+  const local = {
+    ...common,
+    start: { argv: [process.execPath] },
+    endpoint: { model: 'fixture' },
+  };
+  const remote = {
+    ...common,
+    remote: { script: './controller.py' },
+    endpoint: { model: 'fixture', origin: 'http://localhost:8080' },
+  };
+  for (const [base, healthcheck, basePath, field] of [
+    [local, 'health', '/v1', /healthcheck\/path/],
+    [local, '/health', '//v1', /endpoint\/basePath/],
+    [remote, '/health?ready=true', '/v1', /healthcheck\/path/],
+    [remote, '/health', '/v1#fragment', /endpoint\/basePath/],
+  ] as const) {
+    recipe.application = {
+      plugin: 'application.inference',
+      config: {
+        ...base,
+        healthcheck: { path: healthcheck },
+        endpoint: { ...base.endpoint, basePath },
+      },
+    };
+    await writeFile(f.path, JSON.stringify(recipe));
+    const report = await doctorRecipe(f.runtime, f.path);
+    assert.deepEqual(
+      report.checks.map(({ id, status }) => [id, status]),
+      [['recipe.validate', 'failed']],
+    );
+    assert.match(report.checks[0]?.reason ?? '', field);
+    await assert.rejects(
+      runCliCommand(['run', f.path], {
+        openRuntime: async () => f.runtime,
+        releaseRuntime: () => f.runtime.dispose(),
+        signal: new AbortController().signal,
+      }),
+      field,
+    );
+  }
+
+  recipe.application = {
+    plugin: 'application.inference',
+    config: {
+      ...local,
+      healthcheck: { path: '/health?ready=true' },
+      endpoint: { model: 'fixture', basePath: '/v1#fragment' },
+    },
+  };
+  await writeFile(f.path, JSON.stringify(recipe));
+  const report = await doctorRecipe(f.runtime, f.path);
+  assert.equal(
+    report.checks.find(({ id }) => id === 'application.launch-prerequisites')
+      ?.status,
+    'passed',
+  );
+});
+
+test('agent editor doctor uses declared path failures and still checks skill contents', async (t) => {
+  const f = await fixture();
+  t.after(f.dispose);
+  f.doctors({ 'agent.pi': async () => ({ checks: [] }) });
+  await writeFile(join(f.root, 'prompt.md'), 'Instructions.');
+  await mkdir(join(f.root, 'skill'));
+  const policyPath = join(f.root, 'policy.yaml');
+  const policy = object(JSON.parse(await readFile(policyPath, 'utf8')));
+  object(policy.require).agent = { contract: 'contract.agent' };
+  object(policy.require).editor = { contract: 'contract.proposer' };
+  await writeFile(policyPath, JSON.stringify(policy));
+  const recipe = object(JSON.parse(await readFile(f.path, 'utf8')));
+  const bindings = object(recipe.bindings);
+  bindings.agent = { plugin: 'agent.pi' };
+  const cases: [JsonObject, string][] = [
+    [{ prompt: './skill' }, 'resource.prompt'],
+    [{ guidance: './prompt.md' }, 'resource.guidance'],
+    [{ skills: ['./missing-skill'] }, 'resource.skills.0'],
+    [
+      {
+        subagents: [
+          { name: 'reviewer', description: 'Review', prompt: './skill' },
+        ],
+      },
+      'resource.subagents.0.prompt',
+    ],
+    [{ skills: ['./skill'] }, 'editing-inputs'],
+  ];
+  for (const [overrides, failedId] of cases) {
+    bindings.editor = {
+      plugin: 'proposer.agent',
+      config: { prompt: './prompt.md', agentRef: 'agent', ...overrides },
+    };
+    await writeFile(f.path, JSON.stringify(recipe));
+    const report = await doctorRecipe(f.runtime, f.path);
+    const checks = new Map(report.checks.map((check) => [check.id, check]));
+    const blocker = `editor.${failedId}`;
+    assert.deepEqual(
+      report.checks
+        .filter(({ status }) => status === 'failed')
+        .map(({ id }) => id),
+      [blocker],
+    );
+    assert.equal(checks.get('editor.binding.agentRef')?.status, 'passed');
+    assert.equal(checks.get('editor.prepare-project')?.blockedBy, blocker);
+    if (failedId === 'editing-inputs') {
+      assert.equal(
+        checks.get(blocker)?.missingResource?.reference,
+        join(f.root, 'skill', 'SKILL.md'),
+      );
+    } else {
+      assert.equal(checks.get('editor.editing-inputs')?.blockedBy, blocker);
+    }
+    verifyReport(report);
+  }
+});
+
 test('doctor retains Recipe schema, Policy, binding, budget and Reflection validation before probes', async () => {
   const f = await fixture();
   try {

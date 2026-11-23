@@ -102,6 +102,8 @@ arsi doctor my-experiment/recipe.yaml --json
 | `agent.dsh` | 检查 CLI 参数，并展开 headless 配置以发现配置组合错误。可能刷新原生缓存；不验证动态模型路由、存储凭据或模型访问。 |
 | `agent.opencode` | 检查 V2 CLI 版本、必要参数，以及原生配置能否与 RSI 只读 Agent 组合。使用独立实例，可能刷新原生缓存。 |
 
+对于 `application.inference`，加载 Recipe 时会检查 `healthcheck.path` 和 `endpoint.basePath` 是否以单个 `/` 开头。远程模式要求路径省略查询字符串和片段。`doctor` 和 `run` 都在启动服务前检查这些规则。
+
 ### Proposer、Memory、Reflection 与 Selector
 
 | 实现                        | 实际检查                                                                                                                                       |
