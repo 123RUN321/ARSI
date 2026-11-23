@@ -13,12 +13,13 @@ export type EventPublisher = Pick<
 
 /** Instance-owned subscriptions; publishing keeps the native Cordis overloads. */
 type EventHandler<Name extends keyof Events, C extends JsonObject> = {
-  [Key in keyof Events]: Key extends keyof OperationEventMap
-    ? OperationEventMap<C>[Key]
-    : (
-        this: ThisParameterType<Events[Key]>,
-        ...args: [...Parameters<Events[Key]>, RuntimeContext]
-      ) => ReturnType<Events[Key]>;
+  [Key in keyof Events]: (
+    this: ThisParameterType<Events[Key]>,
+    ...args: [
+      ...Parameters<(Events & OperationEventMap<C>)[Key]>,
+      RuntimeContext,
+    ]
+  ) => ReturnType<Events[Key]>;
 }[Name];
 
 export interface EventPipeline<C extends JsonObject = JsonObject>

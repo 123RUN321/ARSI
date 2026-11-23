@@ -21,12 +21,14 @@ import { proposerExecutionContext } from './execution-context.js';
 import { mergeEdits } from './merge-edits.js';
 import { metricEvidence } from './metric-evidence.js';
 import { expandEdits, proposerEditOutputSchema } from './edits.js';
+import { checkProposerAgent } from './doctor.js';
 
 export const createProposerAgent: OperationDefinition<
   ProposerInput,
   ProposerOutput,
   AgentEditingConfig
 >['create'] = async (config, services) => {
+  services.event?.on('rsi/doctor', checkProposerAgent);
   return {
     async execute(input, context) {
       json(input);

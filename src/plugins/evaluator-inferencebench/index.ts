@@ -6,7 +6,6 @@ import type {
 import { configSchema, type EvaluatorConfig } from './schema.js';
 import { inferencebenchContract } from '../../contracts/plugin-types/index.js';
 import { createInferencebench } from './service.js';
-import { inferencebenchDoctor } from './doctor.js';
 export const inferencebenchDefinition: OperationDefinition<
   InferencebenchInput,
   InferencebenchOutput,
@@ -17,8 +16,5 @@ export const inferencebenchDefinition: OperationDefinition<
     'Measure inference instances with the Evaluator SDK InferenceBench.',
   contract: inferencebenchContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', inferencebenchDoctor);
-    return createInferencebench(config, ctx);
-  },
+  create: createInferencebench,
 };

@@ -4,7 +4,6 @@ import type {
   OperationDefinition,
 } from '../../contracts/index.js';
 import { metricSelectorContract } from '../../contracts/plugin-types/index.js';
-import { checkOperationConfiguration } from '../shared/doctor/checks.js';
 import { configSchema, type MetricSelectorConfig } from './schema.js';
 import { createInferenceSelector } from './service.js';
 
@@ -18,8 +17,5 @@ export const inferenceSelectorDefinition: OperationDefinition<
     'Improve inference constraint feasibility before optimizing performance.',
   contract: metricSelectorContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkOperationConfiguration);
-    return createInferenceSelector(config, ctx);
-  },
+  create: createInferenceSelector,
 };

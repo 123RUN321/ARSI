@@ -496,8 +496,9 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
       config: { benchmark: 'kernel', task: { directory: task } },
     },
     context,
-    (events) =>
-      events.serial('rsi/cleanup', {
+    'rsi/cleanup',
+    (target, event) =>
+      target.serial(target, event, {
         ...owner,
         signal: AbortSignal.abort(new Error('operator cleanup deadline')),
       }),
@@ -518,7 +519,7 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   assert.equal((await f.read(callId)).status, 'complete');
 });
 
-test('a temporary AgentBench instance cleans only its own binding through the installed SDK', async (t) => {
+test('the AgentBench service factory handles its binding cleanup through the installed SDK', async (t) => {
   const f = await fixture(t);
   const root = f.context.dataDirectory;
   const docker = join(root, 'docker.cjs');
@@ -560,14 +561,18 @@ test('a temporary AgentBench instance cleans only its own binding through the in
   });
   const registry = new Registry();
   t.after(() => registry.dispose());
-  registry.registerOperation(agentbenchDefinition);
+  registry.registerOperation({
+    ...agentbenchDefinition,
+    create: createAgentbench,
+  });
   await assert.rejects(readFile(log), { code: 'ENOENT' });
   const owner = cleanupContext(f.context, 'evaluator.agentbench');
   const results = await withBindingInstance(
     registry,
     { plugin: owner.pluginId, config: agentConfig },
     f.context,
-    (events) => events.serial('rsi/cleanup', owner),
+    'rsi/cleanup',
+    (target, event) => target.serial(target, event, owner),
   );
   assert.ok(results);
   const receipt = await f.read(entry.key);

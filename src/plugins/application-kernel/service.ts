@@ -13,6 +13,7 @@ import {
 import { string } from '../../shared/json.js';
 import { scanTree } from '../shared/file-application/target.js';
 import { kernelSourcePath, type KernelApplicationConfig } from './schema.js';
+import { checkKernelApplication } from './doctor.js';
 
 export const createApplicationKernel: OperationDefinition<
   ApplicationInput,
@@ -23,7 +24,7 @@ export const createApplicationKernel: OperationDefinition<
   services,
 ): Promise<Operation<ApplicationInput, ApplicationOutput>> => {
   const sourcePath = kernelSourcePath(config.entryFile);
-  return createFileApplication(config, services, {
+  const operation = await createFileApplication(config, services, {
     capability: 'kernel-source',
     validateChanges(changes): void {
       for (const change of changes)
@@ -74,4 +75,8 @@ export const createApplicationKernel: OperationDefinition<
     async release(): Promise<void> {},
     async dispose(): Promise<void> {},
   });
+  services.event?.on('rsi/doctor', (request) =>
+    checkKernelApplication(request, operation),
+  );
+  return operation;
 };

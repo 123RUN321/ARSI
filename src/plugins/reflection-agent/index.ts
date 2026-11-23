@@ -6,7 +6,6 @@ import type {
 import { configSchema, type AgentEditingConfig } from './schema.js';
 import { reflectionContract } from '../../contracts/plugin-types/index.js';
 import { createReflectionAgent } from './service.js';
-import { checkReflectionAgent } from './doctor.js';
 export const reflectionDefinition: OperationDefinition<
   ReflectionInput,
   ReflectionOutput,
@@ -16,8 +15,5 @@ export const reflectionDefinition: OperationDefinition<
   description: 'Propose revisions to optimization guidance.',
   contract: reflectionContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkReflectionAgent);
-    return createReflectionAgent(config, ctx);
-  },
+  create: createReflectionAgent,
 };

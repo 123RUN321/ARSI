@@ -1,4 +1,3 @@
-import { createApplicationInference } from '../../src/plugins/application-inference/service.js';
 import test from 'node:test';
 import { RuntimeContext } from '../../src/contracts/index.js';
 import assert from 'node:assert/strict';
@@ -179,7 +178,7 @@ test('remote startup rejection is recoverable only after the owned service is re
       ...f.config,
       remote: { script: f.config.remote.script, executable: process.execPath },
     };
-    const application = await createApplicationInference(config, services);
+    const application = await inferenceDefinition.create(config, services);
     try {
       const initial = await application.execute(
         { action: 'initialize' },
@@ -357,7 +356,7 @@ test('remote inference calibrates once, uses supplied endpoint and explicitly st
     join(f.root, 'baseline/tuning.json'),
     JSON.stringify(parameters),
   );
-  const app = await createApplicationInference(f.config, services);
+  const app = await inferenceDefinition.create(f.config, services);
   try {
     const initialized = await app.execute(
       { action: 'initialize' },
@@ -388,7 +387,7 @@ test('remote inference calibrates once, uses supplied endpoint and explicitly st
       // A fresh Application can reconcile and stop remote ownership after restart.
       const releaser =
         instanceId === 'second'
-          ? await createApplicationInference(f.config, services)
+          ? await inferenceDefinition.create(f.config, services)
           : app;
       await releaser.execute({ action: 'release', instanceId }, call(services));
       await releaser.execute({ action: 'release', instanceId }, call(services));
@@ -431,7 +430,7 @@ test('remote readiness cancellation explicitly cleans owned remote service', asy
     healthcheck: { intervalMs: 10 },
   };
   const services = servicesFor(f.root);
-  const app = await createApplicationInference(bad, services);
+  const app = await inferenceDefinition.create(bad, services);
   try {
     const initial = await app.execute({ action: 'initialize' }, call(services));
     if (initial.action !== 'initialize')
@@ -477,7 +476,7 @@ for (const healthTimeout of [undefined, 40_000]) {
       const remoteTimeout = 30_000;
       const remote = { ...f.config.remote, timeoutMs: remoteTimeout };
       delete remote.calibration;
-      const app = await createApplicationInference(
+      const app = await inferenceDefinition.create(
         {
           ...f.config,
           remote,
@@ -528,7 +527,7 @@ for (const healthTimeout of [undefined, 40_000]) {
 test('remote ownership conflict is retained as unknown and never replaces the other service', async () => {
   const f = await fixture();
   const services = servicesFor(f.root);
-  const app = await createApplicationInference(f.config, services);
+  const app = await inferenceDefinition.create(f.config, services);
   const other = {
     status: 'ready',
     instanceId: 'other-experiment-instance',
@@ -583,8 +582,8 @@ test('remote ownership conflict is retained as unknown and never replaces the ot
 test('remote repeated acquire rechecks ownership instead of returning a stale endpoint', async () => {
   const f = await fixture();
   const services = servicesFor(f.root);
-  const app = await createApplicationInference(f.config, services);
-  let restarted: Awaited<ReturnType<typeof createApplicationInference>> | null =
+  const app = await inferenceDefinition.create(f.config, services);
+  let restarted: Awaited<ReturnType<typeof inferenceDefinition.create>> | null =
     null;
   let saved = '';
   try {
@@ -609,7 +608,7 @@ test('remote repeated acquire rechecks ownership instead of returning a stale en
         instanceId: 'replacement',
       }),
     );
-    restarted = await createApplicationInference(f.config, services);
+    restarted = await inferenceDefinition.create(f.config, services);
     await assert.rejects(
       restarted.execute(input, call(services)),
       /ownership mismatch/,
@@ -625,8 +624,8 @@ test('remote repeated acquire rechecks ownership instead of returning a stale en
 test('remote resumed ready instance is released when its new owner disposes', async () => {
   const f = await fixture();
   const services = servicesFor(f.root);
-  const app = await createApplicationInference(f.config, services);
-  let restarted: Awaited<ReturnType<typeof createApplicationInference>> | null =
+  const app = await inferenceDefinition.create(f.config, services);
+  let restarted: Awaited<ReturnType<typeof inferenceDefinition.create>> | null =
     null;
   try {
     const initialized = await app.execute(
@@ -642,7 +641,7 @@ test('remote resumed ready instance is released when its new owner disposes', as
       capability: 'inference-endpoint',
     };
     await app.execute(input, call(services));
-    restarted = await createApplicationInference(f.config, services);
+    restarted = await inferenceDefinition.create(f.config, services);
     await restarted.execute(input, call(services));
     await restarted.dispose();
     assert.equal(
@@ -821,7 +820,7 @@ test('remote discovery gives the proposer installed choices and treats memory as
       join(f.root, 'baseline/tuning.json'),
       '{"enable_prefix_caching":false,"gpu_memory_utilization":0.91}\n',
     );
-    const app = await createApplicationInference(config, services);
+    const app = await inferenceDefinition.create(config, services);
     try {
       const initialized = await app.execute({ action: 'initialize' }, context);
       assert.equal(initialized.action, 'initialize');

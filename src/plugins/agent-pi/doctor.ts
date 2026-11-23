@@ -1,7 +1,7 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import { runDoctorCheck } from '../../shared/doctor-check.js';
 import { probeModelAccess, type ModelAccessResult } from './model-access.js';
-import { resolveModelConfig } from './service.js';
+import { resolveModelConfig } from './session.js';
 
 export async function checkPiAgent(
   context: DoctorContext,

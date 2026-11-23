@@ -4,7 +4,6 @@ import {
   type IterativeProposerOutput,
 } from '../../contracts/plugin-types/proposer-iterative.js';
 import type { OperationDefinition } from '../../contracts/index.js';
-import { checkParetoEvolutionProposer } from './doctor.js';
 import { configSchema, type ParetoEvolutionConfig } from './schema.js';
 import { createParetoEvolutionProposer } from './service.js';
 
@@ -18,8 +17,5 @@ export const paretoEvolutionProposerDefinition: OperationDefinition<
     'Maintain a prompt candidate population with Pareto parent sampling, mutation proposals and ancestry-aware crossover.',
   contract: iterativeProposerContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkParetoEvolutionProposer);
-    return createParetoEvolutionProposer(config, ctx);
-  },
+  create: createParetoEvolutionProposer,
 };

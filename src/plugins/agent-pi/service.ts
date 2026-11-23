@@ -7,6 +7,7 @@ import type {
   Operation,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
+import { checkPiAgent } from './doctor.js';
 
 import {
   configSchema,
@@ -21,7 +22,8 @@ export const createAgentPi: OperationDefinition<
   AgentInput,
   AgentOutput,
   AgentPiConfig
->['create'] = async (rawConfig) => {
+>['create'] = async (rawConfig, ctx) => {
+  ctx.event?.on('rsi/doctor', checkPiAgent);
   const config = parseConfig<ResolvedAgentPiConfig>(
     configSchema,
     rawConfig,

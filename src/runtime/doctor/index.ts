@@ -82,7 +82,9 @@ export async function diagnoseBinding(
       registry,
       { plugin: binding.pluginId, config: binding.config },
       context.runtime.extend({ bindingId: binding.name, signal, directory }),
-      (events, runtime) => events.serial('rsi/doctor', { ...context, runtime }),
+      'rsi/doctor',
+      (target, event, runtime) =>
+        target.serial(target, event, { ...context, runtime }),
     );
     return (
       result ?? {

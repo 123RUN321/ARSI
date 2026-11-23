@@ -6,7 +6,6 @@ import type {
 import { configSchema, type AgentEditingConfig } from './schema.js';
 import { artifactSelectorContract } from '../../contracts/plugin-types/index.js';
 import { createArtifactSelector } from './service.js';
-import { checkAgentEditor } from '../shared/agent-editing/doctor.js';
 export const artifactSelectorDefinition: OperationDefinition<
   ArtifactSelectorInput,
   ArtifactSelectorOutput,
@@ -16,8 +15,5 @@ export const artifactSelectorDefinition: OperationDefinition<
   description: 'Select candidates by anonymous artifact review.',
   contract: artifactSelectorContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkAgentEditor);
-    return createArtifactSelector(config, ctx);
-  },
+  create: createArtifactSelector,
 };

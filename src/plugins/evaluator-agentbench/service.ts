@@ -22,11 +22,17 @@ import {
   type SdkEvaluatorConfig,
 } from '../shared/evaluator-adapter/configuration.js';
 import { isFinalizedVerifierTimeout } from './finalized-timeout.js';
+import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
+import { agentbenchDoctor } from './doctor.js';
 export async function createAgentbench(
   config: AgentbenchConfig,
-  _services: RuntimeContext,
+  ctx: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<AgentbenchInput, AgentbenchOutput>> {
+  ctx.event?.on('rsi/doctor', agentbenchDoctor);
+  ctx.event?.on('rsi/cleanup', (request) =>
+    cleanupEvaluatorBinding(request, 'agentbundle'),
+  );
   validate(configSchema, config, 'evaluator config');
   return {
     async execute(input, context): Promise<AgentbenchOutput> {

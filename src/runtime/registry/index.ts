@@ -1,4 +1,4 @@
-import { createIsolatedInstance } from '../services/events.js';
+import { createIsolatedInstance } from '../manager/instances.js';
 import { managedAgentOperation } from '../services/agent-execution/task.js';
 import { agentContract } from '../../contracts/plugin-types/agent.js';
 import { Context } from '@deepseek-ai/cordis';

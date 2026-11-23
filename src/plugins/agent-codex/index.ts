@@ -6,7 +6,6 @@ import type {
 import { agentContract } from '../../contracts/plugin-types/index.js';
 import { configSchema, type AgentCodexConfig } from './schema.js';
 import { createAgentCodex } from './service.js';
-import { checkCodexAgent } from './doctor.js';
 
 export const codexDefinition: OperationDefinition<
   AgentInput,
@@ -17,8 +16,5 @@ export const codexDefinition: OperationDefinition<
   description: 'Execute agent tasks through the Codex backend.',
   contract: agentContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkCodexAgent);
-    return createAgentCodex(config, ctx);
-  },
+  create: createAgentCodex,
 };

@@ -1,4 +1,3 @@
-import { checkClaudeCodeAgent } from './doctor.js';
 import type {
   AgentInput,
   AgentOutput,
@@ -17,8 +16,5 @@ export const claudeCodeDefinition: OperationDefinition<
   description: 'Execute agent tasks through the Claude Code backend.',
   contract: agentContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkClaudeCodeAgent);
-    return createAgentClaudeCode(config, ctx);
-  },
+  create: createAgentClaudeCode,
 };

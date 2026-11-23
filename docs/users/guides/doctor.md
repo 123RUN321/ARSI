@@ -170,16 +170,10 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 
 - In the example above, `runDoctorCheck` is an optional helper that sets a deadline for one probe and returns a check result.
 
-Subscribe in the plugin factory. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.
+Import `checkCustom` in `service.ts` and add this line to the existing `create(config, ctx)` function. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.
 
-```js
-import { createOperation } from './service.js';
-import { checkCustom } from './doctor.js';
-
-export function create(config, ctx) {
-  ctx.event.on('rsi/doctor', checkCustom);
-  return createOperation(config, ctx);
-}
+```ts
+ctx.event.on('rsi/doctor', checkCustom);
 ```
 
 Build the extension and load its `index.mjs` with the CLI.

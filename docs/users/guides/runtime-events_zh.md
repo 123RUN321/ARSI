@@ -15,7 +15,7 @@
 | `serial`    | 按顺序执行监听，前一个完成后再执行下一个；抛错会阻止后续流程。 | `rsi/before-experiment`：依次执行实验启动前的检查。                               |
 | `waterfall` | 按监听链处理准入决策，Manager 根据最终结果决定是否执行调用。   | `rsi/before-call`：按 binding 判断是否允许调用，返回 `proceed` 或 `reject` 决策。 |
 
-- 实例上的内置 `serial` 事件监听只能返回 `undefined` 或 `Promise<undefined>`。返回 `true`、`0`、字符串或对象等值，会提前结束本次事件分发，跳过后续监听；
+- `serial` 生命周期通知的监听函数只能返回 `undefined` 或 `Promise<undefined>`。返回 `true`、`0`、字符串或对象等值，会提前结束本次事件分发，跳过后续监听；
 
 ## 2. 内置事件一览
 
@@ -122,12 +122,9 @@ ctx.event.emit('rsi/agent-observation', {
 
 插件在 `create(config, ctx)` 中按需订阅这两个事件。完整 `doctor` 为每个生效绑定创建临时实例。手动 `cleanup` 从当前和历次归档的 Recipe 中收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近一次保存的配置创建实例。即使续跑复用了全部评测结果，也能找到旧插件。框架等待回调和实例的 `dispose()` 完成，再处理下一个绑定。
 
-```js
-export function create(config, ctx) {
-  ctx.event.on('rsi/doctor', checkEnvironment);
-  ctx.event.on('rsi/cleanup', cleanupResources);
-  return createOperation(config, ctx);
-}
+```ts
+ctx.event.on('rsi/doctor', checkEnvironment);
+ctx.event.on('rsi/cleanup', cleanupResources);
 ```
 
 - `rsi/doctor` 为当前 Recipe 绑定返回 `DoctorResult`，由 RSI 汇总。

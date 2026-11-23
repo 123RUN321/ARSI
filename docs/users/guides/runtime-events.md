@@ -15,7 +15,7 @@ Plugin instances subscribe to lifecycle events through `ctx.event` in `create(co
 | `serial`    | Run listeners in order, waiting for each to finish before starting the next; a throw prevents subsequent flow.       | `rsi/before-experiment`: run checks in order before the experiment starts.                               |
 | `waterfall` | Process admission decisions through a listener chain; the Manager uses the final result to admit or reject the call. | `rsi/before-call`: decide whether to allow a binding's call, returning a `proceed` or `reject` decision. |
 
-- Instance listeners for built-in `serial` events must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
+- Listeners for `serial` lifecycle notifications must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
 
 ## 2. Built-in events
 
@@ -122,12 +122,9 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 
 Plugins subscribe to either event in `create(config, ctx)`. Full `doctor` creates a temporary instance for each effective binding. Manual `cleanup` visits each distinct `(bindingId, pluginId)` in the current and archived Recipes using its most recent saved configuration. This reaches previous plugins even when a resume reused every evaluation. The framework awaits the reply and instance disposal before visiting the next binding.
 
-```js
-export function create(config, ctx) {
-  ctx.event.on('rsi/doctor', checkEnvironment);
-  ctx.event.on('rsi/cleanup', cleanupResources);
-  return createOperation(config, ctx);
-}
+```ts
+ctx.event.on('rsi/doctor', checkEnvironment);
+ctx.event.on('rsi/cleanup', cleanupResources);
 ```
 
 - `rsi/doctor` returns a `DoctorResult` for the effective Recipe binding. RSI aggregates these results.

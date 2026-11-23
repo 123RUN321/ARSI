@@ -1,4 +1,3 @@
-import { createMetricSelector } from '../../src/plugins/selector-metrics/service.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -149,7 +148,7 @@ async function selectionFixture() {
     candidateMeasurementRef: 'after',
   };
   async function select(config: JsonObject = {}) {
-    const selector = await createMetricSelector(
+    const selector = await metricSelectorDefinition.create(
       {
         metric: 'latencyMs',
         direction: 'minimize',
@@ -669,14 +668,17 @@ test('metric selector compares only the requested AgentX point, checks definitio
     candidateMeasurementRef: 'after',
   };
   const defaultConfig = {};
-  const defaultSelector = await createMetricSelector(defaultConfig, services);
+  const defaultSelector = await metricSelectorDefinition.create(
+    defaultConfig,
+    services,
+  );
   assert.deepEqual(defaultConfig, {});
   await assert.rejects(
     defaultSelector.execute(input, context.extend(services)),
     /Metric successRate is unavailable/,
   );
   await defaultSelector.dispose();
-  const create: OperationDefinition['create'] = createMetricSelector;
+  const definition: OperationDefinition = metricSelectorDefinition;
   const invalidConfigs: JsonObject[] = [
     { direction: 'sideways' },
     { statistic: 'average' },
@@ -684,16 +686,19 @@ test('metric selector compares only the requested AgentX point, checks definitio
     { constraints: [{ metric: 'requestLatency' }] },
   ];
   for (const invalid of invalidConfigs) {
-    await assert.rejects(create(invalid, services), /metric selector config/);
+    await assert.rejects(
+      definition.create(invalid, services),
+      /metric selector config/,
+    );
   }
   await assert.rejects(
-    createMetricSelector(
+    metricSelectorDefinition.create(
       { constraints: [{ metric: 'requestLatency', min: 10, max: 5 }] },
       services,
     ),
     /min exceeds max/,
   );
-  const selector = await createMetricSelector(config, services);
+  const selector = await metricSelectorDefinition.create(config, services);
   const acceptance = object(
     await selector.execute(input, context.extend(services)),
   );
@@ -704,7 +709,7 @@ test('metric selector compares only the requested AgentX point, checks definitio
   assert.equal(acceptance.incumbentValue, 100);
   assert.equal(acceptance.candidateValue, 200);
   assert.equal(acceptance.selectedValue, 200);
-  const constrained = await createMetricSelector(
+  const constrained = await metricSelectorDefinition.create(
     {
       ...config,
       constraints: [{ metric: 'requestLatency', statistic: 'p95', max: 55 }],

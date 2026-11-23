@@ -252,8 +252,9 @@ test('a binding request retains only its temporary instance until reply and disp
       registry,
       { plugin: worker.id, config: {} },
       context,
-      (events) =>
-        events.serial('rsi/cleanup', {
+      'rsi/cleanup',
+      (target, event) =>
+        target.serial(target, event, {
           ...context,
           dryRun: true,
           pluginId: worker.id,

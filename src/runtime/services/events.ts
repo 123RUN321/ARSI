@@ -2,7 +2,6 @@ import { Context, type Events } from '@deepseek-ai/cordis';
 import { isPromise } from 'node:util/types';
 import { randomUUID } from 'node:crypto';
 import type {
-  Operation,
   RuntimeContext,
   EventPublisher,
   EventPipeline,
@@ -44,10 +43,6 @@ export class EventScope {
 }
 
 type DispatchMode = keyof EventPublisher;
-function isBindingRequest(name: unknown): boolean {
-  return name === 'rsi/doctor' || name === 'rsi/cleanup';
-}
-
 const ordinaryNotifications = new Set<keyof Events>([
   'rsi/experiment-started',
   'rsi/policy-step-completed',
@@ -151,20 +146,15 @@ export class ManagedEvents {
   private subscribe<Name extends keyof Events>(
     scope: EventScope,
     name: Name,
-    handler: Parameters<EventPipeline['on']>[1],
+    handler: (
+      this: ThisParameterType<Events[Name]>,
+      ...args: [...Parameters<Events[Name]>, RuntimeContext]
+    ) => ReturnType<Events[Name]>,
   ): () => boolean {
     if (!this.accepting || scope.closed)
       throw new Error('Plugin event scope is closed');
     if (typeof handler !== 'function')
       throw new Error(`Event listener ${String(name)} must be a function`);
-    const bindingRequest = isBindingRequest(name);
-    if (
-      bindingRequest &&
-      [...scope.subscriptions].some((entry) => entry.name === name)
-    )
-      throw new Error(
-        `Expected one handler for ${name} on binding ${scope.bindingId}`,
-      );
     const service = this;
     // Cordis owns the event arguments and `this`; append only the execution scope.
     const listener = function (
@@ -172,25 +162,12 @@ export class ManagedEvents {
       ...args: Parameters<Events[Name]>
     ) {
       const listenerId = `listener-${service.executionId}-${++service.sequence}`;
+      const context = service.options
+        .context(scope.bindingId, listenerId, scope.signal)
+        .extend({ event: scope.event });
       const release = service.retain(scope);
       try {
-        const parameters = bindingRequest
-          ? args
-          : [
-              ...args,
-              service.options
-                .context(scope.bindingId, listenerId, scope.signal)
-                .extend({ event: scope.event }),
-            ];
-        const reply = Reflect.apply(handler, this, parameters);
-        // Cordis serial treats these values as an absent reply. A subscribed command must return a result.
-        const result = bindingRequest
-          ? Promise.resolve(reply).then((value) => {
-              if (value == null || value === false)
-                throw new Error(`Plugin returned no result for ${name}`);
-              return value;
-            })
-          : reply;
+        const result = Reflect.apply(handler, this, [...args, context]);
         if (isPromise(result)) {
           Promise.resolve(result).then(release, (error: unknown) => {
             if (ordinaryNotifications.has(name))
@@ -229,8 +206,6 @@ export class ManagedEvents {
       typeof args[0] === 'object' || typeof args[0] === 'function'
         ? args[1]
         : args[0];
-    if (isBindingRequest(name))
-      throw new Error(`${name} requires an explicit request to a binding`);
     // Retain every potentially selected instance before Cordis snapshots its
     // callbacks, including serial/waterfall callbacks not yet entered. Native
     // context filtering still runs exactly once inside Cordis.
@@ -323,50 +298,4 @@ export class ManagedEvents {
     this.slots.clear();
     this.scopes.clear();
   }
-}
-
-// Standalone calls and CLI commands both own an instance outside an experiment.
-export async function createIsolatedInstance(
-  context: RuntimeContext,
-  create: (runtime: RuntimeContext) => Promise<Operation>,
-): Promise<{
-  events: Context;
-  runtime: RuntimeContext;
-  operation: Operation;
-}> {
-  const events = new ManagedEvents({
-    context: (_bindingId, callId, signal) =>
-      context.extend({
-        callId,
-        signal: context.signal
-          ? AbortSignal.any([context.signal, signal])
-          : signal,
-      }),
-    diagnostic: () => {},
-  });
-  const scope = events.prepare(context.bindingId);
-  const runtime = context.extend({ event: scope.event });
-  await using lifetime = new AsyncDisposableStack();
-  lifetime.defer(() => events.dispose());
-  const operation = await create(runtime);
-  lifetime.defer(() => operation.dispose());
-  lifetime.defer(() => {
-    events.deactivate(scope);
-    events.abort(scope);
-    return events.idle(scope);
-  });
-  events.activate(scope);
-  const owned = lifetime.move();
-  return {
-    events: events.context,
-    runtime,
-    operation: {
-      execute: (input, ctx) =>
-        operation.execute(
-          input,
-          ctx.event ? ctx : ctx.extend({ event: scope.event }),
-        ),
-      dispose: () => owned.disposeAsync(),
-    },
-  };
 }

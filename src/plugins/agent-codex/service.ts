@@ -6,6 +6,7 @@ import type {
   Operation,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
+import { checkCodexAgent } from './doctor.js';
 
 import {
   configSchema,
@@ -18,7 +19,8 @@ export const createAgentCodex: OperationDefinition<
   AgentInput,
   AgentOutput,
   AgentCodexConfig
->['create'] = async (rawConfig) => {
+>['create'] = async (rawConfig, ctx) => {
+  ctx.event?.on('rsi/doctor', checkCodexAgent);
   const config = parseConfig<ResolvedAgentCodexConfig>(
     configSchema,
     rawConfig,

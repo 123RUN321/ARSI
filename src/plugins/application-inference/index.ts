@@ -6,7 +6,6 @@ import type {
 import { configSchema, type InferenceConfig } from './schema.js';
 import { applicationContract } from '../../contracts/plugin-types/index.js';
 import { createApplicationInference } from './service.js';
-import { checkInferenceApplication } from './doctor.js';
 export const inferenceDefinition: OperationDefinition<
   ApplicationInput,
   ApplicationOutput,
@@ -17,8 +16,5 @@ export const inferenceDefinition: OperationDefinition<
     'Manage inference configuration candidates and inference instances.',
   contract: applicationContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkInferenceApplication);
-    return createApplicationInference(config, ctx);
-  },
+  create: createApplicationInference,
 };

@@ -33,6 +33,7 @@ import { readHardwareContext, loadOperatorResources } from './resources.js';
 import { operatorSnapshot } from './source-snapshot.js';
 import { prepareStatic } from './static-analysis.js';
 import { prepareMetrics } from './metrics-analysis.js';
+import { checkOperatorProposer } from './doctor.js';
 
 async function commitOperatorEdits(
   response: JsonObject,
@@ -152,6 +153,7 @@ export const createOperatorProposer: OperationDefinition<
   OperatorProposerOutput,
   OperatorProposerConfig
 >['create'] = async (rawConfig, services) => {
+  services.event?.on('rsi/doctor', checkOperatorProposer);
   const config = parseConfig<OperatorProposerConfig>(
     configSchema,
     rawConfig,

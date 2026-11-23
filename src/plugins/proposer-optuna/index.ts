@@ -6,7 +6,6 @@ import type {
 import { iterativeProposerContract } from '../../contracts/plugin-types/proposer-iterative.js';
 import { configSchema, type OptunaConfig } from './schema.js';
 import { createOptunaProposer } from './service.js';
-import { checkOptunaDependencies } from './doctor.js';
 export const optunaProposerDefinition: OperationDefinition<
   IterativeProposerInput,
   IterativeProposerOutput,
@@ -16,8 +15,5 @@ export const optunaProposerDefinition: OperationDefinition<
   description: 'Propose parameter candidates using Optuna optimization.',
   contract: iterativeProposerContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkOptunaDependencies);
-    return createOptunaProposer(config, ctx);
-  },
+  create: createOptunaProposer,
 };

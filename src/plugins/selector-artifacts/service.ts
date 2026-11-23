@@ -11,12 +11,14 @@ import {
   operationSchema,
 } from '../shared/agent-editing/index.js';
 import { prepareAgentProject } from '../shared/agent-editing/project.js';
+import { checkAgentEditor } from '../shared/agent-editing/doctor.js';
 
 export const createArtifactSelector: OperationDefinition<
   ArtifactSelectorInput,
   ArtifactSelectorOutput,
   AgentEditingConfig
 >['create'] = async (config, services) => {
+  services.event?.on('rsi/doctor', (request) => checkAgentEditor(request));
   return {
     async execute(input, context) {
       json(input);

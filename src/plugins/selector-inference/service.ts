@@ -8,6 +8,7 @@ import {
   type MetricCheck,
 } from '../shared/metric-selection/index.js';
 import type { MetricSelectorConfig } from './schema.js';
+import { checkOperationConfiguration } from '../shared/doctor/checks.js';
 
 function violation(check: MetricCheck, value: number): number {
   return Math.max(
@@ -25,8 +26,9 @@ export const createInferenceSelector: OperationDefinition<
   MetricSelectorInput,
   MetricSelectorOutput,
   MetricSelectorConfig
->['create'] = async (config, services) =>
-  createMetricSelection(
+>['create'] = async (config, services) => {
+  services.event?.on('rsi/doctor', checkOperationConfiguration);
+  return createMetricSelection(
     config,
     services,
     (comparison) => {
@@ -75,3 +77,4 @@ export const createInferenceSelector: OperationDefinition<
     },
     true,
   );
+};

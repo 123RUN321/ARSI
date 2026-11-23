@@ -1,4 +1,3 @@
-import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
 import type { OperationDefinition } from '../../contracts/index.js';
 import {
   operatorbenchContract,
@@ -10,7 +9,6 @@ import {
   type OperatorbenchConfig,
 } from './schema.js';
 import { createOperatorbench } from './service.js';
-import { operatorbenchDoctor } from './doctor.js';
 
 export { createOperatorbench };
 
@@ -22,11 +20,5 @@ export const operatorbenchDefinition: OperationDefinition<
   id: 'evaluator.operatorbench',
   contract: operatorbenchContract,
   configSchema: operatorbenchConfigSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', operatorbenchDoctor);
-    ctx.event.on('rsi/cleanup', (context) =>
-      cleanupEvaluatorBinding(context, 'kernel'),
-    );
-    return createOperatorbench(config, ctx);
-  },
+  create: createOperatorbench,
 };

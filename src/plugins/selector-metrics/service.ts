@@ -5,13 +5,15 @@ import type {
 } from '../../contracts/index.js';
 import { createMetricSelection } from '../shared/metric-selection/index.js';
 import type { MetricSelectorConfig } from './schema.js';
+import { checkOperationConfiguration } from '../shared/doctor/checks.js';
 
 export const createMetricSelector: OperationDefinition<
   MetricSelectorInput,
   MetricSelectorOutput,
   MetricSelectorConfig
->['create'] = async (config, services) =>
-  createMetricSelection(config, services, (comparison) => {
+>['create'] = async (config, services) => {
+  services.event?.on('rsi/doctor', checkOperationConfiguration);
+  return createMetricSelection(config, services, (comparison) => {
     const {
       eligible,
       feasible,
@@ -34,3 +36,4 @@ export const createMetricSelector: OperationDefinition<
               : 'Candidate does not strictly improve; retain the incumbent';
     return { accepted, reason };
   });
+};

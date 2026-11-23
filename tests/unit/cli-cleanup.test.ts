@@ -404,7 +404,15 @@ test('success and completed resume leave resource cleanup and its retries to an 
   const log: string[] = [];
   let ready = false;
   const f = await managerFixture(
-    async () => {
+    async (ctx) => {
+      assert.throws(
+        () =>
+          ctx.event.emit(
+            'rsi/cleanup',
+            ctx.extend({ pluginId: 'test.driver', dryRun: true }),
+          ),
+        /explicit request to a binding/,
+      );
       log.push('execute');
       return {};
     },

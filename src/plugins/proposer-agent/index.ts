@@ -6,7 +6,6 @@ import type {
 import { configSchema, type AgentEditingConfig } from './schema.js';
 import { proposerContract } from '../../contracts/plugin-types/index.js';
 import { createProposerAgent } from './service.js';
-import { checkProposerAgent } from './doctor.js';
 export const proposerDefinition: OperationDefinition<
   ProposerInput,
   ProposerOutput,
@@ -16,8 +15,5 @@ export const proposerDefinition: OperationDefinition<
   description: 'Propose candidate edits using an agent.',
   contract: proposerContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkProposerAgent);
-    return createProposerAgent(config, ctx);
-  },
+  create: createProposerAgent,
 };

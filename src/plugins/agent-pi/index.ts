@@ -6,7 +6,6 @@ import type {
 import { configSchema, type AgentPiConfig } from './schema.js';
 import { agentContract } from '../../contracts/plugin-types/index.js';
 import { createAgentPi } from './service.js';
-import { checkPiAgent } from './doctor.js';
 export const piDefinition: OperationDefinition<
   AgentInput,
   AgentOutput,
@@ -16,8 +15,5 @@ export const piDefinition: OperationDefinition<
   description: 'Execute agent tasks through the Pi coding agent backend.',
   contract: agentContract,
   configSchema,
-  create(config, ctx) {
-    ctx.event.on('rsi/doctor', checkPiAgent);
-    return createAgentPi(config, ctx);
-  },
+  create: createAgentPi,
 };

@@ -170,16 +170,10 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 
 - 上面示例的`runDoctorCheck` 是可选工具，为单项探测设置时限并返回检查结果。
 
-在插件的工厂函数中订阅事件，扩展入口照常调用 `registry.registerOperation(customDefinition)`。
+在 `service.ts` 中导入 `checkCustom`，并在已有的 `create(config, ctx)` 函数里加一行。扩展入口照常调用 `registry.registerOperation(customDefinition)`。
 
-```js
-import { createOperation } from './service.js';
-import { checkCustom } from './doctor.js';
-
-export function create(config, ctx) {
-  ctx.event.on('rsi/doctor', checkCustom);
-  return createOperation(config, ctx);
-}
+```ts
+ctx.event.on('rsi/doctor', checkCustom);
 ```
 
 构建扩展后，通过 CLI 加载它的 `index.mjs`。

@@ -12,6 +12,7 @@ import { commitParameters } from '../shared/parameter-editing/index.js';
 import { validate } from '../../shared/schema.js';
 import { safePath } from '../shared/file-application/target.js';
 import { configSchema, type GridProposerConfig } from './schema.js';
+import { checkOperationConfiguration } from '../shared/doctor/checks.js';
 
 type Axis = { name: string; size: number; values: JsonValue[] };
 
@@ -47,7 +48,8 @@ export const createGridProposer: OperationDefinition<
   GridProposerInput,
   GridProposerOutput,
   GridProposerConfig
->['create'] = async (config) => {
+>['create'] = async (config, ctx) => {
+  ctx.event?.on('rsi/doctor', checkOperationConfiguration);
   json(config);
   validate(configSchema, config, 'grid proposer config');
   const path = safePath(config.path);

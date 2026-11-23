@@ -45,12 +45,18 @@ import {
   operatorbenchConfigSchema,
   type OperatorbenchConfig,
 } from './schema.js';
+import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
+import { operatorbenchDoctor } from './doctor.js';
 
 export async function createOperatorbench(
   rawConfig: unknown,
-  _services: RuntimeContext,
+  ctx: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<OperatorbenchInput, OperatorbenchOutput>> {
+  ctx.event?.on('rsi/doctor', operatorbenchDoctor);
+  ctx.event?.on('rsi/cleanup', (request) =>
+    cleanupEvaluatorBinding(request, 'kernel'),
+  );
   const config = parseConfig<OperatorbenchConfig>(
     operatorbenchConfigSchema,
     rawConfig,

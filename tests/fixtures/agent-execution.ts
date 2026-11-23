@@ -1,5 +1,4 @@
 import { agentContract } from '../../src/contracts/index.js';
-import { ManagedEvents } from '../../src/runtime/services/events.js';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -54,7 +53,6 @@ export async function agentFixture(
     async charge(metric: string, amount: number) {
       charges.push({ metric, amount });
     },
-    event: new ManagedEvents({ context: () => owner, diagnostic() {} }).event,
     async runAgentProcess(
       this: RuntimeContext,
       spec: AgentProcessSpec,

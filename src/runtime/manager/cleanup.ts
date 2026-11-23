@@ -499,7 +499,8 @@ async function cleanupBinding(
       config: object(config === undefined ? {} : config),
     },
     bindingContext,
-    (events) => events.serial('rsi/cleanup', context),
+    'rsi/cleanup',
+    (target, event) => target.serial(target, event, context),
   );
 }
 
