@@ -155,7 +155,6 @@ export class CleanupLifecycle {
     notification: Promise<unknown>,
     diagnostics: () => Promise<unknown>,
     releaseOnFailure = false,
-    afterDisposal?: () => Promise<void>,
   ): Promise<void> {
     if (this.state !== 'idle') throw new Error('Cleanup already started');
     const work = async (): Promise<void> => {
@@ -192,7 +191,6 @@ export class CleanupLifecycle {
         }
         throw failure;
       }
-      await afterDisposal?.();
       await this.finish();
     };
     this.retryPreparation = work;
@@ -510,36 +508,6 @@ export async function dispatchRecipeCleanup(
     }
   }
   return results;
-}
-
-/** Resource results remain retryable independently of the saved business and instance disposal outcomes. */
-export async function cleanAfterSuccess(
-  registry: Registry,
-  context: Omit<ExperimentCleanupContext, 'dryRun'>,
-  ownership: AbortSignal,
-): Promise<void> {
-  let results: BindingCleanupResult[] = [];
-  let error: string | undefined;
-  try {
-    results = await dispatchRecipeCleanup(
-      registry,
-      { ...context, dryRun: false },
-      ownership,
-    );
-    context.signal.throwIfAborted();
-  } catch (cause) {
-    error = errorText(cause);
-  }
-  ownership.throwIfAborted();
-  await context.facts.write('resource-cleanup', context.experimentId, {
-    experimentId: context.experimentId,
-    status:
-      error !== undefined || results.some((entry) => entry.status === 'pending')
-        ? 'pending'
-        : 'complete',
-    results: results.map((entry) => object(entry)),
-    ...(error === undefined ? {} : { error }),
-  });
 }
 
 /** Previews are read-only. Execution shares the lock used by run and resume. */

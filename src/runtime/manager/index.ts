@@ -41,7 +41,6 @@ import {
   CleanupLifecycle,
   archiveUnresolvedCleanup,
   assertCleanupResolved,
-  cleanAfterSuccess,
   reconcilePersistedCleanup,
 } from './cleanup.js';
 import { RevisionActivation } from './activation.js';
@@ -207,17 +206,6 @@ export class Manager {
     let restore: JsonObject | undefined;
     const checkpoints = new PolicyCheckpoints(this.facts, id);
     const resources = join(this.directory, 'experiments', id, 'resources');
-    const cleanupResources = (signal: AbortSignal) =>
-      cleanAfterSuccess(
-        this.options.registry,
-        {
-          experimentId: id,
-          dataDirectory: this.directory,
-          facts: this.facts,
-          signal,
-        },
-        controller.signal,
-      );
     try {
       if (continuing) {
         resumedRecord = readExperimentRecord(await this.get(id));
@@ -227,11 +215,8 @@ export class Manager {
         assertDefinitionLock(locked);
         if (resumedRecord.status === 'succeeded') {
           await assertCleanupResolved(this.facts, id);
-          const signal = options.signal
-            ? AbortSignal.any([controller.signal, options.signal])
-            : controller.signal;
-          signal.throwIfAborted();
-          await cleanupResources(signal);
+          controller.signal.throwIfAborted();
+          options.signal?.throwIfAborted();
           await releaseLock();
           return resumedRecord;
         }
@@ -1001,9 +986,6 @@ export class Manager {
         finalNotification,
         () => Promise.allSettled([...diagnostics]),
         terminal !== 'succeeded',
-        terminal === 'succeeded'
-          ? () => cleanupResources(cleanup.signal)
-          : undefined,
       );
       void cleanupJob.then(
         () => {

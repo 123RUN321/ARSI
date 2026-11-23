@@ -120,7 +120,7 @@ ctx.event.emit('rsi/agent-observation', {
 
 ### 插件诊断与资源清理
 
-插件在注册时按需订阅以下事件。框架按绑定派发并等待处理器返回结果。清理时，框架从历次保存的 Recipe 收集绑定，按 `(bindingId, pluginId)` 去重。即使续跑更换了插件并复用全部评测结果，新旧插件也都能收到各自订阅的清理事件。没有资源的插件返回 `[]`。
+插件在注册时按需订阅以下事件。框架按绑定派发并等待处理器返回结果。手动执行 `arsi cleanup` 时，框架从历次保存的 Recipe 收集绑定，按 `(bindingId, pluginId)` 去重。即使续跑更换了插件并复用全部评测结果，之后手动清理时，订阅了事件的新旧插件也都会收到通知。没有资源的插件返回 `[]`。
 
 ```js
 registry.registerOperation(myPlugin, (events) => {

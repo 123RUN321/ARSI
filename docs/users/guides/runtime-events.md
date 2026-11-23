@@ -120,7 +120,7 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 
 ### Plugin diagnostics and resource cleanup
 
-Plugins can subscribe to either event at registration. The framework dispatches by binding and waits for the handler's reply. For cleanup, it collects distinct `(bindingId, pluginId)` pairs from every saved Recipe. If a resumed run switches plugins and reuses all evaluation results, both plugins receive their cleanup event and return `[]` if they own no resources.
+Plugins can subscribe to either event at registration. The framework dispatches by binding and waits for the handler's reply. An explicit `arsi cleanup` request addresses each distinct `(bindingId, pluginId)` pair in the saved Recipes. If a resumed run switched plugins and reused all evaluation results, a later cleanup request reaches both subscribed plugins. A plugin with no resources returns `[]`.
 
 ```js
 registry.registerOperation(myPlugin, (events) => {

@@ -18,6 +18,7 @@ import {
   type CleanupContext,
 } from '../../src/contracts/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
+import { cleanupExperiment } from '../../src/entries/cli/cleanup.js';
 import { FileFacts } from '../../src/runtime/storage/index.js';
 import { object } from '../../src/shared/json.js';
 import {
@@ -165,7 +166,7 @@ function cleanupContext(ctx: RuntimeContext, pluginId: string): CleanupContext {
 
 const agentConfig = { benchmark: 'terminalbench', services: {} };
 
-test('only configured Evaluators look for cleanup inputs, even when their instances never started', async (t) => {
+test('Evaluator receipts are scanned only on explicit cleanup for a configured binding', async (t) => {
   const f = await managerFixture(async () => ({ done: true }));
   t.after(() => f.dispose());
   await registerBuiltins(f.manager.options.registry);
@@ -179,6 +180,8 @@ test('only configured Evaluators look for cleanup inputs, even when their instan
     scan.mock.calls
       .map(({ arguments: [kind] }) => kind)
       .filter((kind) => /^evaluator-(?:cleanup|images)-/.test(kind));
+  const signal = new AbortController().signal;
+  await cleanupExperiment(f.manager, 'test', true, signal);
   assert.deepEqual(cleanupScans(), []);
   const policyPath = join(f.manager.rootDirectory, 'policy.yaml');
   const policy = parseDocument(await readFile(policyPath, 'utf8'));
@@ -194,6 +197,8 @@ test('only configured Evaluators look for cleanup inputs, even when their instan
     (await f.manager.run(recipePath, { id: 'unused' })).status,
     'succeeded',
   );
+  assert.deepEqual(cleanupScans(), []);
+  await cleanupExperiment(f.manager, 'unused', true, signal);
   assert.deepEqual(cleanupScans(), [
     'evaluator-cleanup-unused',
     'evaluator-images-unused',

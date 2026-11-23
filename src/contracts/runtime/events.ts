@@ -156,6 +156,7 @@ declare module '@deepseek-ai/cordis' {
 /** The framework awaits one reply from the handler for each addressed binding. */
 export interface OperationEventMap<C extends JsonObject = JsonObject> {
   'rsi/doctor'(context: DoctorContext<C>): DoctorResult | Promise<DoctorResult>;
+  /** Preview or release resources for a binding on an explicit cleanup request. */
   'rsi/cleanup'(
     context: CleanupContext,
   ): CleanupResult[] | Promise<CleanupResult[]>;

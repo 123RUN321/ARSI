@@ -22,7 +22,7 @@ import {
 import { Manager } from '../../src/runtime/manager/index.js';
 import { dispatchRecipeCleanup } from '../../src/runtime/manager/cleanup.js';
 import { Registry } from '../../src/runtime/registry/index.js';
-import { digest, object } from '../../src/shared/json.js';
+import { digest } from '../../src/shared/json.js';
 
 async function recordKernelInput(context: RuntimeContext): Promise<string> {
   const path = join(context.directory, 'sdk-config.json');
@@ -73,6 +73,7 @@ for (const ending of ['failed', 'cancelled'] as const) {
     const stop = new AbortController();
     let retry = false;
     const calls: string[] = [];
+    let cleanupRequests = 0;
     let configPath = '';
     let logPath = '';
     const f = await managerFixture(
@@ -94,9 +95,10 @@ for (const ending of ['failed', 'cancelled'] as const) {
       {
         budget: { elapsedWallMs: 120_000 },
         driverEvents: (events) =>
-          events.on('rsi/cleanup', (ctx) =>
-            cleanupEvaluatorBinding(ctx, 'kernel'),
-          ),
+          events.on('rsi/cleanup', (ctx) => {
+            cleanupRequests++;
+            return cleanupEvaluatorBinding(ctx, 'kernel');
+          }),
         policy: {
           steps: [
             { id: 'first', type: 'invoke', use: 'driver', with: {} },
@@ -115,9 +117,7 @@ for (const ending of ['failed', 'cancelled'] as const) {
       /fixture interruption/,
     );
     assert.equal((await manager.get('test')).status, ending);
-    await assert.rejects(manager.facts.read('resource-cleanup', 'test'), {
-      code: 'ENOENT',
-    });
+    assert.equal(cleanupRequests, 0);
     const firstCall = calls[0];
     const kind = 'evaluator-cleanup-test';
     const receipt = await manager.facts.read(kind, firstCall);
@@ -224,6 +224,7 @@ for (const ending of ['failed', 'cancelled'] as const) {
       [false, true, true, false],
     );
 
+    const beforeResume = cleanupRequests;
     retry = true;
     const resumed = await command('run', recipe, '--id', 'test', '--resume');
     const experiment = JSON.parse(resumed.stdout!);
@@ -232,10 +233,11 @@ for (const ending of ['failed', 'cancelled'] as const) {
     assert.deepEqual(experiment.output, { done: true });
     assert.equal(calls.length, 3);
     assert.equal(calls.filter((id) => id === firstCall).length, 1);
+    assert.equal(cleanupRequests, beforeResume);
   });
 }
 
-test('a fully reused evaluation notifies both its archived plugin and its unstarted replacement', async (t) => {
+test('manual cleanup reaches the archived plugin and its unstarted replacement after a fully reused evaluation', async (t) => {
   let retry = false;
   const finish: OperationDefinition = {
     id: 'test.finish',
@@ -364,31 +366,37 @@ test('a fully reused evaluation notifies both its archived plugin and its unstar
   await writeFile(recipe, current.toString());
   const result = await manager.run(recipe, { id: 'test', resume: true });
   assert.equal(result.status, 'succeeded');
+  assert.deepEqual(
+    await manager.run(recipe, { id: 'test', resume: true }),
+    result,
+  );
   assert.equal(evaluations, 1);
-  const expected = ['test.replacement/driver', 'test.driver/driver'];
-  assert.deepEqual(notified, expected);
+  assert.deepEqual(notified, []);
+  assert.equal(sdk.mock.callCount(), 0);
+  assert.deepEqual(
+    await manager.facts.read('evaluator-cleanup-test', String(receipt.key)),
+    receipt,
+  );
+  const report = await cleanupExperiment(
+    manager,
+    'test',
+    false,
+    new AbortController().signal,
+  );
+  assert.deepEqual(notified, ['test.replacement/driver', 'test.driver/driver']);
+  assert.deepEqual(
+    report.results.map((entry) => entry.pluginId),
+    ['test.driver'],
+  );
   assert.equal(sdk.mock.callCount(), 1);
   assert.equal(
     (await manager.facts.read('evaluator-cleanup-test', String(receipt.key)))
       .status,
     'complete',
   );
-  const report = await manager.facts.read('resource-cleanup', 'test');
-  assert.equal(report.status, 'complete');
-  assert.ok(Array.isArray(report.results));
-  assert.deepEqual(
-    report.results.map((entry) => object(entry).pluginId),
-    ['test.driver'],
-  );
-  assert.deepEqual(
-    await manager.run(recipe, { id: 'test', resume: true }),
-    result,
-  );
-  assert.deepEqual(notified, [...expected, ...expected]);
-  assert.equal(sdk.mock.callCount(), 1);
 });
 
-test('completed resume retries pending resource cleanup after instance disposal without repeating business calls', async (t) => {
+test('success and completed resume leave resource cleanup and its retries to an explicit request', async (t) => {
   const log: string[] = [];
   let ready = false;
   const f = await managerFixture(
@@ -413,11 +421,12 @@ test('completed resume retries pending resource cleanup after instance disposal 
   t.after(f.dispose);
   const result = await f.run();
   assert.equal(result.status, 'succeeded');
+  assert.deepEqual(log, ['execute', 'dispose']);
+  const command = fixtureCommand(f);
+  const pending = await command('cleanup', 'test');
+  assert.equal(pending.exitCode, 1);
+  assert.equal(JSON.parse(pending.stdout!).results[0].status, 'pending');
   assert.deepEqual(log, ['execute', 'dispose', 'cleanup']);
-  assert.equal(
-    (await f.manager.facts.read('resource-cleanup', 'test')).status,
-    'pending',
-  );
   ready = true;
   assert.deepEqual(
     await f.manager.run(join(f.manager.rootDirectory, 'recipe.yaml'), {
@@ -426,11 +435,11 @@ test('completed resume retries pending resource cleanup after instance disposal 
     }),
     result,
   );
+  assert.deepEqual(log, ['execute', 'dispose', 'cleanup']);
+  const completed = await command('cleanup', 'test');
+  assert.equal(completed.exitCode, 0);
+  assert.equal(JSON.parse(completed.stdout!).results[0].status, 'complete');
   assert.deepEqual(log, ['execute', 'dispose', 'cleanup', 'cleanup']);
-  assert.equal(
-    (await f.manager.facts.read('resource-cleanup', 'test')).status,
-    'complete',
-  );
 });
 
 test('manual cleanup awaits each distinct binding in this experiment’s saved Recipes', async (t) => {
