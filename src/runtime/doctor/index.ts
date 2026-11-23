@@ -22,14 +22,13 @@ export async function doctorRecipe(
   recipePath: string,
   { signal = new AbortController().signal }: { signal?: AbortSignal } = {},
 ): Promise<DoctorReport> {
-  signal.throwIfAborted();
-  let recipe: Recipe;
-  try {
-    recipe = await Recipe.load(resolve(recipePath), sourceRuntime.registry);
-  } catch (error) {
-    signal.throwIfAborted();
-    return createFailureReport('recipe.validate', error);
-  }
+  const loadResult = await loadRecipeForDoctor(
+    sourceRuntime,
+    recipePath,
+    signal,
+  );
+  if (!(loadResult instanceof Recipe)) return loadResult;
+  const recipe = loadResult;
 
   const reportBuilder = new DoctorReportBuilder(recipe.id, {
     recipe: recipe.toJSON(),
@@ -68,6 +67,20 @@ export async function doctorRecipe(
 
   signal.throwIfAborted();
   return reportBuilder.build();
+}
+
+async function loadRecipeForDoctor(
+  sourceRuntime: Runtime,
+  recipePath: string,
+  signal: AbortSignal,
+): Promise<Recipe | DoctorReport> {
+  signal.throwIfAborted();
+  try {
+    return await Recipe.load(resolve(recipePath), sourceRuntime.registry);
+  } catch (error) {
+    signal.throwIfAborted();
+    return createFailureReport('recipe.validate', error);
+  }
 }
 
 function getDoctorBindings(
