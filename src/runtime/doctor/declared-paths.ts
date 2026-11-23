@@ -12,7 +12,7 @@ import {
 } from '../../shared/doctor-check.js';
 import { configPathFields, isResourceUrl } from '../../shared/paths.js';
 
-function resolvedValue(config: JsonObject, pointer: string): JsonValue {
+function readConfigValue(config: JsonObject, pointer: string): JsonValue {
   let value: JsonValue = config;
   for (const part of pointer.slice(1).split('/')) {
     const key = part.replaceAll('~1', '/').replaceAll('~0', '~');
@@ -31,15 +31,15 @@ export async function* checkDeclaredPaths(
     binding.definition.configSchema,
     binding.config,
   )) {
-    const reference = resolvedValue(binding.config, pointer);
+    const reference = readConfigValue(binding.config, pointer);
     if (typeof reference !== 'string' || isResourceUrl(reference)) continue;
-    const field = pointer.slice(1).replaceAll('/', '.');
+    const configField = pointer.slice(1).replaceAll('/', '.');
     yield runDoctorCheck(
-      `resource.${field}`,
+      `resource.${configField}`,
       async () => {
         try {
-          const info = await stat(reference);
-          if (!(kind === 'file' ? info.isFile() : info.isDirectory()))
+          const pathInfo = await stat(reference);
+          if (!(kind === 'file' ? pathInfo.isFile() : pathInfo.isDirectory()))
             throw new Error(`${pointer}: expected ${kind}: ${reference}`);
           await access(reference, constants.R_OK);
         } catch (error) {
@@ -49,7 +49,7 @@ export async function* checkDeclaredPaths(
             error.code === 'ENOENT'
           )
             throw new DoctorMissingResourceError(
-              { field, kind, reference },
+              { field: configField, kind, reference },
               error,
             );
           throw error;

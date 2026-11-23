@@ -11,39 +11,39 @@ interface CleanupFailure {
   error: unknown;
 }
 
-interface DoctorProbeRuntime {
+interface ProbeRuntime {
   createBindingContext(
-    index: number,
+    bindingIndex: number,
     bindingId: string,
   ): Promise<RuntimeContext>;
   dispose(): Promise<CleanupFailure[]>;
 }
 
-async function readArtifactInput<T>(
-  local: () => Promise<T>,
-  original: () => Promise<T>,
+async function readArtifactWithFallback<T>(
+  readFromProbe: () => Promise<T>,
+  readFromSource: () => Promise<T>,
 ): Promise<T> {
   try {
-    return await local();
+    return await readFromProbe();
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
       throw error;
-    return original();
+    return readFromSource();
   }
 }
 
-async function denyExecution(): Promise<never> {
+async function rejectExperimentOperation(): Promise<never> {
   throw new Error('Doctor does not execute Agents, Policies, or Measurements');
 }
 
 function createProbeContext(
-  runtime: Runtime,
-  isolated: Manager,
+  sourceRuntime: Runtime,
+  probeManager: Manager,
   events: ManagedEvents,
   signal: AbortSignal,
 ): RuntimeContext {
-  const artifacts = isolated.artifacts;
-  return isolated.context.extend({
+  const probeArtifacts = probeManager.artifacts;
+  return probeManager.context.extend({
     signal,
     cleanup: new AbortController().signal,
     experimentId: 'doctor',
@@ -51,81 +51,96 @@ function createProbeContext(
     event: events.event,
     // Existing artifacts are inputs. Captures and writes belong to probe storage.
     artifacts: {
-      putJson: artifacts.putJson.bind(artifacts),
-      capture: artifacts.capture.bind(artifacts),
-      readJson: (ref: string) =>
-        readArtifactInput(
-          () => artifacts.readJson(ref),
-          () => runtime.context.artifacts.readJson(ref),
+      putJson: probeArtifacts.putJson.bind(probeArtifacts),
+      capture: probeArtifacts.capture.bind(probeArtifacts),
+      readJson: (artifactRef: string) =>
+        readArtifactWithFallback(
+          () => probeArtifacts.readJson(artifactRef),
+          () => sourceRuntime.context.artifacts.readJson(artifactRef),
         ),
-      materialize: (ref: string, directory: string) =>
-        readArtifactInput(
-          () => artifacts.materialize(ref, directory),
-          () => runtime.context.artifacts.materialize(ref, directory),
+      materialize: (artifactRef: string, directory: string) =>
+        readArtifactWithFallback(
+          () => probeArtifacts.materialize(artifactRef, directory),
+          () =>
+            sourceRuntime.context.artifacts.materialize(artifactRef, directory),
         ),
     },
-    invoke: denyExecution,
-    invokeAgent: denyExecution,
-    application: denyExecution,
-    recordCandidate: denyExecution,
-    readCandidate: denyExecution,
-    recordMeasurement: denyExecution,
-    readMeasurement: denyExecution,
-    withInstance: denyExecution,
-    charge: denyExecution,
+    invoke: rejectExperimentOperation,
+    invokeAgent: rejectExperimentOperation,
+    application: rejectExperimentOperation,
+    recordCandidate: rejectExperimentOperation,
+    readCandidate: rejectExperimentOperation,
+    recordMeasurement: rejectExperimentOperation,
+    readMeasurement: rejectExperimentOperation,
+    withInstance: rejectExperimentOperation,
+    charge: rejectExperimentOperation,
   });
 }
 
-async function closeProbeRuntime(
-  directory: string,
-  manager: Manager | undefined,
-  events: ManagedEvents | undefined,
+async function disposeProbeRuntime(
+  temporaryDirectory: string,
+  probeManager: Manager | undefined,
+  probeEvents: ManagedEvents | undefined,
 ): Promise<CleanupFailure[]> {
   const failures: CleanupFailure[] = [];
-  const cleanups = await Promise.allSettled([
-    manager?.dispose(),
-    events?.dispose(),
+  const cleanupResults = await Promise.allSettled([
+    probeManager?.dispose(),
+    probeEvents?.dispose(),
   ]);
-  for (const [index, result] of cleanups.entries())
+  for (const [cleanupIndex, result] of cleanupResults.entries())
     if (result.status === 'rejected')
-      failures.push({ id: `doctor.cleanup.${index}`, error: result.reason });
+      failures.push({
+        id: `doctor.cleanup.${cleanupIndex}`,
+        error: result.reason,
+      });
   try {
-    await rm(directory, { recursive: true, force: true });
+    await rm(temporaryDirectory, { recursive: true, force: true });
   } catch (error) {
     failures.push({ id: 'doctor.cleanup.storage', error });
   }
   return failures;
 }
 
-export async function openDoctorProbeRuntime(
-  runtime: Runtime,
+export async function openProbeRuntime(
+  sourceRuntime: Runtime,
   signal: AbortSignal,
-): Promise<DoctorProbeRuntime> {
-  const temporary = await mkdtemp(join(tmpdir(), 'arsi-doctor-'));
-  let manager: Manager | undefined;
-  let events: ManagedEvents | undefined;
+): Promise<ProbeRuntime> {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'arsi-doctor-'));
+  let probeManager: Manager | undefined;
+  let probeEvents: ManagedEvents | undefined;
   const dispose = (): Promise<CleanupFailure[]> =>
-    closeProbeRuntime(temporary, manager, events);
+    disposeProbeRuntime(temporaryDirectory, probeManager, probeEvents);
 
   try {
-    const isolated = new Manager({
-      registry: runtime.registry,
-      rootDirectory: runtime.context.rootDirectory,
-      directory: temporary,
+    const manager = new Manager({
+      registry: sourceRuntime.registry,
+      rootDirectory: sourceRuntime.context.rootDirectory,
+      directory: temporaryDirectory,
     });
-    manager = isolated;
-    events = new ManagedEvents({
-      context: () => isolated.context,
+    probeManager = manager;
+    probeEvents = new ManagedEvents({
+      context: () => manager.context,
       diagnostic: ({ error }) => {
         throw error;
       },
     });
-    const base = createProbeContext(runtime, isolated, events, signal);
+    const probeContext = createProbeContext(
+      sourceRuntime,
+      manager,
+      probeEvents,
+      signal,
+    );
     return {
-      async createBindingContext(index, bindingId): Promise<RuntimeContext> {
-        const directory = join(temporary, `probe-${index}`);
-        await mkdir(directory);
-        return base.extend({ directory, bindingId });
+      async createBindingContext(
+        bindingIndex,
+        bindingId,
+      ): Promise<RuntimeContext> {
+        const bindingDirectory = join(
+          temporaryDirectory,
+          `probe-${bindingIndex}`,
+        );
+        await mkdir(bindingDirectory);
+        return probeContext.extend({ directory: bindingDirectory, bindingId });
       },
       dispose,
     };

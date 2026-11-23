@@ -46,14 +46,17 @@ const doctorResultSchema: JsonSchema = {
   },
 };
 
-type BindingCheck = DoctorResult['checks'][number];
+type LocalCheck = DoctorResult['checks'][number];
 
-export function doctorFailure(stage: string, error: unknown): DoctorReport {
+export function createFailureReport(
+  checkId: string,
+  error: unknown,
+): DoctorReport {
   return {
     recipeId: null,
     checks: [
       {
-        id: stage,
+        id: checkId,
         status: 'failed',
         reason: createDoctorRedactor()(errorText(error)),
       },
@@ -61,13 +64,16 @@ export function doctorFailure(stage: string, error: unknown): DoctorReport {
   };
 }
 
-function scopeCheck(binding: DoctorBinding, check: BindingCheck): DoctorCheck {
-  const { missingResource, blockedBy, ...result } = check;
+function qualifyBindingCheck(
+  binding: DoctorBinding,
+  localCheck: LocalCheck,
+): DoctorCheck {
+  const { missingResource, blockedBy, ...checkFields } = localCheck;
   return {
-    ...result,
+    ...checkFields,
     binding: binding.name,
     pluginId: binding.pluginId,
-    id: `${binding.name}.${check.id}`,
+    id: `${binding.name}.${localCheck.id}`,
     ...(blockedBy ? { blockedBy: `${binding.name}.${blockedBy}` } : {}),
     ...(missingResource
       ? {
@@ -82,123 +88,127 @@ function scopeCheck(binding: DoctorBinding, check: BindingCheck): DoctorCheck {
   };
 }
 
-function resourceKey({ kind, reference }: MissingResource): string {
+function missingResourceKey({ kind, reference }: MissingResource): string {
   if (!['file', 'directory', 'path'].includes(kind))
     return JSON.stringify([kind, reference]);
 
-  const path = sep === '\\' ? reference.replaceAll('\\', '/') : reference;
-  const { root } = parse(path);
-  const normalized = root + path.slice(root.length).replace(/\/+$/, '');
-  return JSON.stringify(['path', normalized]);
+  const localPath = sep === '\\' ? reference.replaceAll('\\', '/') : reference;
+  const { root } = parse(localPath);
+  const normalizedPath =
+    root + localPath.slice(root.length).replace(/\/+$/, '');
+  return JSON.stringify(['path', normalizedPath]);
 }
 
 /** Collect checks in dispatch order and resolve blockers after deduplication. */
 export class DoctorReportBuilder {
-  private readonly checks = new Map<string, DoctorCheck>();
-  private readonly missingResources = new Map<string, string>();
-  private readonly duplicateChecks = new Map<string, string>();
-  private readonly redact: (message: string) => string;
+  private readonly checksById = new Map<string, DoctorCheck>();
+  private readonly firstIdByMissingResource = new Map<string, string>();
+  private readonly originalIdByDuplicateId = new Map<string, string>();
+  private readonly redactText: (message: string) => string;
 
   constructor(
     private readonly recipeId: string,
     configuration: JsonValue,
   ) {
-    this.redact = createDoctorRedactor(configuration);
+    this.redactText = createDoctorRedactor(configuration);
   }
 
-  add(check: DoctorCheck): void {
-    if (this.checks.has(check.id))
+  addCheck(check: DoctorCheck): void {
+    if (this.checksById.has(check.id))
       throw new Error(`Duplicate doctor check ID: ${check.id}`);
-    this.append(check);
+    this.storeCheck(check);
   }
 
-  addBindingCheck(binding: DoctorBinding, check: BindingCheck): void {
-    this.add(scopeCheck(binding, check));
+  addBindingCheck(binding: DoctorBinding, localCheck: LocalCheck): void {
+    this.addCheck(qualifyBindingCheck(binding, localCheck));
   }
 
-  addPluginResult(binding: DoctorBinding, result: DoctorResult): void {
-    validate(doctorResultSchema, result, 'Doctor result');
+  addBindingResult(binding: DoctorBinding, bindingResult: DoctorResult): void {
+    validate(doctorResultSchema, bindingResult, 'Doctor result');
     // Validate the whole callback result before recording any of its checks.
-    const failed = new Set(
-      result.checks
+    const failedLocalIds = new Set(
+      bindingResult.checks
         .filter(({ status }) => status === 'failed')
         .map(({ id }) => id),
     );
-    const ids = new Set<string>();
-    const checks: DoctorCheck[] = [];
-    for (const check of result.checks) {
-      const scoped = scopeCheck(binding, check);
-      if (check.details !== undefined) json(check.details);
-      if (this.checks.has(scoped.id) || ids.has(scoped.id))
-        throw new Error(`Duplicate doctor check ID: ${scoped.id}`);
-      ids.add(scoped.id);
-      if (check.missingResource && check.status !== 'failed')
+    const batchIds = new Set<string>();
+    const validatedChecks: DoctorCheck[] = [];
+    for (const localCheck of bindingResult.checks) {
+      const bindingCheck = qualifyBindingCheck(binding, localCheck);
+      if (localCheck.details !== undefined) json(localCheck.details);
+      if (this.checksById.has(bindingCheck.id) || batchIds.has(bindingCheck.id))
+        throw new Error(`Duplicate doctor check ID: ${bindingCheck.id}`);
+      batchIds.add(bindingCheck.id);
+      if (localCheck.missingResource && localCheck.status !== 'failed')
         throw new Error(
-          `Only a failed check can report a missing resource: ${scoped.id}`,
+          `Only a failed check can report a missing resource: ${bindingCheck.id}`,
         );
       if (
-        check.blockedBy &&
-        (check.status !== 'unchecked' || !failed.has(check.blockedBy))
+        localCheck.blockedBy &&
+        (localCheck.status !== 'unchecked' ||
+          !failedLocalIds.has(localCheck.blockedBy))
       )
         throw new Error(
-          `An unchecked check must reference a failed blocker: ${scoped.id}`,
+          `An unchecked check must reference a failed blocker: ${bindingCheck.id}`,
         );
-      checks.push(scoped);
+      validatedChecks.push(bindingCheck);
     }
-    for (const check of checks) this.append(check);
+    for (const check of validatedChecks) this.storeCheck(check);
   }
 
   build(): DoctorReport {
     return {
       recipeId: this.recipeId,
-      checks: [...this.checks.values()].map((check) => {
-        const blocker =
-          check.blockedBy && this.duplicateChecks.get(check.blockedBy);
-        return blocker ? { ...check, blockedBy: blocker } : check;
+      checks: [...this.checksById.values()].map((check) => {
+        const originalBlockerId =
+          check.blockedBy && this.originalIdByDuplicateId.get(check.blockedBy);
+        return originalBlockerId
+          ? { ...check, blockedBy: originalBlockerId }
+          : check;
       }),
     };
   }
 
-  private append(check: DoctorCheck): void {
+  private storeCheck(check: DoctorCheck): void {
     const { reason, details, missingResource, ...metadata } = check;
     if (missingResource) {
-      const key = resourceKey(missingResource);
-      const first = this.missingResources.get(key);
-      if (first) {
-        this.duplicateChecks.set(check.id, first);
-        this.checks.set(check.id, {
+      const resourceKey = missingResourceKey(missingResource);
+      const firstCheckId = this.firstIdByMissingResource.get(resourceKey);
+      if (firstCheckId) {
+        this.originalIdByDuplicateId.set(check.id, firstCheckId);
+        this.checksById.set(check.id, {
           ...metadata,
           status: 'unchecked',
-          blockedBy: first,
+          blockedBy: firstCheckId,
         });
         return;
       }
-      this.missingResources.set(key, check.id);
+      this.firstIdByMissingResource.set(resourceKey, check.id);
     }
-    this.checks.set(check.id, {
+    this.checksById.set(check.id, {
       ...metadata,
-      ...(reason ? { reason: this.redact(reason) } : {}),
-      ...(details ? { details: object(this.redactValue(details)) } : {}),
+      ...(reason ? { reason: this.redactText(reason) } : {}),
+      ...(details ? { details: object(this.redactJson(details)) } : {}),
       ...(missingResource
         ? {
             missingResource: {
               ...missingResource,
-              reference: this.redact(missingResource.reference),
+              reference: this.redactText(missingResource.reference),
             },
           }
         : {}),
     });
   }
 
-  private redactValue(value: JsonValue): JsonValue {
-    if (typeof value === 'string') return this.redact(value);
+  private redactJson(value: JsonValue): JsonValue {
+    if (typeof value === 'string') return this.redactText(value);
     if (Array.isArray(value))
-      return value.map((entry) => this.redactValue(entry));
+      return value.map((entry) => this.redactJson(entry));
     if (value !== null && typeof value === 'object')
       return Object.fromEntries(
         Object.entries(value).map(([key, child]) => [
           key,
-          this.redactValue(child),
+          this.redactJson(child),
         ]),
       );
     return value;

@@ -56,7 +56,7 @@ export async function runCommand(
     .command('doctor <recipe.yaml>')
     .description('Check experiment configuration and runtime prerequisites')
     .option('--json', 'Output the full report as JSON')
-    .action(runDoctor);
+    .action(runDoctorCommand);
   program
     .command('list')
     .description('List experiments, plugins, or policies')
@@ -150,14 +150,12 @@ export async function runCommand(
     );
   }
 
-  async function runDoctor(
-    file: string,
+  async function runDoctorCommand(
+    recipePath: string,
     options: { json?: boolean },
   ): Promise<void> {
-    const { checkRecipe } = await import(
-      '../../runtime/doctor/check-recipe.js'
-    );
-    const report = await checkRecipe(file, {
+    const { runDoctor } = await import('../../runtime/doctor/run-doctor.js');
+    const report = await runDoctor(recipePath, {
       signal: context.signal,
       openRuntime: () =>
         context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir),
@@ -167,7 +165,7 @@ export async function runCommand(
       exitCode: report.checks.some(({ status }) => status === 'failed') ? 1 : 0,
       ...(options.json
         ? { json: report }
-        : { stdout: formatDoctorSummary(report, file) }),
+        : { stdout: formatDoctorSummary(report, recipePath) }),
     };
   }
 

@@ -11,59 +11,66 @@ import { Recipe } from '../loaders/recipe.js';
 import type { Registry } from '../registry/index.js';
 import { diagnoseBinding } from './dispatch.js';
 import { checkDeclaredPaths } from './declared-paths.js';
-import { openDoctorProbeRuntime } from './probe-runtime.js';
-import { doctorFailure, DoctorReportBuilder } from './report.js';
+import { openProbeRuntime } from './probe-runtime.js';
+import { createFailureReport, DoctorReportBuilder } from './report.js';
 
 export { diagnoseBinding };
 
 /** Internal runner: never runs a Policy or writes to the invoking experiment store. */
 export async function doctorRecipe(
-  runtime: Runtime,
-  path: string,
+  sourceRuntime: Runtime,
+  recipePath: string,
   { signal = new AbortController().signal }: { signal?: AbortSignal } = {},
 ): Promise<DoctorReport> {
   signal.throwIfAborted();
   let recipe: Recipe;
   try {
-    recipe = await Recipe.load(resolve(path), runtime.registry);
+    recipe = await Recipe.load(resolve(recipePath), sourceRuntime.registry);
   } catch (error) {
     signal.throwIfAborted();
-    return doctorFailure('recipe.validate', error);
+    return createFailureReport('recipe.validate', error);
   }
 
-  const report = new DoctorReportBuilder(recipe.id, {
+  const reportBuilder = new DoctorReportBuilder(recipe.id, {
     recipe: recipe.toJSON(),
     reflection: recipe.reflection?.implementation.config ?? {},
   });
-  report.add({ id: 'recipe.validate', status: 'passed' });
-  const bindings = diagnosticBindings(recipe, runtime.registry);
-  const probes = await openDoctorProbeRuntime(runtime, signal);
+  reportBuilder.addCheck({ id: 'recipe.validate', status: 'passed' });
+  const bindings = getDoctorBindings(recipe, sourceRuntime.registry);
+  const probeRuntime = await openProbeRuntime(sourceRuntime, signal);
   try {
-    for (const [index, binding] of bindings.entries()) {
+    for (const [bindingIndex, binding] of bindings.entries()) {
       signal.throwIfAborted();
-      const scope = await probes.createBindingContext(index, binding.name);
+      const bindingContext = await probeRuntime.createBindingContext(
+        bindingIndex,
+        binding.name,
+      );
       await checkBinding(
         {
           binding,
           recipe,
-          registry: runtime.registry,
-          runtime: scope,
-          directory: scope.directory,
+          registry: sourceRuntime.registry,
+          runtime: bindingContext,
+          directory: bindingContext.directory,
           signal,
         },
-        report,
+        reportBuilder,
       );
     }
   } finally {
-    for (const { id, error } of await probes.dispose())
-      report.add({ id, status: 'failed', reason: errorText(error) });
+    for (const { id, error } of await probeRuntime.dispose())
+      reportBuilder.addCheck({
+        id,
+        status: 'failed',
+        reason: errorText(error),
+      });
   }
 
   signal.throwIfAborted();
-  return report.build();
+  return reportBuilder.build();
 }
 
-function diagnosticBindings(
+function getDoctorBindings(
   recipe: Recipe,
   registry: DoctorRegistry,
 ): DoctorBinding[] {
@@ -84,16 +91,16 @@ function diagnosticBindings(
 
 async function checkBinding(
   context: DoctorContext & { registry: Registry },
-  report: DoctorReportBuilder,
+  reportBuilder: DoctorReportBuilder,
 ): Promise<void> {
   const { binding, signal } = context;
   let pathBlocker: string | undefined;
   for await (const check of checkDeclaredPaths(binding, signal)) {
-    report.addBindingCheck(binding, check);
+    reportBuilder.addBindingCheck(binding, check);
     if (check.status === 'failed') pathBlocker ??= check.id;
   }
   if (pathBlocker) {
-    report.addBindingCheck(binding, {
+    reportBuilder.addBindingCheck(binding, {
       id: 'plugin',
       status: 'unchecked',
       blockedBy: pathBlocker,
@@ -102,12 +109,12 @@ async function checkBinding(
   }
 
   try {
-    const result = await diagnoseBinding(context.registry, context);
+    const bindingResult = await diagnoseBinding(context.registry, context);
     signal.throwIfAborted();
-    report.addPluginResult(binding, result);
+    reportBuilder.addBindingResult(binding, bindingResult);
   } catch (error) {
     signal.throwIfAborted();
-    report.addBindingCheck(binding, {
+    reportBuilder.addBindingCheck(binding, {
       id: 'script',
       status: 'failed',
       reason: `${errorText(error)} Plugin availability is unknown.`,

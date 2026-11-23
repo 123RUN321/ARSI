@@ -3,7 +3,7 @@ import type { DoctorCheck, DoctorReport } from '../../contracts/index.js';
 
 export function formatDoctorSummary(
   report: DoctorReport,
-  file: string,
+  recipePath: string,
 ): string {
   const failed = report.checks.filter((check) => check.status === 'failed');
   const unchecked = report.checks.filter(
@@ -12,7 +12,7 @@ export function formatDoctorSummary(
   const passed = report.checks.length - failed.length - unchecked.length;
   const result = failed.length ? 'failures' : 'no failures';
   const lines = [
-    `Doctor found ${result} for ${report.recipeId ?? file}.`,
+    `Doctor found ${result} for ${report.recipeId ?? recipePath}.`,
     `${passed} passed, ${failed.length} failed, ${unchecked.length} unchecked.`,
   ];
 
@@ -26,7 +26,7 @@ export function formatDoctorSummary(
       );
     } else if (check.id === 'recipe.validate') {
       lines.push(
-        `  Fix: Check ${file} and correct the path or configuration named in the error.`,
+        `  Fix: Check ${recipePath} and correct the path or configuration named in the error.`,
       );
     } else if (check.id === 'runtime.registration') {
       lines.push(
