@@ -21,6 +21,7 @@ import { object, digest, json } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { errorText } from '../../shared/errors.js';
 import type { Registry } from '../registry/index.js';
+import { assertAdmission } from '../services/events.js';
 import { agentReplayKey } from './retry.js';
 
 interface CallExecutorOptions {
@@ -50,6 +51,7 @@ export interface CallExecutor {
     input: JsonValue,
     context: RuntimeContext,
     path?: string,
+    metadata?: JsonObject,
   ): Promise<JsonValue>;
   readonly pending: number;
   close(): void;
@@ -69,6 +71,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
     input: JsonValue,
     caller: RuntimeContext,
     path?: string,
+    metadata?: JsonObject,
   ): Promise<JsonValue> => {
     // Admission and registration run without an await, including for old contexts.
     if (!accepting)
@@ -84,6 +87,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
       definition = options.registry.get(selected.plugin);
       json(input);
       input = structuredClone(input);
+      if (metadata !== undefined) metadata = structuredClone(metadata);
       validate(definition.contract.input_schema, input, `${bindingId} input`);
       agentInput =
         definition.contract.id === agentContract.id ? object(input) : undefined;
@@ -265,6 +269,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
           contractId: definition.contract.id,
           status: 'running',
           input,
+          ...(metadata === undefined ? {} : { metadata }),
           ...(projectArtifactRef === undefined
             ? {}
             : { agentProjectArtifactRef: projectArtifactRef }),
@@ -322,16 +327,21 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             async () => ({ kind: 'proceed' }),
           );
           ctx.signal.throwIfAborted();
-          if (
-            !decision ||
-            typeof decision !== 'object' ||
-            (decision.kind !== 'proceed' && decision.kind !== 'reject') ||
-            (decision.kind === 'reject' &&
-              (typeof decision.reason !== 'string' || !decision.reason.trim()))
-          )
-            throw new Error('Invalid rsi/before-call decision');
-          if (decision.kind === 'reject')
-            throw new Error(`Call admission rejected: ${decision.reason}`);
+          assertAdmission(decision, 'rsi/before-call');
+          if (decision.metadata !== undefined) {
+            const admitted = structuredClone(decision.metadata);
+            const write = writes.then(async () => {
+              if (committed)
+                throw new Error(`Call ${callId} outcome remains unconfirmed`);
+              receipt.metadata = { ...metadata, ...admitted };
+              await options.facts.write('calls', callId, receipt);
+            });
+            writes = write.then(
+              () => {},
+              () => {},
+            );
+            await write;
+          }
           output = checkedOutput(await lease.operation.execute(input, ctx));
           memoryFailed = isMemory && object(output).status === 'failed';
           if (

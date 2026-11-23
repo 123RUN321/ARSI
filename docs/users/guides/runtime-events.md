@@ -13,7 +13,7 @@ Plugin instances subscribe to lifecycle events through `ctx.event` in `create(co
 | `emit`      | Continue after publishing without waiting for asynchronous listeners.                                                | `rsi/candidate-recorded`: notify plugins to update statistics after a candidate is saved.                |
 | `parallel`  | Run listeners concurrently and wait for asynchronous listeners to finish.                                            | `rsi/experiment-finished`: wait for listeners to flush logs and release local resources.                 |
 | `serial`    | Run listeners in order, waiting for each to finish before starting the next; a throw prevents subsequent flow.       | `rsi/before-experiment`: run checks in order before the experiment starts.                               |
-| `waterfall` | Process admission decisions through a listener chain; the Manager uses the final result to admit or reject the call. | `rsi/before-call`: decide whether to allow a binding's call, returning a `proceed` or `reject` decision. |
+| `waterfall` | Pass decisions back through a listener chain. The Manager consumes the final return value. | `rsi/before-call`: decide whether to allow a binding's call, returning a `proceed` or `reject` decision. |
 
 - Listeners for `serial` lifecycle notifications must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
 
@@ -21,7 +21,7 @@ Plugin instances subscribe to lifecycle events through `ctx.event` in `create(co
 
 The framework publishes the lifecycle and fact notifications below for plugins to subscribe to. Agent conversation observation uses the separate call-local path described below. The tables document every field of the listener's first argument, `event`: each event contains its group's common parameters plus the event-specific parameters listed in its row. Fields are required unless marked with `?`; `?` means a field may be omitted, while `string | null` means the field is present but may hold `null`. All fields are read-only; see the [event contract](../../../src/contracts/runtime/events.ts) for the type definitions.
 
-Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `(event, next, ctx)`. `ctx` is the current listener's `RuntimeContext`; `next: () => Promise<CallDecision>` continues subsequent listeners and returns the admission decision, as described in [Subscribe to built-in events](#3-subscribe-to-built-in-events). Neither `ctx` nor `next` is a field of `event`.
+Ordinary listeners receive `(event, ctx)`. Both waterfall hooks receive `(event, next, ctx)`. Each listener gets its own `RuntimeContext`. Call `await next()` with no arguments to obtain the downstream decision, then return your decision to the caller.
 
 ### Experiment lifecycle
 
@@ -65,6 +65,18 @@ Ordinary listeners receive `(event, ctx)`; `rsi/before-call` listeners receive `
 | `rsi/call-cancelled` | After the cancellation receipt is saved, before reporting cancellation.                         | `parallel`  | None.                                                                                                             |
 | `rsi/call-unknown`   | After a receipt is saved for a call whose outcome is unconfirmed.                               | `parallel`  | None.                                                                                                             |
 
+### Agent invocation
+
+The Manager dispatches `rsi/before-agent-invoke` as a `waterfall` when a plugin calls `ctx.invokeAgent`, before it enters the Agent call and runs `rsi/before-call`. A listener can return a transformed Agent input, attach JSON metadata to the receipt, or reject the request.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `experimentId` | `string` | ID of the current experiment. |
+| `callerBindingId` | `string` | Binding requesting Agent execution. |
+| `callerDirectory` | `string` | Execution directory owned by the caller. |
+| `agentRef` | `string` | Selected Agent binding. |
+| `input` | `AgentInput` | Original request with `goal`, `cwd`, `outputSchema`, and optional `role`. |
+
 ### Agent conversation observation
 
 | Event | Publication point | Dispatch | Parameters |
@@ -99,8 +111,19 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 | ------------------------------- | -------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rsi/policy-started`            | After input, configuration and recovery identity checks, before the first Policy step. | `serial` | `resumed: boolean`: Whether execution resumes a saved Policy checkpoint.                                                                                                                                                                                                                                                                    |
 | `rsi/policy-step-completed`     | After a newly executed Policy step's checkpoint is saved.                              | `emit`   | `stepPath: string`: Full path of the completed step, such as `steps/evaluate`.                                                                                                                                                                                                                                                              |
-| `rsi/policy-boundary-completed` | At a loop/Policy boundary, after checkpoint persistence.                               | `serial` | `boundary: 'iteration-completed' \| 'policy-completed'`: Identifies a completed loop iteration or completed Policy execution.<br>`iteration?: number`: Optional. Zero-based iteration index, present only at a loop-iteration boundary.<br>`stepPath?: string`: Optional. Path of the loop step, present only at a loop-iteration boundary. |
+| `rsi/policy-boundary-completed` | At a serial execution boundary, before the Policy proceeds. | `serial` | See the boundary values below. |
 | `rsi/policy-completed`          | After final Policy output validation.                                                  | `emit`   | None; common parameters only.                                                                                                                                                                                                                                                                                                               |
+
+A `rsi/policy-boundary-completed` listener can branch on `event.boundary`:
+
+| Boundary | When it fires |
+| --- | --- |
+| `iteration-completed` | After each iteration of a top-level loop. `iteration` is zero-based. |
+| `loop-completed` | Once when a top-level loop finishes. |
+| `step-completed` | After a serial step. Parallel `foreach` item steps do not produce this boundary. |
+| `policy-completed` | After the last top-level step, before the Policy finalizes its output. |
+
+Step and loop boundaries identify the step with `stepId` and `stepPath`. `hasTopLevelLoop` reports whether the Policy declares a top-level loop.
 
 ### Candidates, measurements, and revisions
 
@@ -117,6 +140,8 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 | `rsi/candidate-recorded`   | After the candidate is saved.                                                                                      | `emit`   | `callId: string`: ID of the call that recorded this data.<br>`bindingId: string`: Name of the binding that recorded this data.<br>`candidateRef: string`: Reference to the saved candidate.<br>`parentRef: string \| null`: Parent candidate reference, or `null` for an initial candidate.                                                                                                                        |
 | `rsi/measurement-recorded` | After the measurement is validated and saved.                                                                      | `emit`   | `callId: string`: ID of the call that recorded this data.<br>`bindingId: string`: Name of the binding that recorded this data.<br>`measurementRef: string`: Reference to the saved measurement.                                                                                                                                                                                                                    |
 | `rsi/revision-activated`   | After activation persistence, effective binding updates, and subscription switching for existing plugin instances. | `emit`   | `activationId: string`: ID of this revision activation record.<br>`bindingIds: readonly string[]`: Names of the bindings affected by this activation.<br>`revisionRefs: Readonly<Record<string, string>>`: Map of revisions activated in this operation, keyed by binding name.<br>`policyRevisionRef?: string`: Optional Policy revision reference reserved by the contract; the current Runtime does not set it. |
+
+The event contract also declares `rsi/memory-activated` (`emit`) for a committed Memory activation. Its payload contains `experimentId`, `activationId`, `memoryVersionRef`, and `artifactRef`, all strings. The existing Policy-managed Memory plugin saves artifacts without emitting this notification.
 
 ### Plugin diagnostics and resource cleanup
 
@@ -161,7 +186,22 @@ factoryCtx.event.on('rsi/before-call', async (event, next) => {
 });
 ```
 
-`next()` continues the listener chain; the default result is `{ kind: 'proceed' }`. The Manager consumes the final decision. A final `reject` requires a nonempty reason and prevents the target call. The listener context is the third argument when needed: `(event, next, ctx)`.
+For `rsi/before-call`, the default decision is `{ kind: 'proceed' }`. A successful decision accepts optional `metadata` for the call receipt. Both waterfall hooks accept `{ kind: 'reject', reason }` with a nonempty reason.
+
+For `rsi/before-agent-invoke`, the default decision also includes the original `input`. This listener keeps downstream changes and adds an audit tag to requests from the `proposer` binding.
+
+```ts
+factoryCtx.event.on('rsi/before-agent-invoke', async (event, next) => {
+  const decision = await next();
+  if (decision.kind === 'reject' || event.callerBindingId !== 'proposer') {
+    return decision;
+  }
+  return {
+    ...decision,
+    metadata: { ...decision.metadata, requestedBy: 'proposer' },
+  };
+});
+```
 
 ## 4. Declare, subscribe to, and publish custom events
 
@@ -220,5 +260,5 @@ const candidateRef = await ctx.recordCandidate(artifactRef, parentCandidateRef);
 - **Instances receive events only after activation.** Registering a plugin definition or configuring a binding does not start listeners; for example, a plugin created later will miss experiment-start notifications.
 - **Filter by source.** Business calls initiated from listeners also generate events. Filter by binding or other identity to avoid recursive self-triggering.
 - **Terminal listeners perform cleanup only.** In `rsi/experiment-finished`, read records, flush logs, or release local resources; do not start new controlled business calls.
-- **Recovery does not replay completed notifications.** Reusing successful receipts, restoring completed steps, or reading existing facts does not replay their events.
+- **Recovery resumes pending boundaries.** The executor checkpoints a serial boundary before dispatch and marks it complete after all listeners return. An interruption in between can deliver the same boundary again. Listeners that persist effects should identify the boundary by experiment, Policy scope, boundary kind, step path, and iteration. Completed boundaries and saved fact notifications are skipped on resume.
 - **The Runtime cleans up subscriptions.** Plugins must release their own files, connections, and other resources in `dispose()`.

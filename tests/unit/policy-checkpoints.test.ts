@@ -86,7 +86,7 @@ test('incremental checkpoints persist bounded records across concurrent branches
     Array.from({ length: 80 }, (_, i) => i),
   );
   assert.equal(calls, 80);
-  assert.equal(writes.length, 164);
+  assert.equal(writes.length, 166);
   assert.ok(
     writes.reduce((sum, item) => sum + JSON.stringify(item).length, 0) < 65000,
   );
@@ -102,7 +102,7 @@ test('incremental checkpoints persist bounded records across concurrent branches
     result,
   );
   assert.equal(calls, 80);
-  assert.equal(writes.length, 164);
+  assert.equal(writes.length, 166);
 });
 
 test('entry and head write failures expose only the committed prefix and can resume', async (t) => {
@@ -156,7 +156,11 @@ test('entry and head write failures expose only the committed prefix and can res
       'steps/one',
       'steps/two',
     ]);
-    assert.deepEqual(complete!.boundaries, { 'policy-completed': true });
+    assert.deepEqual(complete!.boundaries, {
+      'steps/one/@step-completed': true,
+      'steps/two/@step-completed': true,
+      'policy-completed': true,
+    });
   }
 });
 

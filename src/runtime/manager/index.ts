@@ -16,7 +16,7 @@ import { object, string, digest } from '../../shared/json.js';
 import { createCallExecutor, type CallExecutor } from './calls.js';
 import { Instances } from './instances.js';
 import { acquireExecutionLock } from './execution-lock.js';
-import { ManagedEvents } from '../services/events.js';
+import { assertAdmission, ManagedEvents } from '../services/events.js';
 import {
   FileArtifacts,
   FileFacts,
@@ -661,7 +661,28 @@ export class Manager {
             throw new Error(
               `Binding ${agentRef} does not implement contract.agent`,
             );
-          return object(await calls.invoke(agentRef, input, this));
+          const decision = await this.event.waterfall(
+            'rsi/before-agent-invoke',
+            {
+              experimentId: id,
+              callerBindingId: this.bindingId,
+              callerDirectory: this.directory,
+              agentRef,
+              input,
+            },
+            async () => ({ kind: 'proceed', input }),
+          );
+          this.signal.throwIfAborted();
+          assertAdmission(decision, 'rsi/before-agent-invoke');
+          return object(
+            await calls.invoke(
+              agentRef,
+              decision.input,
+              this,
+              undefined,
+              decision.metadata,
+            ),
+          );
         },
         async readEvidence(this: RuntimeContext, refs, options) {
           return experimentFacts.readEvidence(refs, options, this);

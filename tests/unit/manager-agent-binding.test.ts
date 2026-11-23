@@ -12,6 +12,93 @@ import { prepareAgentProject } from '../../src/plugins/shared/agent-editing/proj
 import { object, string } from '../../src/shared/json.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
 
+test('Agent admission composes request transformations and records both waterfalls on the receipt', async () => {
+  const agent: OperationDefinition = {
+    id: 'test.admitted-agent',
+    contract: agentContract,
+    configSchema: { type: 'object' },
+    async create() {
+      return {
+        async execute(input, ctx) {
+          const running = await ctx.facts.read('calls', ctx.callId);
+          assert.equal(running.status, 'running');
+          assert.deepEqual(running.metadata, {
+            inner: true,
+            outer: true,
+            admitted: true,
+          });
+          return { goal: object(input).goal! };
+        },
+        async dispose() {},
+      };
+    },
+  };
+  const fixture = await managerFixture(
+    async (ctx) => {
+      ctx.event.on('rsi/before-agent-invoke', async (info, next) => {
+        assert.equal(info.callerBindingId, ctx.bindingId);
+        assert.equal(info.callerDirectory, ctx.directory);
+        assert.equal(info.agentRef, 'agent');
+        const current = await next();
+        if (current.kind === 'reject') return current;
+        return {
+          kind: 'proceed',
+          input: { ...current.input, goal: current.input.goal + '-outer' },
+          metadata: { ...current.metadata, outer: true },
+        };
+      });
+      ctx.event.on('rsi/before-agent-invoke', async (info, next) => {
+        if (info.input.goal === 'denied')
+          return { kind: 'reject', reason: 'fixture veto' };
+        const current = await next();
+        if (current.kind === 'reject') return current;
+        return {
+          kind: 'proceed',
+          input: { ...current.input, goal: current.input.goal + '-inner' },
+          metadata: { inner: true },
+        };
+      });
+      ctx.event.on('rsi/before-call', async (_info, next) => {
+        const current = await next();
+        return current.kind === 'proceed'
+          ? { ...current, metadata: { admitted: true } }
+          : current;
+      });
+      const request = {
+        goal: 'test',
+        cwd: await prepareAgentProject(ctx, 'test', {}, [], []),
+        outputSchema: { type: 'object' },
+      };
+      await assert.rejects(
+        ctx.invokeAgent('agent', { ...request, goal: 'denied' }),
+        /fixture veto/,
+      );
+      assert.deepEqual(await ctx.invokeAgent('agent', request), {
+        goal: 'test-inner-outer',
+      });
+      assert.equal(request.goal, 'test');
+      return {};
+    },
+    { plugins: [agent], bindings: { agent: { plugin: agent.id, config: {} } } },
+  );
+  try {
+    await fixture.run();
+    const receipts = (await fixture.manager.facts.list('calls')).filter(
+      (call) => call.bindingId === 'agent',
+    );
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0]!.status, 'succeeded');
+    assert.equal(object(receipts[0]!.input).goal, 'test-inner-outer');
+    assert.deepEqual(receipts[0]!.metadata, {
+      inner: true,
+      outer: true,
+      admitted: true,
+    });
+  } finally {
+    await fixture.dispose();
+  }
+});
+
 test('Manager invokes exact Agent bindings and never falls back to an implementation ID', async () => {
   let executions = 0;
   const agent: OperationDefinition = {

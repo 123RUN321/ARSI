@@ -2,6 +2,7 @@ import type {
   JsonObject,
   JsonValue,
   PluginContract,
+  PolicyBoundaryCompletedEvent,
   RuntimeContext,
 } from '../../contracts/index.js';
 import type { Policy } from './policy.js';
@@ -297,23 +298,32 @@ export async function runPolicy(
       options.events!.diagnose(eventName, error);
     }
   }
-  async function boundary(path?: string, iteration?: number): Promise<void> {
+  const hasTopLevelLoop = policy.steps.some((step) => step.type === 'loop');
+  async function boundary(
+    key: string,
+    event: Pick<
+      PolicyBoundaryCompletedEvent,
+      'boundary' | 'stepId' | 'stepPath' | 'iteration'
+    >,
+  ): Promise<void> {
     signal.throwIfAborted();
-    const key =
-      path === undefined
-        ? 'policy-completed'
-        : `${path}/iteration-${iteration}`;
-    if (Object.hasOwn(boundaries, key)) return;
-    boundaries[key] = true;
-    await persist({ kind: 'boundary', path: key, value: true });
-    if (eventInfo)
+    if (boundaries[key] === true) return;
+    if (eventInfo) {
+      // A pending boundary is redelivered on resume. Subscribers can reconcile
+      // their own effects using the stable step path, boundary and iteration.
+      if (boundaries[key] !== false) {
+        boundaries[key] = false;
+        await persist({ kind: 'boundary', path: key, value: false });
+      }
       await options.context.event.serial('rsi/policy-boundary-completed', {
         ...eventInfo,
-        boundary:
-          path === undefined ? 'policy-completed' : 'iteration-completed',
-        ...(path === undefined ? {} : { stepPath: path, iteration }),
+        ...event,
+        hasTopLevelLoop,
       });
-    signal.throwIfAborted();
+      signal.throwIfAborted();
+    }
+    boundaries[key] = true;
+    await persist({ kind: 'boundary', path: key, value: true });
   }
   function environment(scope: Environment, extra: JsonObject = {}): JsonObject {
     const outputs: JsonObject = {};
@@ -434,8 +444,14 @@ export async function runPolicy(
             settings.output,
           );
         },
-        boundary(iteration) {
-          return boundary(stepPath, iteration);
+        async boundary(iteration) {
+          if (path === 'steps')
+            await boundary(`${stepPath}/iteration-${iteration}`, {
+              boundary: 'iteration-completed',
+              stepId: step.id,
+              stepPath,
+              iteration,
+            });
         },
       };
       result = await step.execute(context);
@@ -456,6 +472,18 @@ export async function runPolicy(
             stepPath,
           }),
         );
+    }
+    if (!parallel) {
+      const location = { stepId: step.id, stepPath };
+      if (step.type === 'loop' && path === 'steps')
+        await boundary(`${stepPath}/@loop-completed`, {
+          ...location,
+          boundary: 'loop-completed',
+        });
+      await boundary(`${stepPath}/@step-completed`, {
+        ...location,
+        boundary: 'step-completed',
+      });
     }
     return result;
   }
@@ -482,6 +510,8 @@ export async function runPolicy(
       });
     }
     signal.throwIfAborted();
+    if (path === 'steps')
+      await boundary('policy-completed', { boundary: 'policy-completed' });
     return { kind: 'completed', output: evaluate(output, scope) };
   }
   if (eventInfo)
@@ -499,7 +529,6 @@ export async function runPolicy(
   );
   if (result.kind !== 'completed')
     throw new Error('Policy control escaped its loop');
-  await boundary();
   signal.throwIfAborted();
   const output = structuredClone(result.output);
   validate(policy.outputSchema, output, 'policy.output');

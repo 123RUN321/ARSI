@@ -350,6 +350,28 @@ test('emit preserves synchronous truncation and tracks earlier asynchronous reje
   await service.dispose();
 });
 
+test('asynchronous Memory activation observer failures are diagnostics', async () => {
+  const { service, diagnostics, add } = fixture();
+  const activation = {
+    experimentId: 'experiment',
+    activationId: 'activation',
+    memoryVersionRef: 'version',
+    artifactRef: 'snapshot',
+  };
+  add('observer', (event) => {
+    event.on('rsi/memory-activated', async (info) => {
+      assert.deepEqual(info, activation);
+      throw new Error('observer failed');
+    });
+  });
+  service.event.emit('rsi/memory-activated', activation);
+  await service.idle();
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.eventName, 'rsi/memory-activated');
+  assert.match(String(diagnostics[0]!.error), /observer failed/);
+  await service.dispose();
+});
+
 test('replacement retains waiting old callbacks and registration order for new dispatches', async () => {
   const { service, add } = fixture();
   const hold = deferred();
