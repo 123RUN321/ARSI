@@ -155,7 +155,10 @@ test('CLI prints command-specific and nested help to stdout', () => {
     assert.match(result.stdout, /Usage: arsi/);
     if (args.length === 0) assert.match(result.stdout, /Run facts are saved/);
     if (args.includes('run')) assert.match(result.stdout, /--resume/);
-    if (args.includes('doctor')) assert.match(result.stdout, /--static/);
+    if (args.includes('doctor')) {
+      assert.match(result.stdout, /--static/);
+      assert.match(result.stdout, /--json/);
+    }
     if (args.includes('cleanup')) {
       assert.match(result.stdout, /--dry-run/);
       assert.match(result.stdout, /--all/);

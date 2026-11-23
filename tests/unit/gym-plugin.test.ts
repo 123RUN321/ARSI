@@ -8,6 +8,7 @@ import {
   type GymPluginConfig,
 } from '../../src/plugins/evaluator-gym/schema.js';
 import { createGymOperation } from '../../src/plugins/evaluator-gym/service.js';
+import { Registry } from '../../src/runtime/registry/index.js';
 
 const evaluateConfig: GymPluginConfig = {
   mode: 'evaluate',
@@ -81,4 +82,30 @@ test('gym plugin configuration requires an explicit mode', () => {
   );
   assert.equal(gymDefinition.id, 'evaluator.gym');
   assert.equal(gymDefinition.contract.id, 'contract.gym');
+});
+
+test('gym doctor identifies the field to fix when the service URL is invalid', async (t) => {
+  const registry = new Registry();
+  registry.registerOperation(gymDefinition);
+  t.after(() => registry.dispose());
+  const definition = registry.get(gymDefinition.id);
+  for (const config of [evaluateConfig, promoteConfig]) {
+    const binding = {
+      name: 'gym',
+      pluginId: definition.id,
+      definition,
+      config: { ...config, baseUrl: 'invalid-url' },
+    };
+    const report = await definition.doctor!({
+      binding,
+      recipe: { application: binding, bindings: {}, policyConfig: {} },
+      registry,
+      runtime: new RuntimeContext(),
+      directory: process.cwd(),
+      signal: new AbortController().signal,
+    });
+    assert.equal(report.checks[0].status, 'failed');
+    assert.match(report.checks[0].reason ?? '', /baseUrl.*valid URL/);
+    assert.equal(report.checks[1].blockedBy, 'configuration');
+  }
 });

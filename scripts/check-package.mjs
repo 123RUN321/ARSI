@@ -233,8 +233,13 @@ export function register(registry){
     timeout: 30000,
     stdio: 'pipe',
   };
+  const summary = execFileSync(process.execPath, doctorArgs, doctorOptions);
+  assert.match(summary, /Doctor found no failures for consumer\.doctor/);
+  assert.match(summary, /0 failed/);
+  assert.match(summary, /Unchecked checks[\s\S]*custom\.remote/);
+  const doctorJsonArgs = [...doctorArgs, '--json'];
   const doctorReport = JSON.parse(
-    execFileSync(process.execPath, doctorArgs, doctorOptions),
+    execFileSync(process.execPath, doctorJsonArgs, doctorOptions),
   );
   assert.deepEqual(Object.keys(doctorReport).sort(), ['checks', 'recipeId']);
   assert.ok(doctorReport.checks.every(({ status }) => status !== 'failed'));
@@ -249,7 +254,7 @@ export function register(registry){
   );
   await writeFile(join(doctorExtension, 'input.txt'), 'broken');
   assert.throws(
-    () => execFileSync(process.execPath, doctorArgs, doctorOptions),
+    () => execFileSync(process.execPath, doctorJsonArgs, doctorOptions),
     (error) => {
       assert.equal(error.status, 1);
       const report = JSON.parse(String(error.stdout));
@@ -261,7 +266,11 @@ export function register(registry){
     },
   );
   const staticReport = JSON.parse(
-    execFileSync(process.execPath, [...doctorArgs, '--static'], doctorOptions),
+    execFileSync(
+      process.execPath,
+      [...doctorJsonArgs, '--static'],
+      doctorOptions,
+    ),
   );
   assert.ok(staticReport.checks.every(({ status }) => status !== 'failed'));
   assert.equal(
@@ -280,7 +289,7 @@ export function register(registry){
     () =>
       execFileSync(
         process.execPath,
-        [...doctorArgs, '--static'],
+        [...doctorJsonArgs, '--static'],
         doctorOptions,
       ),
     (error) => {

@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRuntime, type Runtime } from '../../src/runtime/context.js';
+import { runCommand as runCliCommand } from '../../src/entries/cli/commands.js';
 import { applicationContract } from '../../src/contracts/plugin-types/application.js';
 import type { JsonObject } from '../../src/contracts/json.js';
 import { doctorRecipe } from '../../src/runtime/doctor/index.js';
@@ -736,7 +737,76 @@ test('timeout diagnostics retain a probe cleanup failure and continue independen
   }
 });
 
-test('CLI emits one JSON diagnostic for registration/loading errors and reports usage separately', async () => {
+test('CLI doctor explains missing files, blocked work and network fixes in its default summary', async () => {
+  const f = await fixture();
+  try {
+    const recipe = object(JSON.parse(await readFile(f.path, 'utf8')));
+    object(recipe.application).config = { input: './input.txt' };
+    await writeFile(f.path, JSON.stringify(recipe));
+    f.doctors({
+      'test.application': async () => ({
+        checks: [
+          {
+            id: 'input',
+            status: 'failed',
+            missingResource: {
+              field: 'input',
+              kind: 'file',
+              reference: join(f.root, 'input.txt'),
+            },
+          },
+          { id: 'prepare', status: 'unchecked', blockedBy: 'input' },
+        ],
+      }),
+      'selector.metric': async ({ binding }) => ({
+        checks:
+          binding.name === 'left'
+            ? [
+                {
+                  id: 'sdk.network',
+                  status: 'failed',
+                  reason: 'Network probes failed.\u001b[2J',
+                  details: {
+                    probes: [
+                      {
+                        name: 'Dataset download',
+                        status: 'failed',
+                        evidence: 'Connection timed out',
+                        guidance: {
+                          action: 'Configure the download proxy.',
+                          yamlFields: ['network.proxy'],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ]
+            : [{ id: 'ready', status: 'passed' }],
+      }),
+    });
+    const result = await runCliCommand(['doctor', f.path], {
+      signal: new AbortController().signal,
+      openRuntime: async () => f.runtime,
+      releaseRuntime: async () => {},
+    });
+    assert.equal(result.exitCode, 1);
+    const summary = result.stdout ?? '';
+    assert.match(summary, /Doctor found failures.*doctor-fixture/);
+    assert.match(summary, /2 failed/);
+    assert.match(summary, /application\.resource\.input/);
+    assert.ok(summary.includes(join(f.root, 'input.txt')));
+    assert.match(summary, /Fix:.*application\.config\.input/);
+    assert.match(summary, /Blocked:.*application\.prepare/);
+    assert.match(summary, /Dataset download.*Connection timed out/);
+    assert.match(summary, /Configure the download proxy/);
+    assert.match(summary, /network\.proxy/);
+    assert.doesNotMatch(summary, /right\.ready|\u001b/u);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test('CLI doctor emits one JSON diagnostic with --json and reports usage separately', async () => {
   const f = await fixture();
   const execute = promisify(execFile);
   const run = async (
@@ -774,14 +844,20 @@ test('CLI emits one JSON diagnostic for registration/loading errors and reports 
       join(broken, 'index.mjs'),
       "export function register(){throw new Error('broken-extension-fixture');}\n",
     );
-    const registered = await run(['doctor', f.path, '--plugin-dir', broken]);
+    const registered = await run([
+      'doctor',
+      f.path,
+      '--json',
+      '--plugin-dir',
+      broken,
+    ]);
     assert.equal(registered.code, 1);
     assert.equal(registered.stderr, '');
     const report: DoctorReport = JSON.parse(registered.stdout);
     verifyReport(report);
     assert.equal(report.recipeId, null);
     assert.equal(report.checks[0].id, 'runtime.registration');
-    const loaded = await run(['doctor', join(f.root, 'absent.yaml')]);
+    const loaded = await run(['doctor', join(f.root, 'absent.yaml'), '--json']);
     assert.equal(loaded.code, 1);
     assert.equal(JSON.parse(loaded.stdout).checks[0].id, 'recipe.validate');
     assert.equal(loaded.stderr, '');
@@ -803,7 +879,9 @@ test('CLI emits one JSON diagnostic for registration/loading errors and reports 
       USERPROFILE: doctorHome,
     });
     assert.equal(fresh.code, 1);
-    assert.equal(JSON.parse(fresh.stdout).checks[0].id, 'recipe.validate');
+    assert.match(fresh.stdout, /Doctor found failures.*absent\.yaml/);
+    assert.match(fresh.stdout, /recipe\.validate.*ENOENT/);
+    assert.match(fresh.stdout, /Fix:/);
     await assert.rejects(access(join(doctorHome, '.arsi')));
   } finally {
     await f.dispose();

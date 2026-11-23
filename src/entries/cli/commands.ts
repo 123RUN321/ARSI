@@ -9,6 +9,7 @@ import {
 } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
+import { formatDoctorSummary } from './doctor-summary.js';
 
 export interface CommandContext {
   signal: AbortSignal;
@@ -25,7 +26,7 @@ export async function runCommand(
   argv: string[],
   context: CommandContext,
 ): Promise<CommandResult> {
-  let result: { exitCode: number; json?: unknown } | undefined;
+  let result: (CommandResult & { json?: unknown }) | undefined;
   let commanderExit: CommanderError | undefined;
   const program = new Command('arsi')
     .description('Make everything rsi-able')
@@ -55,6 +56,7 @@ export async function runCommand(
     .command('doctor <recipe.yaml>')
     .description('Check experiment configuration and runtime prerequisites')
     .option('--static', 'Check configuration and declared local paths only')
+    .option('--json', 'Output the full report as JSON')
     .action(runDoctor);
   program
     .command('list')
@@ -151,7 +153,7 @@ export async function runCommand(
 
   async function runDoctor(
     file: string,
-    options: { static?: boolean },
+    options: { static?: boolean; json?: boolean },
   ): Promise<void> {
     const { checkRecipe } = await import(
       '../../runtime/doctor/check-recipe.js'
@@ -165,7 +167,9 @@ export async function runCommand(
     });
     result = {
       exitCode: report.checks.some(({ status }) => status === 'failed') ? 1 : 0,
-      json: report,
+      ...(options.json
+        ? { json: report }
+        : { stdout: formatDoctorSummary(report, file) }),
     };
   }
 

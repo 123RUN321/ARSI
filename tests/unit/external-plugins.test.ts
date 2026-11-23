@@ -101,6 +101,7 @@ test('CLI loads external implementation and Policy for catalog, doctor and execu
     const preflight = await run(
       'doctor',
       join(root, 'recipe.yaml'),
+      '--json',
       '--plugin-dir',
       extension,
     );
@@ -118,6 +119,7 @@ test('CLI loads external implementation and Policy for catalog, doctor and execu
     const staticPreflight = await run(
       'doctor',
       join(root, 'recipe.yaml'),
+      '--json',
       '--plugin-dir',
       extension,
       '--static',

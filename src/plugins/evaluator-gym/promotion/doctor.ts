@@ -11,13 +11,12 @@ export async function gymPromotionDoctor(
     async (signal) => {
       signal.throwIfAborted();
       const config = resolvePromotionConfig(context.binding.config);
-      new URL(config.baseUrl);
+      if (!URL.canParse(config.baseUrl))
+        throw new Error(
+          'Set baseUrl to a valid URL or correct the environment variable it references.',
+        );
     },
-    {
-      signal: context.signal,
-      reason:
-        'Gym release configuration resolves and its eval_service URL is valid.',
-    },
+    { signal: context.signal },
   );
   return {
     checks: [
@@ -25,6 +24,9 @@ export async function gymPromotionDoctor(
       {
         id: 'holdout-service',
         status: 'unchecked',
+        ...(configuration.status === 'failed'
+          ? { blockedBy: configuration.id }
+          : {}),
         reason:
           'Doctor does not contact Gym or execute holdout; the configured profile must register the requested benchmark and adapter before release.',
       },

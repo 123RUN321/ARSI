@@ -61,7 +61,7 @@ arsi doctor my-experiment/recipe.yaml
 arsi run my-experiment/recipe.yaml --id terminal-skills-01
 ```
 
-- `doctor` 检查 Recipe、插件配置、契约兼容性、Policy 编译和已声明的 Reflection 资源，再为本地路径检查通过的绑定创建临时实例并调用其可选的 `rsi/doctor`。单份 JSON 报告包含 `recipeId` 和 `checks`，缺失输入和阻塞原因记录在对应的检查项上。
+- `doctor` 检查 Recipe、插件配置、契约兼容性、Policy 编译和已声明的 Reflection 资源，再为本地路径检查通过的绑定创建临时实例并调用其可选的 `rsi/doctor`。默认输出可读摘要，加 `--json` 可获取包含 `recipeId` 和 `checks` 的报告。
   - 状态为 `passed`（通过）、`failed`（失败）或 `unchecked`（未检查）。
   - 检查流程、报告解读、内置检查和自定义组件接入方式，参见 [doctor 指南](doctor_zh.md)。
 

@@ -42,7 +42,7 @@ flowchart TD
     N -- No --> O["Clean up resources<br/>Aggregate and redact results"]
     D --> O
     G --> O
-    O --> P["Write the JSON report<br/>Exit 1 for any failed check, otherwise exit 0"]
+    O --> P["Write the summary or JSON report<br/>Exit 1 for any failed check, otherwise exit 0"]
 ```
 
 1. **Load registrations.** The CLI uses the usual Runtime registration to load built-in components, user extensions in `~/.arsi/plugins/<name>/index.mjs` and extensions specified by `--plugin-dir`.
@@ -53,9 +53,17 @@ flowchart TD
 4. **Run component checks.** If a declared local path fails validation, doctor marks the binding’s `plugin` check `unchecked` and continues with the next binding. For bindings with valid paths, full doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`. `--static` runs only the common checks and skips instance creation.
 5. **Clean up and report.** RSI checks use isolated temporary storage, propagate cancellation, release the instances and processes they create, and remove temporary files. Checks can read existing artifacts as inputs. RSI keeps its captures and writes in the temporary Runtime.
 
-### Reading the JSON report
+### Reading the summary and JSON report
 
-Normal completion writes one JSON report to stdout, including configuration or registration failures:
+By default, `doctor` writes a readable summary to stdout. It gives the check counts, explains failures and unchecked checks, and reports available fixes. For a missing file, it shows the path, the configuration field to update, and any blocked checks.
+
+For scripts or full probe evidence, request the JSON report. `--json` can be combined with `--static`.
+
+```sh
+arsi doctor my-experiment/recipe.yaml --json
+```
+
+The report contains the following fields, including when configuration loading or registration fails.
 
 | Field      | Meaning                                                                                   |
 | ---------- | ----------------------------------------------------------------------------------------- |
@@ -72,7 +80,7 @@ Component check IDs start with the binding name. In a full check, a binding name
 | `failed`    | The check found an error or could not complete a required probe, for example rejected credentials or a request timeout. Read its explanation before retrying. |
 | `unchecked` | The check could not establish a conclusion, for example because an earlier prerequisite failed or the selected execution path has no supported diagnostic.    |
 
-Review `unchecked` results even when the exit code is zero. A complete JSON report may be unavailable after interruption or a command usage error.
+Review unchecked results even when the exit code is zero. Exit codes apply to both output formats. A complete summary or report may be unavailable after interruption or a command usage error.
 
 - `1` means at least one check failed.
 - `0` means no check failed, **including reports with unchecked entries**.
