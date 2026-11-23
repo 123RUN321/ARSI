@@ -1,3 +1,4 @@
+import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   DoctorContext,
@@ -5,6 +6,7 @@ import type {
   JsonValue,
   OperationDoctor,
 } from '../../contracts/index.js';
+import { missingPath } from '../shared/doctor/checks.js';
 import { plain } from '../shared/evaluator-adapter/data.js';
 import type { SdkEvaluatorConfig } from '../shared/evaluator-adapter/configuration.js';
 import { checkSdkDoctor } from '../shared/evaluator-adapter/doctor.js';
@@ -69,6 +71,23 @@ export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
       (ctx) => prepareConfig(ctx, checks),
       run,
     );
+    const { directory } = plain(ctx.recipe.application.config.baseline);
+    const bundleCheck = sdk.checks.find(
+      (check) =>
+        check.status === 'failed' &&
+        check.details?.sdkName === 'AgentBundle path',
+    );
+    if (bundleCheck && typeof directory === 'string') {
+      // Confirm absence without interpreting the SDK's human-readable detail.
+      await access(directory).catch((error: unknown) => {
+        if (missingPath(error))
+          bundleCheck.missingResource = {
+            field: 'application.config.baseline.directory',
+            kind: 'directory',
+            reference: directory,
+          };
+      });
+    }
     checks.push(...sdk.checks);
     if (sdk.reported)
       checks.push(

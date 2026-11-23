@@ -105,7 +105,16 @@ test('CLI loads external implementation and Policy for catalog, doctor and execu
       extension,
     );
     assert.equal(preflight.recipeId, 'external-recipe');
-    assert.deepEqual(preflight.summary, { passed: 1, failed: 0, unchecked: 1 });
+    assert.deepEqual(Object.keys(preflight).sort(), ['checks', 'recipeId']);
+    assert.deepEqual(
+      (preflight.checks as { id: string; status: string }[]).map(
+        ({ id, status }) => [id, status],
+      ),
+      [
+        ['recipe.validate', 'passed'],
+        ['application.plugin', 'unchecked'],
+      ],
+    );
     const staticPreflight = await run(
       'doctor',
       join(root, 'recipe.yaml'),

@@ -1,5 +1,8 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import {
+  DoctorMissingResourceError,
+  runDoctorCheck,
+} from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
 import { missingPath, resolveAgent } from '../shared/doctor/checks.js';
 import { loadOperatorTask } from '../shared/operator-task.js';
@@ -15,7 +18,6 @@ export async function checkOperatorProposer(
     `${context.binding.name}.config`,
   );
   const options = { signal: context.signal };
-  const missingResources: NonNullable<DoctorResult['missingResources']> = [];
   const agentBinding = await runDoctorCheck(
     'agent-binding',
     async () => resolveAgent(context, config.agentRef),
@@ -30,12 +32,10 @@ export async function checkOperatorProposer(
       } catch (error) {
         const path = missingPath(error);
         if (path)
-          missingResources.push({
-            field: 'config.task.directory',
-            kind: 'file',
-            reference: path,
-            checksNotRun: [],
-          });
+          throw new DoctorMissingResourceError(
+            { field: 'task.directory', kind: 'file', reference: path },
+            error,
+          );
         throw error;
       }
     },
@@ -50,16 +50,18 @@ export async function checkOperatorProposer(
       } catch (error) {
         const path = missingPath(error);
         if (path)
-          missingResources.push({
-            field: path.startsWith(config.promptsDirectory)
-              ? 'config.promptsDirectory'
-              : path === config.embedding.retrievalScript
-                ? 'config.embedding.retrievalScript'
-                : 'config.embedding.resourcesDirectory',
-            kind: 'file',
-            reference: path,
-            checksNotRun: [],
-          });
+          throw new DoctorMissingResourceError(
+            {
+              field: path.startsWith(config.promptsDirectory)
+                ? 'promptsDirectory'
+                : path === config.embedding.retrievalScript
+                  ? 'embedding.retrievalScript'
+                  : 'embedding.resourcesDirectory',
+              kind: 'file',
+              reference: path,
+            },
+            error,
+          );
         throw error;
       }
     },
@@ -77,5 +79,5 @@ export async function checkOperatorProposer(
         options,
       ),
     );
-  return { checks, missingResources };
+  return { checks };
 }

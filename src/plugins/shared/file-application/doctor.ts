@@ -8,7 +8,10 @@ import type {
   DoctorResult,
   Operation,
 } from '../../../contracts/index.js';
-import { runDoctorCheck } from '../../../shared/doctor-check.js';
+import {
+  DoctorMissingResourceError,
+  runDoctorCheck,
+} from '../../../shared/doctor-check.js';
 import { object, string } from '../../../shared/json.js';
 import { parseConfig } from '../../../shared/schema.js';
 import {
@@ -21,14 +24,10 @@ function missing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
-type MissingInput = NonNullable<DoctorResult['missingResources']>[number];
-
 export async function requirePath(
-  missingResources: MissingInput[],
   path: string,
   field: string,
   kind: 'file' | 'directory',
-  checksNotRun: string[] = [],
 ): Promise<void> {
   try {
     const stat = await lstat(path);
@@ -37,26 +36,21 @@ export async function requirePath(
     await access(path, constants.R_OK);
   } catch (error) {
     if (missing(error))
-      missingResources.push({
-        field,
-        kind,
-        reference: path,
-        checksNotRun,
-      });
+      throw new DoctorMissingResourceError(
+        { field, kind, reference: path },
+        error,
+      );
     throw error;
   }
 }
 
 export async function checkBaselineDirectory(
   context: DoctorContext,
-  dependents: string[],
   entryFile?: string,
 ): Promise<{
   check: DoctorResult['checks'][number];
   directory?: string;
-  missingResources: MissingInput[];
 }> {
-  const missingResources: MissingInput[] = [];
   let baselineDirectory: string | undefined;
   const check = await runDoctorCheck(
     'baseline',
@@ -67,13 +61,7 @@ export async function checkBaselineDirectory(
         `${context.binding.name}.config`,
       );
       if (typeof config.target.schema === 'string')
-        await requirePath(
-          missingResources,
-          config.target.schema,
-          'target.schema',
-          'file',
-          dependents,
-        );
+        await requirePath(config.target.schema, 'target.schema', 'file');
       const { target } = await readTarget(
         config,
         context.runtime.rootDirectory,
@@ -84,13 +72,7 @@ export async function checkBaselineDirectory(
           context.runtime.rootDirectory,
           config.baseline.directory,
         );
-        await requirePath(
-          missingResources,
-          directory,
-          'baseline.directory',
-          'directory',
-          dependents,
-        );
+        await requirePath(directory, 'baseline.directory', 'directory');
       } else {
         directory = join(context.directory, 'baseline-input');
         try {
@@ -100,31 +82,29 @@ export async function checkBaselineDirectory(
           );
         } catch (error) {
           if (missing(error))
-            missingResources.push({
-              field: 'baseline.artifactRef',
-              kind: 'artifact',
-              reference: config.baseline.artifactRef,
-              checksNotRun: dependents,
-            });
+            throw new DoctorMissingResourceError(
+              {
+                field: 'baseline.artifactRef',
+                kind: 'artifact',
+                reference: config.baseline.artifactRef,
+              },
+              error,
+            );
           throw error;
         }
       }
       for (const entry of target.entries)
         if (entry.kind === 'file')
           await requirePath(
-            missingResources,
             join(directory, entry.path),
             `target.entries.${entry.path}`,
             'file',
-            dependents,
           );
       if (entryFile)
         await requirePath(
-          missingResources,
           join(directory, entryFile),
           `baseline.${entryFile}`,
           'file',
-          dependents,
         );
       signal.throwIfAborted();
       baselineDirectory = directory;
@@ -134,7 +114,6 @@ export async function checkBaselineDirectory(
   return {
     check,
     directory: check.status === 'passed' ? baselineDirectory : undefined,
-    missingResources: [...missingResources],
   };
 }
 
@@ -151,18 +130,24 @@ export async function checkFileApplication(
     entryFile: string;
   },
 ): Promise<DoctorResult> {
-  const baseline = await checkBaselineDirectory(
-    context,
-    [verification, 'acquire-instance'],
-    entryFile,
-  );
+  const baseline = await checkBaselineDirectory(context, entryFile);
   const checks = [baseline.check];
-  const result = { checks, missingResources: baseline.missingResources };
+  const result = { checks };
   if (!baseline.directory) {
     const reason = 'Baseline or Target prerequisites failed.';
     checks.push(
-      { id: verification, status: 'unchecked', reason },
-      { id: 'acquire-instance', status: 'unchecked', reason },
+      {
+        id: verification,
+        status: 'unchecked',
+        reason,
+        blockedBy: baseline.check.id,
+      },
+      {
+        id: 'acquire-instance',
+        status: 'unchecked',
+        reason,
+        blockedBy: baseline.check.id,
+      },
     );
     return result;
   }

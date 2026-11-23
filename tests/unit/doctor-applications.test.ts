@@ -165,16 +165,12 @@ test('doctor verifies a configured kernel entry with an editable helper and repo
     'unchecked',
   );
   assert.deepEqual(
-    broken.missingResources?.map(({ field, reference }) => ({
-      field,
-      reference,
-    })),
-    [
-      {
-        field: 'baseline.pkg/entry.py',
-        reference: join(baseline, 'pkg/entry.py'),
-      },
-    ],
+    broken.checks.find(({ id }) => id === 'baseline')?.missingResource,
+    {
+      field: 'baseline.pkg/entry.py',
+      kind: 'file',
+      reference: join(baseline, 'pkg/entry.py'),
+    },
   );
   assert.deepEqual(await readdir(runtime.workspaces.directory), []);
 });
@@ -213,12 +209,15 @@ test('doctor verifies bundle lifecycle and links missing Target input to checks 
     absent.checks.find((check) => check.id === 'verify-bundle')?.status,
     'unchecked',
   );
-  assert.deepEqual(absent.missingResources?.[0]?.checksNotRun, [
-    'verify-bundle',
-    'acquire-instance',
-  ]);
+  for (const id of ['verify-bundle', 'acquire-instance']) {
+    assert.equal(
+      absent.checks.find((check) => check.id === id)?.blockedBy,
+      'baseline',
+    );
+  }
   assert.equal(
-    absent.missingResources?.[0]?.reference,
+    absent.checks.find(({ id }) => id === 'baseline')?.missingResource
+      ?.reference,
     join(baseline, 'workflow.yaml'),
   );
   await writeFile(join(baseline, 'workflow.yaml'), 'workflow: {}\n');
@@ -283,7 +282,8 @@ test('doctor checks local and remote inference launch inputs without starting th
     'failed',
   );
   assert.equal(
-    brokenRemote.missingResources?.[0]?.field,
+    brokenRemote.checks.find(({ id }) => id === 'launch-prerequisites')
+      ?.missingResource?.field,
     'remote.parametersFile',
   );
 });

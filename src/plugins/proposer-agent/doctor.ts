@@ -8,7 +8,7 @@ export function checkProposerAgent(
   return checkAgentEditor<AgentEditingConfig>(context, (config) =>
     (config.subagents ?? []).map((role, index) => ({
       role,
-      promptField: `config.subagents.${index}.prompt`,
+      promptField: `subagents.${index}.prompt`,
     })),
   );
 }

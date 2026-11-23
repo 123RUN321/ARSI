@@ -163,7 +163,10 @@ export async function runCommand(
         context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir),
       releaseRuntime: context.releaseRuntime,
     });
-    result = { exitCode: report.summary.failed > 0 ? 1 : 0, json: report };
+    result = {
+      exitCode: report.checks.some(({ status }) => status === 'failed') ? 1 : 0,
+      json: report,
+    };
   }
 
   function list(kind: string | undefined): Promise<void> {

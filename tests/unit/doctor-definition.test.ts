@@ -144,7 +144,10 @@ export function register(registry) {
     dispose: 1,
   });
   const report = await doctorRecipe(runtime, path);
-  assert.equal(report.summary.failed, 0, JSON.stringify(report));
+  assert.ok(
+    report.checks.every(({ status }) => status !== 'failed'),
+    JSON.stringify(report),
+  );
   const content = report.checks.find((check) => check.id === 'custom.content');
   assert.equal(content?.status, 'passed');
   assert.equal(content?.details?.pluginId, 'proposer.custom');

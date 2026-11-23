@@ -1,10 +1,13 @@
 import { mkdtemp, mkdir, rm, stat, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { constants } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, parse, resolve, sep } from 'node:path';
 import type { JsonSchema, JsonValue } from '../../contracts/index.js';
 import { configPathFields, isResourceUrl } from '../../shared/paths.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import {
+  DoctorMissingResourceError,
+  runDoctorCheck,
+} from '../../shared/doctor-check.js';
 import { errorText, redactConfiguration } from '../../shared/errors.js';
 import { json, object } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
@@ -37,20 +40,17 @@ const doctorResultSchema: JsonSchema = {
           status: { enum: ['passed', 'failed', 'unchecked'] },
           reason: { type: 'string' },
           details: { type: 'object' },
-        },
-      },
-    },
-    missingResources: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['field', 'kind', 'reference', 'checksNotRun'],
-        additionalProperties: false,
-        properties: {
-          field: { type: 'string' },
-          kind: { type: 'string' },
-          reference: { type: 'string' },
-          checksNotRun: { type: 'array', items: { type: 'string' } },
+          missingResource: {
+            type: 'object',
+            required: ['field', 'kind', 'reference'],
+            additionalProperties: false,
+            properties: {
+              field: { type: 'string', minLength: 1 },
+              kind: { type: 'string', minLength: 1 },
+              reference: { type: 'string', minLength: 1 },
+            },
+          },
+          blockedBy: { type: 'string', minLength: 1 },
         },
       },
     },
@@ -60,8 +60,6 @@ const doctorResultSchema: JsonSchema = {
 export function doctorFailure(stage: string, error: unknown): DoctorReport {
   return {
     recipeId: null,
-    summary: { passed: 0, failed: 1, unchecked: 0 },
-    missingResources: [],
     checks: [
       {
         id: stage,
@@ -125,8 +123,6 @@ export async function doctorRecipe(
   }
   const report: DoctorReport = {
     recipeId: recipe.id,
-    summary: { passed: 0, failed: 0, unchecked: 0 },
-    missingResources: [],
     checks: [{ id: 'recipe.validate', status: 'passed' }],
   };
   const redact = redactConfiguration({
@@ -202,14 +198,47 @@ export async function doctorRecipe(
     withInstance: denied,
     charge: denied,
   });
+  const missingChecks = new Map<string, string>();
+  const duplicateChecks = new Map<string, string>();
   const add = (check: DoctorCheck): void => {
     if (report.checks.some((entry) => entry.id === check.id))
       throw new Error(`Duplicate doctor check ID: ${check.id}`);
-    const { reason, details, ...metadata } = check;
+    const { reason, details, missingResource, ...metadata } = check;
+    if (missingResource) {
+      const { kind, reference } = missingResource;
+      const local = ['file', 'directory', 'path'].includes(kind);
+      let keyReference = reference;
+      if (local) {
+        if (sep === '\\') keyReference = keyReference.replaceAll('\\', '/');
+        const { root } = parse(keyReference);
+        keyReference =
+          root + keyReference.slice(root.length).replace(/\/+$/, '');
+      }
+      const key = JSON.stringify([local ? 'path' : kind, keyReference]);
+      const first = missingChecks.get(key);
+      if (first) {
+        duplicateChecks.set(check.id, first);
+        report.checks.push({
+          ...metadata,
+          status: 'unchecked',
+          blockedBy: first,
+        });
+        return;
+      }
+      missingChecks.set(key, check.id);
+    }
     report.checks.push({
       ...metadata,
       ...(reason ? { reason: redact(reason) } : {}),
       ...(details ? { details: object(redactValues(details)) } : {}),
+      ...(missingResource
+        ? {
+            missingResource: {
+              ...missingResource,
+              reference: redact(missingResource.reference),
+            },
+          }
+        : {}),
     });
   };
   const redactValues = (value: JsonValue): JsonValue => {
@@ -229,37 +258,25 @@ export async function doctorRecipe(
       const scoped = (id: string): string => `${binding.name}.${id}`;
       const identity = { binding: binding.name, pluginId: binding.pluginId };
       const addCheck = (check: DoctorResult['checks'][number]): void => {
-        add({ ...check, ...identity, id: scoped(check.id) });
-      };
-      const addMissing = (
-        resource: NonNullable<DoctorResult['missingResources']>[number],
-      ): void => {
-        const field =
-          resource.field.startsWith(`${binding.name}.`) ||
-          resource.field.startsWith('application.config.')
-            ? resource.field
-            : `${binding.name}.${resource.field.startsWith('config.') ? '' : 'config.'}${resource.field}`;
-        const item = {
-          ...resource,
-          field,
+        const { missingResource, blockedBy, ...result } = check;
+        add({
+          ...result,
           ...identity,
-          reference: redact(resource.reference),
-          checksNotRun: resource.checksNotRun.map(scoped),
-        };
-        const previous = report.missingResources.find(
-          (known) =>
-            known.binding === item.binding &&
-            known.field === item.field &&
-            known.kind === item.kind &&
-            known.reference === item.reference,
-        );
-        if (previous)
-          previous.checksNotRun = [
-            ...new Set([...previous.checksNotRun, ...item.checksNotRun]),
-          ];
-        else report.missingResources.push(item);
+          id: scoped(check.id),
+          ...(blockedBy ? { blockedBy: scoped(blockedBy) } : {}),
+          ...(missingResource
+            ? {
+                missingResource: {
+                  ...missingResource,
+                  field: missingResource.field.startsWith('application.config.')
+                    ? missingResource.field
+                    : `${binding.name}.config.${missingResource.field}`,
+                },
+              }
+            : {}),
+        });
       };
-      let pathsValid = true;
+      let pathBlocker: string | undefined;
       for (const field of configPathFields(
         binding.definition.configSchema,
         binding.config,
@@ -274,7 +291,6 @@ export async function doctorRecipe(
         if (typeof value !== 'string' || isResourceUrl(value)) continue;
         const reference = value;
         const id = `resource${field.pointer.replaceAll('/', '.')}`;
-        let missing = false;
         const check = await runDoctorCheck(
           id,
           async () => {
@@ -286,29 +302,32 @@ export async function doctorRecipe(
                 );
               await access(reference, constants.R_OK);
             } catch (error) {
-              missing =
+              if (
                 error instanceof Error &&
                 'code' in error &&
-                error.code === 'ENOENT';
+                error.code === 'ENOENT'
+              )
+                throw new DoctorMissingResourceError(
+                  {
+                    field: field.pointer.slice(1).replaceAll('/', '.'),
+                    kind: field.kind,
+                    reference,
+                  },
+                  error,
+                );
               throw error;
             }
           },
           { signal },
         );
         addCheck(check);
-        if (check.status === 'failed') pathsValid = false;
-        if (missing)
-          addMissing({
-            field: `config${field.pointer.replaceAll('/', '.')}`,
-            kind: field.kind,
-            reference,
-            checksNotRun: options.staticOnly ? [] : ['plugin'],
-          });
+        if (check.status === 'failed') pathBlocker ??= check.id;
       }
-      if (options.staticOnly || !pathsValid) {
+      if (options.staticOnly || pathBlocker) {
         addCheck({
           id: 'plugin',
           status: 'unchecked',
+          ...(!options.staticOnly && pathBlocker ? { blockedBy: pathBlocker } : {}),
           reason: options.staticOnly
             ? 'Component diagnostics were skipped by --static.'
             : 'Component diagnostics were skipped because a declared local path failed validation.',
@@ -328,23 +347,29 @@ export async function doctorRecipe(
         signal.throwIfAborted();
         validate(doctorResultSchema, result, 'Doctor result');
         const ids = new Set(report.checks.map(({ id }) => id));
-        const unchecked = new Set<string>();
+        const failed = new Set(
+          result.checks
+            .filter((check) => check.status === 'failed')
+            .map((check) => check.id),
+        );
         for (const check of result.checks) {
           if (check.details !== undefined) json(check.details);
           const id = scoped(check.id);
           if (ids.has(id)) throw new Error(`Duplicate doctor check ID: ${id}`);
           ids.add(id);
-          if (check.status === 'unchecked') unchecked.add(check.id);
+          if (check.missingResource && check.status !== 'failed')
+            throw new Error(
+              `Only a failed check can report a missing resource: ${id}`,
+            );
+          if (
+            check.blockedBy &&
+            (check.status !== 'unchecked' || !failed.has(check.blockedBy))
+          )
+            throw new Error(
+              `An unchecked check must reference a failed blocker: ${id}`,
+            );
         }
-        for (const resource of result.missingResources ?? [])
-          for (const id of resource.checksNotRun)
-            if (!unchecked.has(id))
-              throw new Error(
-                `Missing resource references a check that is not unchecked: ${scoped(id)}`,
-              );
         for (const check of result.checks) addCheck(check);
-        for (const resource of result.missingResources ?? [])
-          addMissing(resource);
       } catch (error) {
         signal.throwIfAborted();
         addCheck({
@@ -375,6 +400,9 @@ export async function doctorRecipe(
     }
   }
   signal.throwIfAborted();
-  for (const check of report.checks) report.summary[check.status]++;
+  for (const check of report.checks) {
+    if (check.blockedBy)
+      check.blockedBy = duplicateChecks.get(check.blockedBy) ?? check.blockedBy;
+  }
   return report;
 }

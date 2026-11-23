@@ -57,12 +57,12 @@ flowchart TD
 
 Normal completion writes one JSON report to stdout, including configuration or registration failures:
 
-| Field              | Meaning                                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `recipeId`         | Loaded Recipe ID, or `null` if loading did not succeed.                                                    |
-| `summary`          | Counts of `passed`, `failed` and `unchecked` checks.                                                       |
-| `checks`           | Individual results with `id`, `status`, optional `binding`, `pluginId`, `reason` and `details`.            |
-| `missingResources` | Missing input references, their configuration fields and kinds, and dependent check IDs that were not run. |
+| Field      | Meaning                                                                                   |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `recipeId` | Loaded Recipe ID, or `null` if loading did not succeed.                                    |
+| `checks`   | Individual results with `id` and `status`. A check may also include scope and evidence. |
+
+Use `checks` to count results by status or find failures. Optional fields include `binding`, `pluginId`, `reason` and `details`. A failure can carry a `missingResource` with its configuration `field`, resource `kind` and `reference`. An `unchecked` result can name its blocking failure in `blockedBy`. When multiple checks report the same missing resource, the report retains one failure and links the other checks to it.
 
 Component check IDs start with the binding name. In a full check, a binding named `agent` using Pi produces `agent.model-config` and `agent.model-access`. A different binding name changes the prefix.
 
@@ -139,7 +139,9 @@ Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/co
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OperationDoctor<C>` | An asynchronous `rsi/doctor` handler that receives `DoctorContext<C>` and returns `Promise<DoctorResult>`.                                                                                                                                |
 | `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                                                        |
-| `DoctorResult`       | The component's results. Each entry in `checks` gives an ID, status and optional explanation. The result can include `missingResources` for missing inputs. The framework prefixes IDs with the binding name and combines the results into the JSON report. |
+| `DoctorResult`       | The component's results in `checks`. Attach `missingResource` to a failed check. An unchecked check can use `blockedBy` to reference a failed check by its local ID. The framework prefixes check IDs and references with the binding name. |
+
+Use a field relative to the binding configuration in `missingResource.field`, such as `inputFile`, and use the resolved path as the reference for a local resource. The report qualifies the field with the binding name and `config`.
 
 - `C` is the component configuration type. Here `schema.ts` exports `type CustomConfig = { inputFile: string }`, so TypeScript infers `context.binding.config.inputFile` as `string`.
 

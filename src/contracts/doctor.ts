@@ -11,27 +11,25 @@ export interface DoctorCheck {
   reason?: string;
   /** Observations establish only the scope described by this check. */
   details?: JsonObject;
+  /** Input this failed check found missing. */
+  missingResource?: MissingResource;
+  /** ID of the failed check that prevented this unchecked check from running. */
+  blockedBy?: string;
 }
 
 export interface MissingResource {
-  binding: string;
-  pluginId: string;
   field: string;
   kind: string;
   reference: string;
-  checksNotRun: string[];
 }
 
-/** IDs and dependent check references are local to the component binding. */
+/** Check IDs and blockedBy references are local to the component binding. */
 export interface DoctorResult {
   checks: Omit<DoctorCheck, 'binding' | 'pluginId'>[];
-  missingResources?: Omit<MissingResource, 'binding' | 'pluginId'>[];
 }
 
 export interface DoctorReport {
   recipeId: string | null;
-  summary: { passed: number; failed: number; unchecked: number };
-  missingResources: MissingResource[];
   checks: DoctorCheck[];
 }
 

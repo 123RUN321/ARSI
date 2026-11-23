@@ -211,7 +211,10 @@ test('CLI reports runtime cleanup failures and preserves command errors', async 
       assert.equal(error.code, 1);
       assert.equal(error.stderr, '');
       const report: DoctorReport = JSON.parse(String(error.stdout));
-      assert.equal(report.summary.failed, 2);
+      assert.equal(
+        report.checks.filter(({ status }) => status === 'failed').length,
+        2,
+      );
       assert.deepEqual(
         report.checks.map((check) => check.id),
         ['recipe.validate', 'runtime.cleanup'],

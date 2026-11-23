@@ -152,10 +152,8 @@ test('agentbench delegates effective task and service configuration to SDK docto
     );
     return nativeReport();
   };
-  const { checks, missingResources } =
-    await createAgentbenchDoctor(runner)(ctx);
+  const { checks } = await createAgentbenchDoctor(runner)(ctx);
   assert.equal(calls, 1);
-  assert.equal(missingResources, undefined);
   assert.equal(
     checks.find((check) => check.id === 'configuration')?.status,
     'passed',

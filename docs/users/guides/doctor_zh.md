@@ -57,12 +57,12 @@ flowchart TD
 
 正常完成时向 stdout 输出一份 JSON 报告，包括配置或注册失败的情况：
 
-| 字段               | 含义                                                                               |
-| ------------------ | ---------------------------------------------------------------------------------- |
-| `recipeId`         | 已加载的 Recipe ID；未能成功加载时为 `null`。                                      |
-| `summary`          | `passed`、`failed`、`unchecked` 三类检查的数量。                                   |
-| `checks`           | 每项结果的 `id`、`status`，以及可选的 `binding`、`pluginId`、`reason`、`details`。 |
-| `missingResources` | 缺失输入的引用、配置字段、资源种类，以及因此未执行的依赖检查 ID。                  |
+| 字段       | 含义                                                     |
+| ---------- | -------------------------------------------------------- |
+| `recipeId` | 已加载的 Recipe ID。未能成功加载时为 `null`。            |
+| `checks`   | 每项结果包含 `id` 和 `status`，也可附上检查范围和证据。 |
+
+从 `checks` 筛选失败项或按状态计数。可选字段包括 `binding`、`pluginId`、`reason` 和 `details`。失败项可以附带 `missingResource`，记录配置字段 `field`、资源种类 `kind` 和引用 `reference`。`unchecked` 项可以用 `blockedBy` 指向阻塞它的失败项。多个检查报告同一个缺失资源时，报告保留一条失败，其余检查指向该失败项。
 
 组件检查 ID 以绑定名开头。完整检查时，名为 `agent` 的 Pi 绑定会产生 `agent.model-config` 和 `agent.model-access`。更换绑定名后，前缀也随之变化。
 
@@ -139,7 +139,9 @@ flowchart TD
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OperationDoctor<C>` | `rsi/doctor` 异步处理器的类型，接收 `DoctorContext<C>` 并返回 `Promise<DoctorResult>`。                                                                  |
 | `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。                               |
-| `DoctorResult`       | 组件返回的检查结果。`checks` 里写每项的 ID、状态和可选说明，有缺失资源时可附上 `missingResources`。框架负责加绑定名前缀，并把各组件的结果汇总成最终 JSON 报告。 |
+| `DoctorResult`       | 组件通过 `checks` 返回检查结果。失败项可附上 `missingResource`，未检查项可用 `blockedBy` 引用失败项的局部 ID。框架为检查 ID 和引用添加绑定名前缀。 |
+
+`missingResource.field` 使用相对于绑定配置的字段名，例如 `inputFile`。本地资源的引用使用解析后的路径。报告会为字段加上绑定名和 `config` 前缀。
 
 - `C` 是组件配置类型。本例在 `schema.ts` 中导出 `type CustomConfig = { inputFile: string }`，那么 `context.binding.config.inputFile` 就会被推导为 `string`。
 

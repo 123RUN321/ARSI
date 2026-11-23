@@ -133,21 +133,21 @@ async function fixture(): Promise<{
 }
 
 function verifyReport(report: DoctorReport): void {
+  assert.deepEqual(Object.keys(report).sort(), ['checks', 'recipeId']);
   assert.equal(
     new Set(report.checks.map((check) => check.id)).size,
     report.checks.length,
   );
-  for (const status of ['passed', 'failed', 'unchecked'] as const)
-    assert.equal(
-      report.summary[status],
-      report.checks.filter((check) => check.status === status).length,
-    );
-  for (const resource of report.missingResources)
-    for (const id of resource.checksNotRun)
+  for (const check of report.checks) {
+    if (check.missingResource) assert.equal(check.status, 'failed');
+    if (check.blockedBy) {
+      assert.equal(check.status, 'unchecked');
       assert.equal(
-        report.checks.find((check) => check.id === id)?.status,
-        'unchecked',
+        report.checks.find(({ id }) => id === check.blockedBy)?.status,
+        'failed',
       );
+    }
+  }
 }
 
 test('an initialization failure belongs to its binding, static mode skips creation, and full doctor disposes live peers', async (t) => {
@@ -256,13 +256,12 @@ test('doctor checks effective per-binding overrides and reports uncovered implem
       );
       return {
         checks: [{ id: 'effective', status: 'passed', reason: undefined }],
-        missingResources: undefined,
       };
     };
     f.doctors({ 'selector.metric': script });
     const report = await doctorRecipe(f.runtime, f.path);
     assert.deepEqual(observed, ['left:score:maximize', 'right:cost:maximize']);
-    assert.equal(report.summary.failed, 0);
+    assert.ok(report.checks.every(({ status }) => status !== 'failed'));
     assert.match(
       report.checks.find((check) => check.id === 'application.plugin')
         ?.reason ?? '',
@@ -290,23 +289,24 @@ test('static doctor checks declared paths without running component callbacks', 
     f.doctors({ 'test.application': doctor, 'selector.metric': doctor });
 
     const missing = await doctorRecipe(f.runtime, f.path, { staticOnly: true });
-    assert.equal(
-      missing.checks.find((check) => check.id === 'application.resource.input')
-        ?.status,
-      'failed',
-    );
-    assert.equal(missing.summary.failed, 1);
-    assert.equal(
-      missing.missingResources[0]?.field,
-      'application.config.input',
-    );
+    const failure = missing.checks.find(({ status }) => status === 'failed');
+    assert.equal(failure?.id, 'application.resource.input');
+    assert.deepEqual(failure?.missingResource, {
+      field: 'application.config.input',
+      kind: 'file',
+      reference: join(f.root, 'input.txt'),
+    });
     verifyReport(missing);
 
     await writeFile(join(f.root, 'input.txt'), 'fixture');
     const ready = await doctorRecipe(f.runtime, f.path, { staticOnly: true });
     assert.equal(ready.recipeId, 'doctor-fixture');
-    assert.equal(ready.summary.failed, 0);
-    assert.deepEqual(ready.missingResources, []);
+    assert.ok(
+      ready.checks.every(
+        ({ status, missingResource }) =>
+          status !== 'failed' && !missingResource,
+      ),
+    );
     assert.equal(
       ready.checks.find((check) => check.id === 'application.resource.input')
         ?.status,
@@ -427,11 +427,10 @@ test('doctor retains Recipe schema, Policy, binding, budget and Reflection valid
       const report = await doctorRecipe(f.runtime, f.path);
       assert.equal(report.recipeId, null, scenario.name);
       assert.deepEqual(
-        report.summary,
-        { passed: 0, failed: 1, unchecked: 0 },
+        report.checks.map(({ id, status }) => [id, status]),
+        [['recipe.validate', 'failed']],
         scenario.name,
       );
-      assert.equal(report.checks[0].id, 'recipe.validate', scenario.name);
       assert.match(
         report.checks[0].reason ?? '',
         scenario.reason,
@@ -519,9 +518,12 @@ test('probe errors and deadlines preserve independent results, redact secrets an
       }),
     });
     const report = await doctorRecipe(f.runtime, f.path);
-    assert.equal(report.summary.failed, 2);
+    assert.equal(
+      report.checks.filter(({ status }) => status === 'failed').length,
+      2,
+    );
     assert.equal(released, 1);
-    assert.equal(report.missingResources.length, 0);
+    assert.ok(report.checks.every(({ missingResource }) => !missingResource));
     assert.match(
       report.checks.find((check) => check.id === 'application.timeout')
         ?.reason ?? '',
@@ -614,16 +616,18 @@ test('doctor aggregates complete valid results and isolates callback errors by b
       'selector.metric': async ({ binding }) => ({
         checks: [
           {
-            id: 'dependent',
-            status: binding.name === 'left' ? 'passed' : 'unchecked',
+            id: 'input',
+            status: 'failed',
+            missingResource: {
+              field: 'input',
+              kind: 'file',
+              reference: 'missing.txt',
+            },
           },
-        ],
-        missingResources: [
           {
-            field: 'config.input',
-            kind: 'file',
-            reference: 'missing.txt',
-            checksNotRun: ['dependent'],
+            id: 'dependent',
+            status: 'unchecked',
+            blockedBy: binding.name === 'left' ? 'unknown' : 'input',
           },
         ],
       }),
@@ -635,20 +639,19 @@ test('doctor aggregates complete valid results and isolates callback errors by b
         ['recipe.validate', 'passed'],
         ['application.script', 'failed'],
         ['left.script', 'failed'],
+        ['right.input', 'failed'],
         ['right.dependent', 'unchecked'],
       ],
     );
     assert.match(report.checks[1]?.reason ?? '', /Unexpected callback error/);
-    assert.deepEqual(report.missingResources, [
-      {
-        binding: 'right',
-        pluginId: 'selector.metric',
-        field: 'right.config.input',
-        kind: 'file',
-        reference: 'missing.txt',
-        checksNotRun: ['right.dependent'],
-      },
-    ]);
+    assert.deepEqual(
+      report.checks.find(({ id }) => id === 'right.input')?.missingResource,
+      { field: 'right.config.input', kind: 'file', reference: 'missing.txt' },
+    );
+    assert.equal(
+      report.checks.find(({ id }) => id === 'right.dependent')?.blockedBy,
+      'right.input',
+    );
     verifyReport(report);
   } finally {
     await f.dispose();
@@ -775,6 +778,7 @@ test('CLI emits one JSON diagnostic for registration/loading errors and reports 
     assert.equal(registered.code, 1);
     assert.equal(registered.stderr, '');
     const report: DoctorReport = JSON.parse(registered.stdout);
+    verifyReport(report);
     assert.equal(report.recipeId, null);
     assert.equal(report.checks[0].id, 'runtime.registration');
     const loaded = await run(['doctor', join(f.root, 'absent.yaml')]);

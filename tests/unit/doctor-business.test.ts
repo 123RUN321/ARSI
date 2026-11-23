@@ -142,12 +142,14 @@ for (const id of [
       'unchecked',
     );
     assert.equal(
-      brokenResult.missingResources?.[0]?.reference,
+      brokenResult.checks.find(({ id }) => id === 'editing-inputs')
+        ?.missingResource?.reference,
       join(f.root, 'missing.md'),
     );
-    assert.deepEqual(brokenResult.missingResources?.[0]?.checksNotRun, [
-      'prepare-project',
-    ]);
+    assert.equal(
+      brokenResult.checks.find(({ id }) => id === 'prepare-project')?.blockedBy,
+      'editing-inputs',
+    );
   });
 }
 
@@ -167,11 +169,11 @@ test('editor checks resolve the selected Agent and reject duplicate roles and sk
     guidance: join(f.root, 'missing-guidance'),
   });
   const missingGuidanceResult = await runDoctor(missingGuidance);
-  assert.equal(
-    missingGuidanceResult.missingResources?.[0]?.field,
-    'config.guidance',
-  );
-  assert.equal(missingGuidanceResult.missingResources?.[0]?.kind, 'directory');
+  const missingResource = missingGuidanceResult.checks.find(
+    ({ id }) => id === 'editing-inputs',
+  )?.missingResource;
+  assert.equal(missingResource?.field, 'guidance');
+  assert.equal(missingResource?.kind, 'directory');
 
   const role = { name: 'reviewer', description: 'Review', prompt: f.prompt };
   const duplicateRoles = f.probe('proposer.agent', {
@@ -269,7 +271,8 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
   const missingResult = await runDoctor(missing);
   assert.equal(missingResult.checks[1]!.status, 'failed');
   assert.equal(
-    missingResult.missingResources?.[0]?.reference,
+    missingResult.checks.find(({ id }) => id === 'baseline-modules')
+      ?.missingResource?.reference,
     join(f.root, 'baseline/missing.md'),
   );
 

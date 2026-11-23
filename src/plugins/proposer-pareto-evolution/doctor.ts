@@ -5,7 +5,10 @@ import {
   type DoctorContext,
   type DoctorResult,
 } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import {
+  DoctorMissingResourceError,
+  runDoctorCheck,
+} from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
 import { missingPath } from '../shared/doctor/checks.js';
 import { configSchema, type ParetoEvolutionConfig } from './schema.js';
@@ -33,6 +36,7 @@ export async function checkParetoEvolutionProposer(
           id: 'baseline-modules',
           status: 'unchecked',
           reason: 'The module configuration is invalid.',
+          blockedBy: modules.id,
         },
       ],
     };
@@ -72,8 +76,6 @@ export async function checkParetoEvolutionProposer(
       ],
     };
   }
-  const missingResources: NonNullable<DoctorResult['missingResources']> = [];
-  let directoryMissing = false;
   const baselineModules = await runDoctorCheck(
     'baseline-modules',
     async (signal) => {
@@ -81,9 +83,16 @@ export async function checkParetoEvolutionProposer(
         if (!(await lstat(directory)).isDirectory())
           throw new Error(`Expected baseline directory: ${directory}`);
       } catch (error) {
-        if (!missingPath(error)) throw error;
-        directoryMissing = true;
-        return;
+        if (missingPath(error))
+          throw new DoctorMissingResourceError(
+            {
+              field: 'application.config.baseline.directory',
+              kind: 'directory',
+              reference: directory,
+            },
+            error,
+          );
+        throw error;
       }
       for (const module of config.modules) {
         signal.throwIfAborted();
@@ -94,37 +103,19 @@ export async function checkParetoEvolutionProposer(
           await readFile(path, { signal });
         } catch (error) {
           if (missingPath(error))
-            missingResources.push({
-              field: `config.modules.${module.id}.path`,
-              kind: 'file',
-              reference: path,
-              checksNotRun: [],
-            });
+            throw new DoctorMissingResourceError(
+              {
+                field: `modules.${module.id}.path`,
+                kind: 'file',
+                reference: path,
+              },
+              error,
+            );
           throw error;
         }
       }
     },
     options,
   );
-  if (baselineModules.status === 'passed' && directoryMissing) {
-    return {
-      checks: [
-        modules,
-        {
-          id: 'baseline-modules',
-          status: 'unchecked',
-          reason: 'The baseline directory is unavailable.',
-        },
-      ],
-      missingResources: [
-        {
-          field: 'application.config.baseline.directory',
-          kind: 'directory',
-          reference: directory,
-          checksNotRun: ['baseline-modules'],
-        },
-      ],
-    };
-  }
-  return { checks: [modules, baselineModules], missingResources };
+  return { checks: [modules, baselineModules] };
 }

@@ -40,7 +40,6 @@ export async function checkRecipe(
       throw new RuntimeCleanupInterruptedError(signal.reason, error);
     const cleanup = doctorFailure('runtime.cleanup', error);
     report.checks.push(...cleanup.checks);
-    report.summary.failed += cleanup.summary.failed;
   }
   signal.throwIfAborted();
   return report;

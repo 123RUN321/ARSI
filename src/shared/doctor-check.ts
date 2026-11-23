@@ -1,5 +1,18 @@
-import type { DoctorResult, JsonObject } from '../contracts/index.js';
+import type {
+  DoctorResult,
+  JsonObject,
+  MissingResource,
+} from '../contracts/index.js';
 import { errorText } from './errors.js';
+
+export class DoctorMissingResourceError extends Error {
+  constructor(
+    readonly resource: MissingResource,
+    cause: unknown,
+  ) {
+    super('Missing resource', { cause });
+  }
+}
 
 /** Run one probe with its own deadline. The action must release its work on cancellation. */
 export async function runDoctorCheck(
@@ -70,6 +83,9 @@ export async function runDoctorCheck(
     return {
       ...check,
       status: 'failed',
+      ...(error instanceof DoctorMissingResourceError
+        ? { missingResource: error.resource }
+        : {}),
       reason: reason
         ? `${reason}${cleanup}`
         : `${errorText(error)}${cleanup} Plugin availability is unknown unless established by another check.`,

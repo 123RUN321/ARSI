@@ -236,7 +236,8 @@ export function register(registry){
   const doctorReport = JSON.parse(
     execFileSync(process.execPath, doctorArgs, doctorOptions),
   );
-  assert.equal(doctorReport.summary.failed, 0);
+  assert.deepEqual(Object.keys(doctorReport).sort(), ['checks', 'recipeId']);
+  assert.ok(doctorReport.checks.every(({ status }) => status !== 'failed'));
   assert.equal(
     doctorReport.checks.find((check) => check.id === 'custom.read-input')
       ?.status,
@@ -262,7 +263,7 @@ export function register(registry){
   const staticReport = JSON.parse(
     execFileSync(process.execPath, [...doctorArgs, '--static'], doctorOptions),
   );
-  assert.equal(staticReport.summary.failed, 0);
+  assert.ok(staticReport.checks.every(({ status }) => status !== 'failed'));
   assert.equal(
     staticReport.checks.find(
       (check) => check.id === 'custom.resource.inputFile',
@@ -272,6 +273,31 @@ export function register(registry){
   assert.equal(
     staticReport.checks.find((check) => check.id === 'custom.plugin')?.status,
     'unchecked',
+  );
+  const inputPath = join(doctorExtension, 'input.txt');
+  await rm(inputPath);
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        [...doctorArgs, '--static'],
+        doctorOptions,
+      ),
+    (error) => {
+      assert.equal(error.status, 1);
+      const report = JSON.parse(String(error.stdout));
+      assert.deepEqual(Object.keys(report).sort(), ['checks', 'recipeId']);
+      assert.deepEqual(
+        report.checks.find((check) => check.status === 'failed')
+          ?.missingResource,
+        {
+          field: 'custom.config.inputFile',
+          kind: 'file',
+          reference: inputPath,
+        },
+      );
+      return true;
+    },
   );
   console.log(
     'Installed component doctor: registration, full checks and static mode passed.',
@@ -898,6 +924,10 @@ type Config={inputFile:string};
 export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Config>):Promise<DoctorResult>=>{
  const path:string=context.binding.config.inputFile;
  const input=await runDoctorCheck('input',async signal=>{signal.throwIfAborted();void path;},{signal:context.signal});
+ if(input.status==='failed')return{checks:[
+  {...input,missingResource:{field:'inputFile',kind:'file',reference:path}},
+  {id:'remote',status:'unchecked',blockedBy:input.id},
+ ]};
  const result:RootDoctorResult={checks:[input,{id:'remote',status:'unchecked',reason:'No remote probe.'}]};
  return result;
 };

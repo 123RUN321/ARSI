@@ -2,7 +2,10 @@ import { constants } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import {
+  DoctorMissingResourceError,
+  runDoctorCheck,
+} from '../../shared/doctor-check.js';
 import { object, string } from '../../shared/json.js';
 import { executablePath } from '../shared/doctor/executable.js';
 import { runCommand } from '../shared/doctor/process.js';
@@ -15,19 +18,16 @@ import { safePath } from '../shared/file-application/target.js';
 export async function checkInferenceApplication(
   context: DoctorContext,
 ): Promise<DoctorResult> {
-  const {
-    check,
-    directory: baseline,
-    missingResources,
-  } = await checkBaselineDirectory(context, ['launch-prerequisites']);
+  const { check, directory: baseline } = await checkBaselineDirectory(context);
   const checks = [check];
   if (!baseline) {
     checks.push({
       id: 'launch-prerequisites',
       status: 'unchecked',
       reason: 'Baseline or Target prerequisites failed.',
+      blockedBy: check.id,
     });
-    return { checks, missingResources };
+    return { checks };
   }
   checks.push(
     await runDoctorCheck(
@@ -42,22 +42,12 @@ export async function checkInferenceApplication(
               : string(remote.executable);
           await executablePath(executable, process.cwd());
           await runCommand(executable, ['--version'], { signal });
-          await requirePath(
-            missingResources,
-            string(remote.script),
-            'remote.script',
-            'file',
-          );
+          await requirePath(string(remote.script), 'remote.script', 'file');
           const parameters = join(
             baseline,
             safePath(remote.parametersFile ?? 'tuning.json'),
           );
-          await requirePath(
-            missingResources,
-            parameters,
-            'remote.parametersFile',
-            'file',
-          );
+          await requirePath(parameters, 'remote.parametersFile', 'file');
           object(
             JSON.parse(
               await readFile(parameters, { encoding: 'utf8', signal }),
@@ -88,7 +78,7 @@ export async function checkInferenceApplication(
             start.cwd === undefined
               ? baseline
               : join(baseline, safePath(start.cwd));
-          await requirePath(missingResources, cwd, 'start.cwd', 'directory');
+          await requirePath(cwd, 'start.cwd', 'directory');
           await executablePath(string(argv[0], 'start.argv[0]'), cwd);
           for (const [index, value] of start.argv.entries()) {
             if (typeof value === 'object' && value !== null) {
@@ -102,12 +92,14 @@ export async function checkInferenceApplication(
                       'code' in error &&
                       error.code === 'ENOENT'
                     )
-                      missingResources.push({
-                        field: `start.argv.${index}`,
-                        kind: 'path',
-                        reference,
-                        checksNotRun: [],
-                      });
+                      throw new DoctorMissingResourceError(
+                        {
+                          field: `start.argv.${index}`,
+                          kind: 'path',
+                          reference,
+                        },
+                        error,
+                      );
                     throw error;
                   },
                 );
@@ -128,5 +120,5 @@ export async function checkInferenceApplication(
       { signal: context.signal },
     ),
   );
-  return { checks, missingResources: [...missingResources] };
+  return { checks };
 }

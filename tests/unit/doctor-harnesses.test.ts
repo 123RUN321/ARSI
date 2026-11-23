@@ -9,7 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { JsonObject, JsonValue } from '../../src/contracts/index.js';
 import { createRuntime, type Runtime } from '../../src/runtime/context.js';
 import { Recipe } from '../../src/runtime/loaders/recipe.js';
@@ -174,16 +174,11 @@ function verifyReport(report: DoctorReport): void {
     new Set(report.checks.map((check) => check.id)).size,
     report.checks.length,
   );
-  for (const status of ['passed', 'failed', 'unchecked'] as const)
-    assert.equal(
-      report.summary[status],
-      report.checks.filter((check) => check.status === status).length,
-    );
-  for (const resource of report.missingResources)
-    for (const id of resource.checksNotRun)
+  for (const check of report.checks)
+    if (check.blockedBy)
       assert.equal(
-        report.checks.find((check) => check.id === id)?.status,
-        'unchecked',
+        report.checks.find(({ id }) => id === check.blockedBy)?.status,
+        'failed',
       );
   assert.ok(
     !JSON.stringify(report).includes('doctor-harness-fixture-key-never-print'),
@@ -205,7 +200,7 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
     const report = await doctorRecipe(f.runtime, f.path);
     assert.equal(report.recipeId, f.recipe.id);
     assert.equal(
-      report.summary.failed,
+      report.checks.filter(({ status }) => status === 'failed').length,
       0,
       JSON.stringify(
         report.checks.filter((check) => check.status === 'failed'),
@@ -280,22 +275,43 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       const data = structuredClone(f.data);
       const config = object(object(data.application).config);
       const resource = join(f.root, `missing-${missing}`);
-      if (missing === 'baseline') config.baseline = { directory: resource };
-      else config.target = { schema: resource };
+      const directory = resource + sep;
+      if (missing === 'baseline') {
+        config.baseline = { directory };
+        f.setEvaluator(async (options) => ({
+          ...object(await f.runner(options)),
+          checks: [
+            {
+              name: 'AgentBundle path',
+              status: 'failed',
+              detail:
+                'The SDK could not access the configured AgentBundle path.',
+            },
+          ],
+        }));
+      } else {
+        config.target = { schema: resource };
+        f.setEvaluator(f.runner);
+      }
       await writeFile(f.path, JSON.stringify(data));
       const report = await doctorRecipe(f.runtime, f.path);
-      assert.ok(report.summary.failed > 0);
-      const field =
-        missing === 'target' ? 'target.schema' : 'baseline.directory';
-      const failure = report.checks.find(
-        (check) => check.id === `application.resource.${field}`,
+      const resourceId =
+        missing === 'baseline'
+          ? 'application.resource.baseline.directory'
+          : 'application.resource.target.schema';
+      const failures = report.checks.filter(
+        (check) =>
+          check.missingResource?.reference === resource ||
+          check.missingResource?.reference === directory,
       );
-      assert.equal(failure?.status, 'failed');
-      assert.ok(failure.reason?.includes(resource));
+      assert.deepEqual(
+        failures.map(({ id, status }) => [id, status]),
+        [[resourceId, 'failed']],
+      );
       assert.equal(
         report.checks.find((check) => check.id === 'application.plugin')
-          ?.status,
-        'unchecked',
+          ?.blockedBy,
+        resourceId,
       );
       assert.equal(
         report.checks.find((check) => check.id === independentChecks[name])
@@ -307,20 +323,20 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
           ?.status,
         'passed',
       );
-      assert.deepEqual(
-        report.missingResources.find(
-          (entry) =>
-            entry.binding === 'application' && entry.reference === resource,
-        )?.checksNotRun,
-        ['application.plugin'],
-      );
-      if (name === 'dsh-gepa' && missing === 'baseline')
+      if (missing === 'baseline') {
         assert.equal(
-          report.missingResources.find(
-            (entry) => entry.binding === 'evolutionProposer',
-          )?.field,
-          'application.config.baseline.directory',
+          report.checks.find((check) => check.id === 'evaluator.sdk.check-0')
+            ?.blockedBy,
+          resourceId,
         );
+        if (name === 'dsh-gepa')
+          assert.equal(
+            report.checks.find(
+              (check) => check.id === 'evolutionProposer.baseline-modules',
+            )?.blockedBy,
+            resourceId,
+          );
+      }
       verifyReport(report);
     }
     assert.deepEqual(await f.runtime.manager.list(), []);
@@ -421,7 +437,10 @@ test('proposal success does not hide an evaluation key failure for the same mode
   assert.match(failed?.reason ?? '', /Evaluation.*API key/);
   assert.match(failed?.reason ?? '', /\[redacted\]/);
   assert.ok(!failed?.reason?.includes('Plugin availability'));
-  assert.equal(report.summary.failed, 2);
+  assert.equal(
+    report.checks.filter(({ status }) => status === 'failed').length,
+    2,
+  );
   assert.deepEqual(hostRequests, ['http://proposal.example/v1/models']);
   assert.equal(evaluation?.api_key, '${DOCTOR_EVALUATION_TEST_KEY}');
   assert.ok(!JSON.stringify(report).includes('only-secret'));
@@ -441,8 +460,8 @@ test('identical scripted Recipe checks stay deterministic across two conversatio
   const reduceLatency = await doctorRecipe(f.runtime, f.path);
   const increaseLatency = await doctorRecipe(f.runtime, f.path);
   assert.deepEqual(reduceLatency, increaseLatency);
-  assert.equal(reduceLatency.summary.failed, 0);
-  assert.equal(increaseLatency.summary.failed, 0);
+  assert.ok(reduceLatency.checks.every(({ status }) => status !== 'failed'));
+  assert.ok(increaseLatency.checks.every(({ status }) => status !== 'failed'));
   assert.equal(
     reduceLatency.checks.find((check) => check.id === 'selector.configuration')
       ?.status,
