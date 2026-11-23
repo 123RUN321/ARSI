@@ -1,3 +1,4 @@
+import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -24,11 +25,7 @@ import { checkOptunaDependencies } from '../../src/plugins/proposer-optuna/docto
 type Probe = DoctorContext & { recipe: Recipe; registry: Registry };
 
 function runDoctor(context: Probe): Promise<DoctorResult> {
-  return context.registry.dispatch(
-    context.binding.pluginId,
-    'rsi/doctor',
-    context,
-  );
+  return diagnoseBinding(context.registry, context);
 }
 
 async function fixture(t: TestContext): Promise<{

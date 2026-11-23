@@ -1,3 +1,4 @@
+import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -118,7 +119,7 @@ async function fixture(t: TestContext) {
       directory: root,
       signal: controller.signal,
     };
-    return registry.dispatch(pluginId, 'rsi/doctor', context);
+    return diagnoseBinding(registry, context);
   };
   return { root, baseline, config, runtime, controller, run };
 }
@@ -271,8 +272,7 @@ test('doctor checks local and remote inference launch inputs without starting th
     endpoint: { model: 'fixture', origin: 'http://localhost:8080/service' },
   });
   assert.match(
-    invalidOrigin.checks.find((check) => check.id === 'launch-prerequisites')
-      ?.reason ?? '',
+    invalidOrigin.checks.find((check) => check.id === 'script')?.reason ?? '',
     /endpoint.origin/,
   );
   await rm(join(baseline, 'tuning.json'));

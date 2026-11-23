@@ -1,3 +1,4 @@
+import type { JsonValue } from '../contracts/json.js';
 import { OperationRejectedError } from '../contracts/runtime/errors.js';
 
 /** Error boundaries keep diagnostics without persisting configured credentials. */
@@ -10,6 +11,8 @@ export function errorText(error: unknown): string {
     const parts = [value.message];
     if (value instanceof AggregateError)
       for (const nested of value.errors) parts.push(describe(nested));
+    if (value instanceof SuppressedError)
+      parts.push(describe(value.suppressed), describe(value.error));
     if (value.cause !== undefined)
       parts.push(`cause: ${describe(value.cause)}`);
     visiting.delete(value);
@@ -20,6 +23,39 @@ export function errorText(error: unknown): string {
     if (value && /(?:KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL)$/i.test(key))
       message = message.replaceAll(value, '[REDACTED]');
   return message;
+}
+
+export function redactConfiguration(
+  value?: JsonValue,
+): (message: string) => string {
+  const secrets = new Set<string>();
+  for (const [name, secret] of Object.entries(process.env))
+    if (/key|token|secret|password|authorization/i.test(name) && secret)
+      secrets.add(secret);
+  const visit = (entry: JsonValue | undefined): void => {
+    if (Array.isArray(entry)) entry.forEach(visit);
+    else if (entry && typeof entry === 'object')
+      for (const [key, child] of Object.entries(entry)) {
+        if (
+          /key|token|secret|password|authorization/i.test(key) &&
+          typeof child === 'string'
+        ) {
+          secrets.add(child);
+          for (const match of child.matchAll(
+            /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+          )) {
+            const secret = process.env[match[1]];
+            if (secret) secrets.add(secret);
+          }
+        } else visit(child);
+      }
+  };
+  visit(value);
+  return (message) => {
+    for (const secret of [...secrets].sort((a, b) => b.length - a.length))
+      if (secret.length > 0) message = message.replaceAll(secret, '[redacted]');
+    return message.replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/g, '$1[redacted]@');
+  };
 }
 
 export class RuntimeCleanupInterruptedError extends Error {

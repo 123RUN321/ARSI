@@ -29,8 +29,9 @@ import {
   createAgentbench,
   prepareEvaluationConfig,
 } from '../../src/plugins/evaluator-agentbench/service.js';
-import { register as registerAgentbench } from '../../src/plugins/evaluator-agentbench/index.js';
-import { register as registerOperatorbench } from '../../src/plugins/evaluator-operatorbench/index.js';
+import { withBindingInstance } from '../../src/runtime/manager/instances.js';
+import { agentbenchDefinition } from '../../src/plugins/evaluator-agentbench/index.js';
+import { operatorbenchDefinition } from '../../src/plugins/evaluator-operatorbench/index.js';
 import { prepareEvaluationConfig as prepareKernelConfig } from '../../src/plugins/evaluator-operatorbench/service.js';
 import { registerBuiltins } from '../../src/runtime/builtins.js';
 import { managerFixture } from '../helpers/manager-fixture.js';
@@ -482,12 +483,25 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   assert.deepEqual((await f.read(callId)).attempts, []);
   const registry = new Registry();
   t.after(() => registry.dispose());
-  registerOperatorbench(registry);
+  registry.registerOperation(operatorbenchDefinition);
   const owner = cleanupContext(context, 'evaluator.operatorbench');
-  await registry.dispatch(owner.pluginId, 'rsi/cleanup', {
-    ...owner,
-    signal: AbortSignal.abort(new Error('operator cleanup deadline')),
-  });
+  const task = join(
+    process.cwd(),
+    'examples/artifacts/kernel/transpose-copy/task',
+  );
+  await withBindingInstance(
+    registry,
+    {
+      plugin: owner.pluginId,
+      config: { benchmark: 'kernel', task: { directory: task } },
+    },
+    context,
+    (events) =>
+      events.serial('rsi/cleanup', {
+        ...owner,
+        signal: AbortSignal.abort(new Error('operator cleanup deadline')),
+      }),
+  );
   assert.match(
     JSON.stringify((await f.read(callId)).attempts),
     /operator cleanup deadline/,
@@ -504,7 +518,7 @@ test('operator cleanup uses its call-owned kernel manifest and local evaluations
   assert.equal((await f.read(callId)).status, 'complete');
 });
 
-test('the registered AgentBench handler cleans its binding through the installed SDK without an instance', async (t) => {
+test('a temporary AgentBench instance cleans only its own binding through the installed SDK', async (t) => {
   const f = await fixture(t);
   const root = f.context.dataDirectory;
   const docker = join(root, 'docker.cjs');
@@ -546,10 +560,16 @@ test('the registered AgentBench handler cleans its binding through the installed
   });
   const registry = new Registry();
   t.after(() => registry.dispose());
-  registerAgentbench(registry);
+  registry.registerOperation(agentbenchDefinition);
   await assert.rejects(readFile(log), { code: 'ENOENT' });
   const owner = cleanupContext(f.context, 'evaluator.agentbench');
-  const results = await registry.dispatch(owner.pluginId, 'rsi/cleanup', owner);
+  const results = await withBindingInstance(
+    registry,
+    { plugin: owner.pluginId, config: agentConfig },
+    f.context,
+    (events) => events.serial('rsi/cleanup', owner),
+  );
+  assert.ok(results);
   const receipt = await f.read(entry.key);
   assert.equal(receipt.status, 'complete', JSON.stringify(receipt.attempts));
   assert.deepEqual(

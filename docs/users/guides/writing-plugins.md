@@ -47,14 +47,14 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 
 - Without `implementationDigest`, Registry generates a digest from the `create` function text, contract, and configuration Schema.
 
-### Optional registration events
+### Optional diagnostic and cleanup events
 
-Register the plugin once with `registry.registerOperation(definition)`. For optional `doctor` or `cleanup` support, pass a callback to that same call and subscribe to the events you implement. See [Plugin diagnostics and resource cleanup](runtime-events.md#plugin-diagnostics-and-resource-cleanup) for an example.
+Register the plugin with `registry.registerOperation(definition)`. In `create(config, ctx)`, subscribe with `ctx.event.on` to either or both events as needed. Both commands create a temporary instance, including for cleanup previews. Defer changes to reusable resources until the cleanup handler receives `dryRun: false`. See [Plugin diagnostics and resource cleanup](runtime-events.md#plugin-diagnostics-and-resource-cleanup).
 
 | Capability | Registration                                 | Handler result                                                     |
 | ---------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| `doctor`   | `events.on('rsi/doctor', checkEnvironment)`  | `DoctorResult` with diagnostics for the binding.                   |
-| `cleanup`  | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results, or `[]` if none. |
+| `doctor`   | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorResult` with diagnostics for the binding.                   |
+| `cleanup`  | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results, or `[]` if none. |
 
 ### configSchema
 

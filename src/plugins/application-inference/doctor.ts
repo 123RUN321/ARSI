@@ -123,12 +123,6 @@ export async function checkInferenceApplication(
               `credentials.apiKeyEnv references missing or empty environment variable ${name}`,
             );
         }
-        // Creation validates launch settings but leaves service ownership to acquire.
-        const operation = await context.binding.definition.create(
-          config,
-          context.runtime.extend({ signal }),
-        );
-        await operation.dispose();
         signal.throwIfAborted();
       },
       { signal: context.signal },

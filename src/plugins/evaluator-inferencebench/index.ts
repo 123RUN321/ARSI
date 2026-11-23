@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   InferencebenchInput,
   InferencebenchOutput,
@@ -18,11 +17,8 @@ export const inferencebenchDefinition: OperationDefinition<
     'Measure inference instances with the Evaluator SDK InferenceBench.',
   contract: inferencebenchContract,
   configSchema,
-  create: createInferencebench,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', inferencebenchDoctor);
+    return createInferencebench(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(inferencebenchDefinition, (events) => {
-    events.on('rsi/doctor', inferencebenchDoctor);
-  });
-}

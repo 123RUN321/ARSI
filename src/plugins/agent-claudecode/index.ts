@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import { checkClaudeCodeAgent } from './doctor.js';
 import type {
   AgentInput,
@@ -18,11 +17,8 @@ export const claudeCodeDefinition: OperationDefinition<
   description: 'Execute agent tasks through the Claude Code backend.',
   contract: agentContract,
   configSchema,
-  create: createAgentClaudeCode,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkClaudeCodeAgent);
+    return createAgentClaudeCode(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(claudeCodeDefinition, (events) => {
-    events.on('rsi/doctor', checkClaudeCodeAgent);
-  });
-}

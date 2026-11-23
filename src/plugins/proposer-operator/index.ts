@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   OperationDefinition,
   OperatorProposerInput,
@@ -17,11 +16,8 @@ export const operatorProposerDefinition: OperationDefinition<
   id: 'proposer.operator',
   contract: operatorProposerContract,
   configSchema,
-  create: createOperatorProposer,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkOperatorProposer);
+    return createOperatorProposer(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(operatorProposerDefinition, (events) => {
-    events.on('rsi/doctor', checkOperatorProposer);
-  });
-}

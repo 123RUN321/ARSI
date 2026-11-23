@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   ApplicationInput,
   ApplicationOutput,
@@ -18,11 +17,11 @@ export const agentbundleDefinition: OperationDefinition<
     'Manage file-based agent bundles and isolated execution instances.',
   contract: applicationContract,
   configSchema,
-  create: createApplicationAgentbundle,
+  async create(config, ctx) {
+    ctx.event.on('rsi/doctor', (context) =>
+      checkAgentbundleApplication(context, operation),
+    );
+    const operation = await createApplicationAgentbundle(config, ctx);
+    return operation;
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(agentbundleDefinition, (events) => {
-    events.on('rsi/doctor', checkAgentbundleApplication);
-  });
-}

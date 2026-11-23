@@ -31,9 +31,9 @@ flowchart TD
     F -- No --> G["Record recipe.validate failure"]
     F -- Yes --> H["Prepare a temporary Runtime<br/>Visit the Application, bindings and Reflection"]
     H --> I["Check declared local paths"]
-    I --> J{"Full check with a<br/>registered doctor handler?"}
-    J -- Yes --> K["Dispatch rsi/doctor to this binding"]
-    K --> Q["Return DoctorResult or record a script failure"]
+    I --> J{"Full check?"}
+    J -- Yes --> K["Create the binding and call its optional rsi/doctor"]
+    K --> Q["Record results, missing handler or failure"]
     J -- No --> L["Mark the plugin check unchecked"]
     Q --> M["Add binding metadata and collect results"]
     L --> M
@@ -50,7 +50,7 @@ flowchart TD
    - Probes use the configuration produced by merging Policy defaults and Recipe overrides.
    - A loading error produces a failed diagnostic and stops component probes.
 3. **Check declared local paths.** For the Application, each effective binding and the configured Reflection implementation, doctor checks local files and directories marked with `x-rsi-path` for existence, type and readability.
-4. **Run component checks.** By default, the framework dispatches `rsi/doctor` to each effective binding with a registered handler and collects its `DoctorResult`. Unavailable prerequisites can leave dependent checks `unchecked` while independent checks continue. `--static` skips all callbacks, including their model access, instance preparation and SDK probes. The report marks `<binding>.plugin` as `unchecked` when the flag skips a callback or the plugin has no handler, with a reason for each case.
+4. **Run component checks.** Full doctor creates a temporary instance for each effective binding, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`. `--static` runs only the common checks and skips instance creation.
 5. **Clean up and report.** RSI checks use isolated temporary storage, propagate cancellation, release the instances and processes they create, and remove temporary files. Checks can read existing artifacts as inputs. RSI keeps its captures and writes in the temporary Runtime.
 
 ### Reading the JSON report
@@ -126,13 +126,13 @@ All three Evaluators use their configuration adapters to call the installed Eval
 
 ## 4. Connecting custom components
 
-Subscribe to `rsi/doctor` when registering the component. See [Write a plugin](writing-plugins.md).
+Subscribe to `rsi/doctor` in the component’s `create(config, ctx)`. See [Write a plugin](writing-plugins.md).
 
 ### Write the diagnostic handler
 
 Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/contracts` or `arsi`.
 
-- The registration owns the handler. The `doctor` command supplies each binding’s effective configuration.
+- Each temporary instance owns its handler. The `doctor` command supplies each binding’s effective configuration.
 - When a component has no `rsi/doctor` subscription, the framework still runs the common checks and marks the component-specific `plugin` check as `unchecked`.
 
 | Type                 | Purpose                                                                                                                                                                                                                                                     |
@@ -170,16 +170,15 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 
 - In the example above, `runDoctorCheck` is an optional helper that sets a deadline for one probe and returns a check result.
 
-Register the diagnostic function in the extension entry point.
+Subscribe in the plugin factory. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.
 
 ```js
-import { customDefinition } from './plugin.js';
+import { createOperation } from './service.js';
 import { checkCustom } from './doctor.js';
 
-export function register(registry) {
-  registry.registerOperation(customDefinition, (events) => {
-    events.on('rsi/doctor', checkCustom);
-  });
+export function create(config, ctx) {
+  ctx.event.on('rsi/doctor', checkCustom);
+  return createOperation(config, ctx);
 }
 ```
 

@@ -120,13 +120,14 @@ ctx.event.emit('rsi/agent-observation', {
 
 ### 插件诊断与资源清理
 
-插件在注册时按需订阅以下事件。框架按绑定派发并等待处理器返回结果。手动执行 `arsi cleanup` 时，框架从历次保存的 Recipe 收集绑定，按 `(bindingId, pluginId)` 去重。即使续跑更换了插件并复用全部评测结果，之后手动清理时，订阅了事件的新旧插件也都会收到通知。没有资源的插件返回 `[]`。
+插件在 `create(config, ctx)` 中按需订阅这两个事件。完整 `doctor` 为每个生效绑定创建临时实例。手动 `cleanup` 从当前和历次归档的 Recipe 中收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近一次保存的配置创建实例。即使续跑复用了全部评测结果，也能找到旧插件。框架等待回调和实例的 `dispose()` 完成，再处理下一个绑定。
 
 ```js
-registry.registerOperation(myPlugin, (events) => {
-  events.on('rsi/doctor', checkEnvironment);
-  events.on('rsi/cleanup', cleanupResources);
-});
+export function create(config, ctx) {
+  ctx.event.on('rsi/doctor', checkEnvironment);
+  ctx.event.on('rsi/cleanup', cleanupResources);
+  return createOperation(config, ctx);
+}
 ```
 
 - `rsi/doctor` 为当前 Recipe 绑定返回 `DoctorResult`，由 RSI 汇总。

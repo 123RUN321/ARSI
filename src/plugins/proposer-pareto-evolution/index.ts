@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import {
   iterativeProposerContract,
   type IterativeProposerInput,
@@ -19,11 +18,8 @@ export const paretoEvolutionProposerDefinition: OperationDefinition<
     'Maintain a prompt candidate population with Pareto parent sampling, mutation proposals and ancestry-aware crossover.',
   contract: iterativeProposerContract,
   configSchema,
-  create: createParetoEvolutionProposer,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkParetoEvolutionProposer);
+    return createParetoEvolutionProposer(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(paretoEvolutionProposerDefinition, (events) => {
-    events.on('rsi/doctor', checkParetoEvolutionProposer);
-  });
-}

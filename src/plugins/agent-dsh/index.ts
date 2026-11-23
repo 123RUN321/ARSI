@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import { checkDshAgent } from './doctor.js';
 import type {
   AgentInput,
@@ -18,11 +17,8 @@ export const dshDefinition: OperationDefinition<
   description: 'Execute agent tasks through the native DSH CLI.',
   contract: agentContract,
   configSchema,
-  create: createAgentDsh,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkDshAgent);
+    return createAgentDsh(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(dshDefinition, (events) => {
-    events.on('rsi/doctor', checkDshAgent);
-  });
-}

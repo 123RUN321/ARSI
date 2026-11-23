@@ -402,7 +402,7 @@ test('Pi preserves every configured reasoning level including xhigh', async () =
 test('Pi rejects invalid settings at creation before resolving credentials or invoking a model', async () => {
   const f = await modelFixture([{}]);
   try {
-    const definition: OperationDefinition = piDefinition;
+    const create: OperationDefinition['create'] = createAgentPi;
     const invalidConfigs: JsonObject[] = [
       { thinkingLevel: 'invalid' },
       { bashMode: 'invalid' },
@@ -417,7 +417,7 @@ test('Pi rejects invalid settings at creation before resolving credentials or in
     ];
     for (const invalid of invalidConfigs) {
       await assert.rejects(
-        definition.create(invalid, f.services),
+        create(invalid, f.services),
         /thinkingLevel|bashMode|contextWindow|retries|retryBaseDelayMs|maxTokens|additional properties/,
       );
     }

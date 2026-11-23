@@ -31,9 +31,9 @@ flowchart TD
     F -- 否 --> G["记录 recipe.validate 失败"]
     F -- 是 --> H["准备隔离临时 Runtime<br/>遍历 Application、绑定和 Reflection"]
     H --> I["检查当前组件声明的本地路径"]
-    I --> J{"执行完整检查且组件<br/>注册了 doctor 处理器？"}
-    J -- 是 --> K["向当前绑定派发 rsi/doctor"]
-    K --> Q["返回 DoctorResult 或记录脚本失败"]
+    I --> J{"执行完整检查？"}
+    J -- 是 --> K["创建绑定实例，调用其可选的 rsi/doctor"]
+    K --> Q["汇总结果、未订阅或初始化失败"]
     J -- 否 --> L["将该组件的 plugin 检查<br/>记为 unchecked"]
     Q --> M["补充绑定信息并汇集结果"]
     L --> M
@@ -50,7 +50,7 @@ flowchart TD
    - 探测使用合并 Policy 默认配置与 Recipe 覆盖后的配置。
    - 加载失败时输出失败诊断，不再执行组件探测。
 3. **检查已声明的本地路径。** 对 Application、每个生效绑定及已配置的 Reflection 实现，检查 Schema 中用 `x-rsi-path` 标记的本地文件或目录是否存在、类型是否正确、是否可读。
-4. **执行组件检查。** 默认情况下，框架向注册了 `rsi/doctor` 处理器的每个生效绑定派发事件，并收集返回的 `DoctorResult`。前提不可用时，依赖检查可记为 `unchecked`，独立检查继续运行。`--static` 跳过所有回调，省去回调中的模型访问、实例准备和 SDK 探测。使用该选项或组件省略回调时，报告将 `<binding>.plugin` 记为 `unchecked` 并说明原因。
+4. **执行组件检查。** 完整检查为每个生效绑定创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。使用 `--static` 只进行公共检查，跳过实例创建。
 5. **清理并输出。** RSI 检查使用隔离临时存储，传递取消信号，释放自己创建的实例与进程，并删除临时文件。原有 artifacts 可作为输入读取，RSI 产生的捕获与写入留在临时 Runtime 内。
 
 ### 运行结果
@@ -126,13 +126,13 @@ flowchart TD
 
 ## 4. 自定义组件如何接入 doctor
 
-在注册组件时订阅 `rsi/doctor`。参见[编写插件](writing-plugins_zh.md)。
+在组件的 `create(config, ctx)` 中订阅 `rsi/doctor`。参见[编写插件](writing-plugins_zh.md)。
 
 ### 编写诊断事件处理器
 
 从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorResult`。
 
-- 处理器随插件注册生效。`doctor` 命令为每个绑定传入其生效配置。
+- 处理器由临时插件实例持有。`doctor` 命令为每个绑定传入其生效配置。
 - 组件未订阅 `rsi/doctor` 时，框架仍执行通用检查，并将组件专用的 `plugin` 项标为 `unchecked`。
 
 | 类型                 | 用途                                                                                                                                                            |
@@ -170,16 +170,15 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 
 - 上面示例的`runDoctorCheck` 是可选工具，为单项探测设置时限并返回检查结果。
 
-在扩展入口注册检测函数。
+在插件的工厂函数中订阅事件，扩展入口照常调用 `registry.registerOperation(customDefinition)`。
 
 ```js
-import { customDefinition } from './plugin.js';
+import { createOperation } from './service.js';
 import { checkCustom } from './doctor.js';
 
-export function register(registry) {
-  registry.registerOperation(customDefinition, (events) => {
-    events.on('rsi/doctor', checkCustom);
-  });
+export function create(config, ctx) {
+  ctx.event.on('rsi/doctor', checkCustom);
+  return createOperation(config, ctx);
 }
 ```
 

@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
 import type {
   AgentbenchInput,
@@ -18,14 +17,11 @@ export const agentbenchDefinition: OperationDefinition<
   description: 'Measure agent instances with the Evaluator SDK AgentBench.',
   contract: agentbenchContract,
   configSchema,
-  create: createAgentbench,
-};
-
-export function register(registry: Registry): void {
-  registry.registerOperation(agentbenchDefinition, (events) => {
-    events.on('rsi/doctor', agentbenchDoctor);
-    events.on('rsi/cleanup', (context) =>
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', agentbenchDoctor);
+    ctx.event.on('rsi/cleanup', (context) =>
       cleanupEvaluatorBinding(context, 'agentbundle'),
     );
-  });
-}
+    return createAgentbench(config, ctx);
+  },
+};

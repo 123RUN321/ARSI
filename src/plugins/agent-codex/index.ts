@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   AgentInput,
   AgentOutput,
@@ -18,11 +17,8 @@ export const codexDefinition: OperationDefinition<
   description: 'Execute agent tasks through the Codex backend.',
   contract: agentContract,
   configSchema,
-  create: createAgentCodex,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkCodexAgent);
+    return createAgentCodex(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(codexDefinition, (events) => {
-    events.on('rsi/doctor', checkCodexAgent);
-  });
-}

@@ -1,3 +1,4 @@
+import { createGridProposer } from '../../src/plugins/proposer-grid/service.js';
 import test from 'node:test';
 import { RuntimeContext } from '../../src/contracts/index.js';
 import assert from 'node:assert/strict';
@@ -150,7 +151,7 @@ for (const mode of ['values', 'json', 'sixteen'] as const) {
           { name: 'b', values: [32, 4, 16, 1] },
           { name: 'a', values: [2048, 4096, 8192, 16384] },
         ];
-      const proposer = await gridProposerDefinition.create(config, services);
+      const proposer = await createGridProposer(config, services);
       const expected: JsonObject[] = [
         { a: 0.1, b: 1 },
         { a: 0.2, b: 1 },
@@ -202,7 +203,7 @@ for (const mode of ['values', 'json', 'sixteen'] as const) {
           { ...expected[cursor], fixed: true },
         );
       }
-      const restored = await gridProposerDefinition.create(
+      const restored = await createGridProposer(
         parseConfig<GridProposerConfig>(
           gridProposerDefinition.configSchema,
           JSON.parse(canonical(config)),
@@ -261,7 +262,7 @@ for (const mode of ['values', 'json', 'sixteen'] as const) {
 }
 
 test('grid rejects invalid spaces and unsafe paths before allocating resources', async () => {
-  const definition: OperationDefinition = gridProposerDefinition;
+  const create: OperationDefinition['create'] = createGridProposer;
   const configs: JsonObject[] = [
     {
       path: '../escape.json',
@@ -286,14 +287,14 @@ test('grid rejects invalid spaces and unsafe paths before allocating resources',
   ];
   for (const config of configs) {
     await assert.rejects(
-      definition.create(config, new RuntimeContext()),
+      create(config, new RuntimeContext()),
       /path|searchSpace|step|cardinality|max/,
     );
   }
 });
 
 test('grid rejects invalid JSON choices and obsolete interval fields', async () => {
-  const definition: OperationDefinition = gridProposerDefinition;
+  const create: OperationDefinition['create'] = createGridProposer;
   const invalidAxes: JsonObject[] = [
     { name: 'x', values: [] },
     { name: 'x', values: [1, 1] },
@@ -320,7 +321,7 @@ test('grid rejects invalid JSON choices and obsolete interval fields', async () 
   ];
   for (const axis of invalidAxes)
     await assert.rejects(
-      definition.create(
+      create(
         { path: 'tuning.json', searchSpace: [axis] },
         new RuntimeContext(),
       ),
@@ -338,7 +339,7 @@ test('grid supports large spaces when their cursors are safe integers', async ()
   }));
   const path = 'tuning.json';
   const totalCandidates = 2 ** 52;
-  const proposer = await gridProposerDefinition.create(
+  const proposer = await createGridProposer(
     { path, searchSpace: searchSpace.slice(0, -1) },
     context,
   );
@@ -354,7 +355,7 @@ test('grid supports large spaces when their cursors are safe integers', async ()
     await proposer.dispose();
   }
   await assert.rejects(
-    gridProposerDefinition.create({ path, searchSpace }, context),
+    createGridProposer({ path, searchSpace }, context),
     /cardinality/,
   );
 });

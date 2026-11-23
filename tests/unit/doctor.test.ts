@@ -37,8 +37,8 @@ async function fixture(): Promise<{
   const registry = new Registry();
   const registrations = new Map<string, () => void>();
   const register = registry.registerOperation.bind(registry);
-  registry.registerOperation = (definition, subscribe) => {
-    const dispose = register(definition, subscribe);
+  registry.registerOperation = (definition) => {
+    const dispose = register(definition);
     registrations.set(definition.id, dispose);
     return dispose;
   };
@@ -55,7 +55,12 @@ async function fixture(): Promise<{
       properties: { input: { type: 'string', 'x-rsi-path': 'file' } },
     },
     async create() {
-      throw new Error('Doctor must not instantiate an uncovered plugin');
+      return {
+        async execute() {
+          return assert.fail('doctor cannot run this plugin');
+        },
+        async dispose() {},
+      };
     },
   });
   const policy = join(root, 'policy.yaml');
@@ -106,9 +111,18 @@ async function fixture(): Promise<{
       for (const [id, doctor] of Object.entries(overrides)) {
         const definition = registry.get(id);
         registrations.get(id)!();
-        registry.registerOperation(definition, (events) =>
-          events.on('rsi/doctor', doctor),
-        );
+        registry.registerOperation({
+          ...definition,
+          async create(_config, ctx) {
+            ctx.event.on('rsi/doctor', doctor);
+            return {
+              async execute() {
+                return assert.fail('doctor cannot run the policy');
+              },
+              async dispose() {},
+            };
+          },
+        });
       }
     },
     async dispose() {
@@ -136,17 +150,59 @@ function verifyReport(report: DoctorReport): void {
       );
 }
 
-test('built-ins retain doctor coverage with the operator summarizer unchecked', async () => {
-  const runtime = await createRuntime({ homeDirectory: false });
-  try {
-    const plugins = runtime.registry.catalog().plugins;
-    assert.deepEqual(
-      plugins.filter((id) => !runtime.registry.handles(id, 'rsi/doctor')),
-      ['summarizer.operator'],
-    );
-  } finally {
-    await runtime.dispose();
-  }
+test('an initialization failure belongs to its binding, static mode skips creation, and full doctor disposes live peers', async (t) => {
+  const f = await fixture();
+  t.after(f.dispose);
+  const log: string[] = [];
+  const { registry } = f.runtime;
+  registry.registerOperation({
+    ...registry.get('selector.metric'),
+    id: 'selector.probe',
+    async create(_config, ctx) {
+      log.push('create ' + ctx.bindingId);
+      ctx.event.on('rsi/doctor', () => {
+        log.push('doctor ' + ctx.bindingId);
+        return { checks: [{ id: 'alive', status: 'passed' }] };
+      });
+      if (ctx.bindingId === 'left') throw new Error('dependency unavailable');
+      return {
+        async execute() {
+          return assert.fail('unexpected execution');
+        },
+        async dispose() {
+          await Promise.resolve();
+          log.push('dispose ' + ctx.bindingId);
+        },
+      };
+    },
+  });
+  const recipe = object(JSON.parse(await readFile(f.path, 'utf8')));
+  recipe.bindings = {
+    left: { plugin: 'selector.probe' },
+    right: { plugin: 'selector.probe' },
+  };
+  await writeFile(f.path, JSON.stringify(recipe));
+  const staticReport = await doctorRecipe(f.runtime, f.path, {
+    staticOnly: true,
+  });
+  assert.equal(staticReport.summary.failed, 0);
+  assert.deepEqual(log, []);
+  const full = await doctorRecipe(f.runtime, f.path);
+  assert.equal(full.summary.failed, 1);
+  assert.match(
+    full.checks.find((check) => check.id === 'left.script')?.reason ?? '',
+    /dependency unavailable/,
+  );
+  assert.equal(
+    full.checks.find((check) => check.id === 'right.alive')?.status,
+    'passed',
+  );
+  assert.deepEqual(log, [
+    'create left',
+    'create right',
+    'doctor right',
+    'dispose right',
+  ]);
 });
 
 test('doctor checks effective per-binding overrides and reports uncovered implementations without experiments', async () => {

@@ -197,11 +197,8 @@ import {runDoctorCheck} from 'arsi';
 export const customDefinition={
  id:'proposer.consumer-doctor',contract:proposerContract,
  configSchema:{type:'object',properties:{inputFile:{type:'string','x-rsi-path':'file'}},required:['inputFile']},
- async create(){throw Error('Doctor must not instantiate the proposer');}
-};
-export function register(registry){
- registry.registerOperation(customDefinition, (events) => {
-  events.on('rsi/doctor', async (context) => {
+ async create(config, ctx){
+  ctx.event.on('rsi/doctor', async (context) => {
    const input=await runDoctorCheck('read-input',async signal=>{
     if(context.binding.pluginId!=='proposer.consumer-doctor')throw Error('Missing binding metadata');
     const value=await readFile(context.binding.config.inputFile,{encoding:'utf8',signal});
@@ -209,11 +206,15 @@ export function register(registry){
    },{signal:context.signal});
    return {checks:[input,{id:'remote',status:'unchecked',reason:'This fixture does not probe remote services.'}]};
   });
-  events.on('rsi/cleanup', ({experimentId,bindingId,dryRun}) => [
+  ctx.event.on('rsi/cleanup', ({experimentId,bindingId,dryRun}) => [
    {key:experimentId + '/' + bindingId,status:dryRun ? 'preview':'complete'},
   ]);
- });
- registry.registerOperation({id:'consumer.doctor-application',contract:applicationContract,configSchema:{type:'object'},async create(){throw Error('Doctor must not instantiate the Application');}});
+  return {async execute(){throw Error('unexpected proposer execution');},async dispose(){}};
+ }
+};
+export function register(registry){
+ registry.registerOperation(customDefinition);
+ registry.registerOperation({id:'consumer.doctor-application',contract:applicationContract,configSchema:{type:'object'},async create(){return {async execute(){throw Error('unexpected Application execution');},async dispose(){}};}});
  registry.registerPolicy('consumer.doctor',fileURLToPath(new URL('./policy.json',import.meta.url)));
 }
 `,
@@ -295,7 +296,7 @@ export function register(registry){
       ),
     (error) =>
       error.status === 1 &&
-      /Doctor must not instantiate the Application/.test(error.stderr),
+      /unexpected Application execution/.test(error.stderr),
   );
   for (const dryRun of [true, false]) {
     const report = JSON.parse(
@@ -903,13 +904,14 @@ export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Con
 const rootDoctor:RootOperationDoctor<Config>=checkCustom;void rootDoctor;
 export const doctorDefinition:OperationDefinition<ProposerInput,ProposerOutput,Config>={
  id:'proposer.custom',contract:proposerContract,configSchema:{type:'object'},
- async create(){return{async execute(input){return{status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'};},async dispose(){}};}
+ async create(_config, ctx){
+   ctx.event.on('rsi/doctor', context => checkCustom(context));
+   ctx.event.on('rsi/cleanup', ({bindingId, dryRun}) => [{key: bindingId, status: dryRun ? 'preview' : 'complete'}]);
+   return {async execute(input){return{status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'};},async dispose(){}};
+ }
 };
 export function register(registry: import('arsi').Registry): void {
-  registry.registerOperation(doctorDefinition, (events) => {
-    events.on('rsi/doctor', context => checkCustom(context));
-    events.on('rsi/cleanup', ({bindingId, dryRun}) => [{key: bindingId, status: dryRun ? 'preview' : 'complete'}]);
-  });
+ registry.registerOperation(doctorDefinition);
 }
 `,
   );
@@ -943,7 +945,7 @@ export function register(registry: import('arsi').Registry): void {
     'event-this': `services.event.emit({tag:1}, 'consumer/notice', {count:1});`,
     'definition-listeners': `import {definition} from './events-consumer.js'; const invalid:typeof definition={...definition,listeners:{}};void invalid;`,
     'definition-doctor': `import {doctorDefinition,checkCustom} from './doctor-consumer.js';const invalid:typeof doctorDefinition={...doctorDefinition,doctor:checkCustom};void invalid;`,
-    'doctor-result': `import {doctorDefinition} from './doctor-consumer.js';declare const registry:import('arsi').Registry;registry.registerOperation(doctorDefinition,events=>events.on('rsi/doctor',()=>42));`,
+    'doctor-result': `services.event.on('rsi/doctor',()=>42);`,
     'listener-context': `services.event.on('consumer/notice',(_event,context:string)=>{void context;});`,
     'serial-return': `services.event.on('rsi/before-experiment',()=>true);`,
     'admission-return': `services.event.on('rsi/before-call',async()=>({kind:'invalid'}));`,

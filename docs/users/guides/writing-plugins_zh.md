@@ -47,14 +47,14 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 
 - 省略 `implementationDigest` 时，Registry 根据 `create` 函数文本、契约和配置 Schema 生成摘要。
 
-### 可选的注册事件
+### 可选的诊断和清理事件
 
-用 `registry.registerOperation(definition)` 注册一次插件即可。`doctor` 和 `cleanup` 都是可选能力，需要时给这次调用传入回调，在其中订阅要实现的事件。示例见[插件诊断与资源清理](runtime-events_zh.md#插件诊断与资源清理)。
+用 `registry.registerOperation(definition)` 注册插件。按需在 `create(config, ctx)` 中通过 `ctx.event.on` 订阅 `doctor` 和 `cleanup`。两个事件都可省略。诊断和清理命令都会创建临时实例，清理预览也如此。对可复用资源的修改应放在收到 `dryRun: false` 的清理回调中。示例见[插件诊断与资源清理](runtime-events_zh.md#插件诊断与资源清理)。
 
 | 能力      | 注册方式                                     | 处理器返回值                                          |
 | --------- | -------------------------------------------- | ----------------------------------------------------- |
-| `doctor`  | `events.on('rsi/doctor', checkEnvironment)`  | `DoctorResult`，包含当前绑定的诊断结果。              |
-| `cleanup` | `events.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，列出清理或预览结果。无资源时返回 `[]`。 |
+| `doctor`  | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorResult`，包含当前绑定的诊断结果。              |
+| `cleanup` | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，列出清理或预览结果。无资源时返回 `[]`。 |
 
 ### configSchema
 

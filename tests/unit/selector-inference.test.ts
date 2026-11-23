@@ -1,3 +1,4 @@
+import { createInferenceSelector } from '../../src/plugins/selector-inference/service.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -79,7 +80,7 @@ async function selectionFixture() {
     });
   }
   async function select(config: MetricSelectorConfig = {}) {
-    const selector = await inferenceSelectorDefinition.create(
+    const selector = await createInferenceSelector(
       {
         metric: 'throughput',
         direction: 'maximize',

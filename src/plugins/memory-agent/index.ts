@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   MemoryInput,
   MemoryOutput,
@@ -17,11 +16,8 @@ export const memoryDefinition: OperationDefinition<
   description: 'Consolidate experiment experience into reusable memory.',
   contract: memoryContract,
   configSchema,
-  create: createMemoryAgent,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkAgentEditor);
+    return createMemoryAgent(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(memoryDefinition, (events) => {
-    events.on('rsi/doctor', checkAgentEditor);
-  });
-}

@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   AgentInput,
   AgentOutput,
@@ -17,11 +16,8 @@ export const piDefinition: OperationDefinition<
   description: 'Execute agent tasks through the Pi coding agent backend.',
   contract: agentContract,
   configSchema,
-  create: createAgentPi,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkPiAgent);
+    return createAgentPi(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(piDefinition, (events) => {
-    events.on('rsi/doctor', checkPiAgent);
-  });
-}

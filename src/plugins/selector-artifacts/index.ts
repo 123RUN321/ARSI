@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   ArtifactSelectorInput,
   ArtifactSelectorOutput,
@@ -17,11 +16,8 @@ export const artifactSelectorDefinition: OperationDefinition<
   description: 'Select candidates by anonymous artifact review.',
   contract: artifactSelectorContract,
   configSchema,
-  create: createArtifactSelector,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkAgentEditor);
+    return createArtifactSelector(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(artifactSelectorDefinition, (events) => {
-    events.on('rsi/doctor', checkAgentEditor);
-  });
-}

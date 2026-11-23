@@ -21,5 +21,5 @@ export interface OperationDefinition<
   implementationDigest?: string;
   contract: PluginContract;
   configSchema: JsonSchema;
-  create(config: C, context: RuntimeContext): Promise<Operation<I, O>>;
+  create(config: C, context: RuntimeContext<C>): Promise<Operation<I, O>>;
 }

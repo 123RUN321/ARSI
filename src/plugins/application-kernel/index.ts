@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   ApplicationInput,
   ApplicationOutput,
@@ -20,11 +19,11 @@ export const kernelApplicationDefinition: OperationDefinition<
   id: 'application.kernel',
   contract: applicationContract,
   configSchema,
-  create: createApplicationKernel,
+  async create(config, ctx) {
+    ctx.event.on('rsi/doctor', (context) =>
+      checkKernelApplication(context, operation),
+    );
+    const operation = await createApplicationKernel(config, ctx);
+    return operation;
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(kernelApplicationDefinition, (events) => {
-    events.on('rsi/doctor', checkKernelApplication);
-  });
-}

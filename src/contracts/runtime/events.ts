@@ -12,17 +12,20 @@ export type EventPublisher = Pick<
 >;
 
 /** Instance-owned subscriptions; publishing keeps the native Cordis overloads. */
-type EventHandler<Name extends keyof Events> = {
-  [Key in keyof Events]: (
-    this: ThisParameterType<Events[Key]>,
-    ...args: [...Parameters<Events[Key]>, RuntimeContext]
-  ) => ReturnType<Events[Key]>;
+type EventHandler<Name extends keyof Events, C extends JsonObject> = {
+  [Key in keyof Events]: Key extends keyof OperationEventMap
+    ? OperationEventMap<C>[Key]
+    : (
+        this: ThisParameterType<Events[Key]>,
+        ...args: [...Parameters<Events[Key]>, RuntimeContext]
+      ) => ReturnType<Events[Key]>;
 }[Name];
 
-export interface EventPipeline extends EventPublisher {
-  on<Name extends Exclude<keyof Events, keyof OperationEventMap>>(
+export interface EventPipeline<C extends JsonObject = JsonObject>
+  extends EventPublisher {
+  on<Name extends keyof Events>(
     name: Name,
-    handler: EventHandler<NoInfer<Name>>,
+    handler: EventHandler<NoInfer<Name>, C>,
   ): () => boolean;
 }
 
@@ -151,7 +154,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-// Events subscribed to at plugin registration
+// Binding-specific requests subscribed to in create(config, ctx)
 
 /** The framework awaits one reply from the handler for each addressed binding. */
 export interface OperationEventMap<C extends JsonObject = JsonObject> {
@@ -160,13 +163,6 @@ export interface OperationEventMap<C extends JsonObject = JsonObject> {
   'rsi/cleanup'(
     context: CleanupContext,
   ): CleanupResult[] | Promise<CleanupResult[]>;
-}
-
-export interface OperationEvents<C extends JsonObject = JsonObject> {
-  on<K extends keyof OperationEventMap>(
-    name: K,
-    handler: OperationEventMap<C>[K],
-  ): void;
 }
 
 /** A binding from a saved Recipe. Its plugin instance may never have started. */

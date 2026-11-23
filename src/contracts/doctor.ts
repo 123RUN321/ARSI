@@ -42,7 +42,7 @@ export interface DoctorBinding<C extends JsonObject = JsonObject> {
   readonly definition: OperationDefinition;
 }
 
-/** Effective bindings and Policy configuration; no experiment instance is created. */
+/** Effective bindings and Policy configuration; shared by the temporary diagnostic instances. */
 export interface DoctorRecipe {
   readonly application: DoctorBinding;
   readonly bindings: Readonly<Record<string, DoctorBinding>>;
@@ -69,7 +69,7 @@ export interface DoctorContext<C extends JsonObject = JsonObject> {
   readonly signal: AbortSignal;
 }
 
-/** An asynchronous handler for the registration-scoped `rsi/doctor` event. */
+/** An asynchronous handler for the binding instance’s `rsi/doctor` event. */
 export type OperationDoctor<C extends JsonObject = JsonObject> = (
   context: DoctorContext<C>,
 ) => Promise<DoctorResult>;

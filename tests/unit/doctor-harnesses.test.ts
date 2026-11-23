@@ -285,22 +285,31 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       await writeFile(f.path, JSON.stringify(data));
       const report = await doctorRecipe(f.runtime, f.path);
       assert.ok(report.summary.failed > 0);
-      assert.equal(
-        report.checks.find((check) => check.id === 'application.baseline')
-          ?.status,
-        'failed',
-      );
-      assert.equal(
-        report.checks.find((check) => check.id === 'application.verify-bundle')
-          ?.status,
-        'unchecked',
-      );
-      assert.equal(
-        report.checks.find(
-          (check) => check.id === 'application.acquire-instance',
-        )?.status,
-        'unchecked',
-      );
+      if (missing === 'target') {
+        const failure = report.checks.find(
+          (check) => check.id === 'application.script',
+        );
+        assert.equal(failure?.status, 'failed');
+        assert.ok(failure.reason?.includes(resource));
+      } else {
+        assert.equal(
+          report.checks.find((check) => check.id === 'application.baseline')
+            ?.status,
+          'failed',
+        );
+        assert.equal(
+          report.checks.find(
+            (check) => check.id === 'application.verify-bundle',
+          )?.status,
+          'unchecked',
+        );
+        assert.equal(
+          report.checks.find(
+            (check) => check.id === 'application.acquire-instance',
+          )?.status,
+          'unchecked',
+        );
+      }
       assert.equal(
         report.checks.find((check) => check.id === independentChecks[name])
           ?.status,

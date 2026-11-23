@@ -107,13 +107,13 @@ Experiments created before the Runtime saved control-flow decisions require a ne
 
 ## Clean up experiment resources
 
-RSI retains reusable resources after every run. When you request cleanup, RSI collects bindings from the current and archived Recipes and calls each registered handler once per distinct `(bindingId, pluginId)` pair, even if the instance never started. AgentBench and OperatorBench can release eligible SDK resources.
+RSI retains reusable resources after every run. When you request cleanup, RSI collects bindings from the current and archived Recipes and creates a temporary instance for each distinct `(bindingId, pluginId)` using its most recently saved configuration. Bindings skipped during execution are included. AgentBench and OperatorBench can release eligible SDK resources.
 
 - `arsi cleanup` or `arsi cleanup --dry-run` previews eligible resources in the current `.rsi` workspace.
 - `arsi cleanup terminal-skills-01 --dry-run` previews one experiment. Run `arsi cleanup terminal-skills-01` to release its eligible resources.
 - `arsi cleanup --all` releases eligible resources across the workspace and skips experiments in use.
 
-For custom plugins, pass the same `--plugin-dir` used to run the experiment. An unavailable plugin is reported as `pending` and other bindings are still checked.
+For custom plugins, pass the same `--plugin-dir` used to run the experiment. A missing plugin or a failed instance initialization is reported as `pending` and other bindings are still checked.
 
 Cleanup preserves checkpoints, results, logs, and resources still in use by other experiments. A later `--resume` or another experiment of the same type may take longer to start if it needs to pull or rebuild images.
 

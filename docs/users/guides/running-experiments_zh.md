@@ -61,7 +61,7 @@ arsi doctor my-experiment/recipe.yaml
 arsi run my-experiment/recipe.yaml --id terminal-skills-01
 ```
 
-- `doctor` 检查 Recipe、插件配置、契约兼容性、Policy 编译和已声明的 Reflection 资源，再向注册了 `rsi/doctor` 的每个生效绑定派发事件。单份 JSON 报告包含 `recipeId`、`summary`、`checks` 和 `missingResources`。
+- `doctor` 检查 Recipe、插件配置、契约兼容性、Policy 编译和已声明的 Reflection 资源，再为每个生效绑定创建临时实例并调用其可选的 `rsi/doctor`。单份 JSON 报告包含 `recipeId`、`summary`、`checks` 和 `missingResources`。
   - 状态为 `passed`（通过）、`failed`（失败）或 `unchecked`（未检查）。
   - 检查流程、报告解读、内置检查和自定义组件接入方式，参见 [doctor 指南](doctor_zh.md)。
 
@@ -107,13 +107,13 @@ Runtime 恢复预算用量、兼容的生效版本、调用收据和检查点，
 
 ## 清理实验资源
 
-每次运行结束后，RSI 都会保留可复用的资源。手动请求清理时，RSI 从当前和已归档的 Recipe 收集绑定，按 `(bindingId, pluginId)` 去重后逐个调用已注册的处理器。配置过但从未启动的插件也会收到通知。AgentBench 和 OperatorBench 可以释放 SDK 确认可回收的资源。
+每次运行结束后，RSI 都会保留可复用的资源。手动请求清理时，RSI 从当前和已归档的 Recipe 收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近保存的配置创建临时实例并调用其清理回调。配置过但从未启动的绑定也会参与。AgentBench 和 OperatorBench 可以释放 SDK 确认可回收的资源。
 
 - `arsi cleanup` 或 `arsi cleanup --dry-run` 预览当前 `.rsi` 工作区可释放的资源。
 - `arsi cleanup terminal-skills-01 --dry-run` 预览单个实验，执行 `arsi cleanup terminal-skills-01` 即可清理。
 - `arsi cleanup --all` 批量清理当前工作区，跳过正在运行或恢复的实验。
 
-自定义插件请传入运行实验时使用的 `--plugin-dir`。缺少插件时，该绑定会标为 `pending`，其他绑定仍会继续处理。
+自定义插件请传入运行实验时使用的 `--plugin-dir`。插件缺失或初始化失败时，该绑定会标为 `pending`，其他绑定仍会继续处理。
 
 清理会保留检查点、结果、日志，以及其他实验仍在使用的资源。之后用 `--resume` 续跑或启动同类实验时，如果需要重新拉取或构建镜像，启动时间可能会变长。
 

@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import { checkOpenCodeAgent } from './doctor.js';
 import type {
   AgentInput,
@@ -18,11 +17,8 @@ export const openCodeDefinition: OperationDefinition<
   description: 'Execute agent tasks through the OpenCode backend.',
   contract: agentContract,
   configSchema,
-  create: createAgentOpenCode,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkOpenCodeAgent);
+    return createAgentOpenCode(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(openCodeDefinition, (events) => {
-    events.on('rsi/doctor', checkOpenCodeAgent);
-  });
-}

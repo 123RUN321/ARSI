@@ -310,33 +310,30 @@ test('manual cleanup reaches the archived plugin and its unstarted replacement a
   );
   registry.registerOperation(finish);
   const notified: string[] = [];
-  registry.registerOperation(
-    {
+  const lifecycle: string[] = [];
+  for (const id of ['test.replacement', 'test.driver']) {
+    registry.registerOperation({
       ...f.manager.options.registry.get('test.driver'),
-      id: 'test.replacement',
-      async create() {
-        return assert.fail('the replacement has no unfinished evaluation');
+      id,
+      async create(_config, ctx) {
+        lifecycle.push('create ' + id);
+        ctx.event.on('rsi/cleanup', (request) => {
+          notified.push(request.pluginId + '/' + request.bindingId);
+          return id === 'test.driver'
+            ? cleanupEvaluatorBinding(request, 'kernel')
+            : [];
+        });
+        return {
+          async execute() {
+            return assert.fail('the evaluation result was reused');
+          },
+          async dispose() {
+            lifecycle.push('dispose ' + id);
+          },
+        };
       },
-    },
-    (events) =>
-      events.on('rsi/cleanup', ({ pluginId, bindingId }) => {
-        notified.push(pluginId + '/' + bindingId);
-        return [];
-      }),
-  );
-  registry.registerOperation(
-    {
-      ...f.manager.options.registry.get('test.driver'),
-      async create() {
-        return assert.fail('a reused evaluation must not create an instance');
-      },
-    },
-    (events) =>
-      events.on('rsi/cleanup', (context) => {
-        notified.push(context.pluginId + '/' + context.bindingId);
-        return cleanupEvaluatorBinding(context, 'kernel');
-      }),
-  );
+    });
+  }
   const sdk = t.mock.method(
     Evaluator.prototype,
     'cleanup',
@@ -371,6 +368,7 @@ test('manual cleanup reaches the archived plugin and its unstarted replacement a
     result,
   );
   assert.equal(evaluations, 1);
+  assert.deepEqual(lifecycle, []);
   assert.deepEqual(notified, []);
   assert.equal(sdk.mock.callCount(), 0);
   assert.deepEqual(
@@ -384,6 +382,12 @@ test('manual cleanup reaches the archived plugin and its unstarted replacement a
     new AbortController().signal,
   );
   assert.deepEqual(notified, ['test.replacement/driver', 'test.driver/driver']);
+  assert.deepEqual(lifecycle, [
+    'create test.replacement',
+    'dispose test.replacement',
+    'create test.driver',
+    'dispose test.driver',
+  ]);
   assert.deepEqual(
     report.results.map((entry) => entry.pluginId),
     ['test.driver'],
@@ -426,7 +430,7 @@ test('success and completed resume leave resource cleanup and its retries to an 
   const pending = await command('cleanup', 'test');
   assert.equal(pending.exitCode, 1);
   assert.equal(JSON.parse(pending.stdout!).results[0].status, 'pending');
-  assert.deepEqual(log, ['execute', 'dispose', 'cleanup']);
+  assert.deepEqual(log, ['execute', 'dispose', 'cleanup', 'dispose']);
   ready = true;
   assert.deepEqual(
     await f.manager.run(join(f.manager.rootDirectory, 'recipe.yaml'), {
@@ -435,11 +439,18 @@ test('success and completed resume leave resource cleanup and its retries to an 
     }),
     result,
   );
-  assert.deepEqual(log, ['execute', 'dispose', 'cleanup']);
+  assert.deepEqual(log, ['execute', 'dispose', 'cleanup', 'dispose']);
   const completed = await command('cleanup', 'test');
   assert.equal(completed.exitCode, 0);
   assert.equal(JSON.parse(completed.stdout!).results[0].status, 'complete');
-  assert.deepEqual(log, ['execute', 'dispose', 'cleanup', 'cleanup']);
+  assert.deepEqual(log, [
+    'execute',
+    'dispose',
+    'cleanup',
+    'dispose',
+    'cleanup',
+    'dispose',
+  ]);
 });
 
 test('manual cleanup awaits each distinct binding in this experiment’s saved Recipes', async (t) => {
@@ -454,8 +465,9 @@ test('manual cleanup awaits each distinct binding in this experiment’s saved R
         second: { plugin: 'test.driver', config: {} },
         retired: { plugin: 'test.driver', config: {} },
       },
-      driverEvents(events) {
+      driverEvents(events, config) {
         events.on('rsi/cleanup', async ({ bindingId, pluginId, dryRun }) => {
+          if (bindingId === 'driver') assert.equal(config.revision, 'latest');
           assert.equal(++active, 1);
           await new Promise<void>((resolve) => setImmediate(resolve));
           notified.push(pluginId + '/' + bindingId);
@@ -469,28 +481,52 @@ test('manual cleanup awaits each distinct binding in this experiment’s saved R
   const { manager } = f;
   const registry = manager.options.registry;
   const driver = registry.get('test.driver');
-  registry.registerOperation({ ...driver, id: 'test.old' }, (events) =>
-    events.on('rsi/cleanup', ({ pluginId, bindingId }) => {
-      notified.push(pluginId + '/' + bindingId);
-      throw new Error('temporarily unavailable');
-    }),
-  );
-  const unload = registry.registerOperation({ ...driver, id: 'test.missing' });
-  registry.registerOperation({ ...driver, id: 'test.foreign' }, (events) =>
-    events.on('rsi/cleanup', () =>
-      assert.fail('another experiment received cleanup'),
-    ),
-  );
+  const inactive = {
+    async execute() {
+      throw new Error('stop before cleanup');
+    },
+    async dispose() {},
+  };
+  registry.registerOperation({
+    ...driver,
+    id: 'test.old',
+    async create(config, ctx) {
+      ctx.event.on('rsi/cleanup', ({ pluginId, bindingId }) => {
+        assert.equal(config.revision, 'archived');
+        notified.push(pluginId + '/' + bindingId);
+        throw new Error('temporarily unavailable');
+      });
+      return inactive;
+    },
+  });
+  const unload = registry.registerOperation({
+    ...driver,
+    id: 'test.missing',
+    async create() {
+      return inactive;
+    },
+  });
+  registry.registerOperation({
+    ...driver,
+    id: 'test.foreign',
+    async create(_config, ctx) {
+      ctx.event.on('rsi/cleanup', () =>
+        assert.fail('another experiment received cleanup'),
+      );
+      return inactive;
+    },
+  });
   const path = join(manager.rootDirectory, 'recipe.yaml');
   const recipe = parseDocument(await readFile(path, 'utf8'));
   recipe.setIn(['bindings', 'retired', 'plugin'], 'test.missing');
-  for (const [id, pluginId, resume] of [
-    ['peer', 'test.foreign', false],
-    ['test', 'test.old', false],
-    ['test', 'test.driver', true],
-    ['test', 'test.driver', true],
+  for (const [id, pluginId, resume, revision] of [
+    ['peer', 'test.foreign', false, 'peer'],
+    ['test', 'test.old', false, 'archived'],
+    ['test', 'test.driver', true, 'previous'],
+    ['test', 'test.driver', true, 'latest'],
   ] as const) {
     recipe.setIn(['bindings', 'driver', 'plugin'], pluginId);
+    recipe.setIn(['bindings', 'driver', 'config', 'revision'], revision);
     await writeFile(path, recipe.toString());
     await assert.rejects(
       manager.run(path, { id, resume }),
@@ -523,6 +559,7 @@ test('manual cleanup awaits each distinct binding in this experiment’s saved R
         ['test.missing', 'retired', 'pending'],
         ['test.old', 'driver', 'pending'],
       ],
+      JSON.stringify(results),
     );
     assert.match(
       results.find((item) => item.pluginId === 'test.missing')!.error!,
@@ -540,6 +577,42 @@ test('manual cleanup awaits each distinct binding in this experiment’s saved R
   assert.deepEqual(notified, []);
 });
 
+test('cleanup reports initialization failures per binding and retries after the dependency recovers', async (t) => {
+  let ready = false;
+  const seen: string[] = [];
+  const f = await managerFixture(async () => ({}), {
+    bindings: {
+      unused: {
+        plugin: 'test.driver',
+        config: { apiKey: 'secret-for-initialization' },
+      },
+    },
+    driverEvents(events, config, ctx) {
+      if (ctx.bindingId === 'unused' && !ready)
+        throw new Error('Dependency offline: ' + config.apiKey);
+      events.on('rsi/cleanup', () => {
+        seen.push(ctx.bindingId);
+        return [];
+      });
+    },
+  });
+  t.after(f.dispose);
+  await f.run();
+  const command = fixtureCommand(f);
+  const first = await command('cleanup', 'test');
+  assert.equal(first.exitCode, 1);
+  const [failure] = JSON.parse(first.stdout!).results;
+  assert.equal(failure.bindingId, 'unused');
+  assert.equal(failure.status, 'pending');
+  assert.match(failure.error, /Dependency offline/);
+  assert.doesNotMatch(first.stdout!, /secret-for-initialization/);
+  ready = true;
+  const retry = await command('cleanup', 'test');
+  assert.equal(retry.exitCode, 0);
+  assert.deepEqual(JSON.parse(retry.stdout!).results, []);
+  assert.deepEqual(seen, ['driver', 'driver', 'unused']);
+});
+
 test('standalone cleanup previews saved Application and Reflection bindings without opening the original files', async (t) => {
   const f = await managerFixture(async () => ({}));
   t.after(f.dispose);
@@ -553,18 +626,32 @@ test('standalone cleanup previews saved Application and Reflection bindings with
       id: 'test.reflection',
     },
   ]) {
-    registry.registerOperation(definition, (events) =>
-      events.on('rsi/cleanup', async ({ bindingId, facts }) => {
+    registry.registerOperation({
+      ...definition,
+      async create(config, ctx) {
+        assert.equal(config.label, ctx.bindingId);
         await assert.rejects(
-          async () => facts.write('preview-writes', bindingId, {}),
+          async () => ctx.facts.write('preview-writes', ctx.bindingId, {}),
           /Cleanup previews cannot write facts/,
         );
-        return [{ key: bindingId, status: 'preview' }];
-      }),
-    );
+        ctx.event.on('rsi/cleanup', async ({ bindingId, facts }) => {
+          await assert.rejects(
+            async () => facts.write('preview-writes', bindingId, {}),
+            /Cleanup previews cannot write facts/,
+          );
+          return [{ key: bindingId, status: 'preview' }];
+        });
+        return {
+          async execute() {
+            return assert.fail('unexpected execute');
+          },
+          async dispose() {},
+        };
+      },
+    });
   }
   const recipe = {
-    application: { plugin: 'test.app', config: {} },
+    application: { plugin: 'test.app', config: { label: '_application' } },
     bindings: {},
     reflection: { configFile: 'removed.yaml' },
   };
@@ -575,7 +662,7 @@ test('standalone cleanup previews saved Application and Reflection bindings with
     recipe,
   });
   const preview = async () => {
-    const results = await dispatchRecipeCleanup(registry, {
+    const results = await dispatchRecipeCleanup(registry, manager.context, {
       experimentId: id,
       dataDirectory: manager.directory,
       facts: manager.facts,
@@ -593,7 +680,12 @@ test('standalone cleanup previews saved Application and Reflection bindings with
   const definition = {
     schemaVersion: 'rsi.definition-lock/v1',
     recipe,
-    reflection: { implementation: { ref: 'test.reflection', config: {} } },
+    reflection: {
+      implementation: {
+        ref: 'test.reflection',
+        config: { label: '_reflection' },
+      },
+    },
   };
   await manager.facts.write('definitions', id, {
     ...definition,

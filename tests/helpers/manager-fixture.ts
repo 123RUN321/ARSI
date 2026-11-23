@@ -8,7 +8,7 @@ import type {
   JsonObject,
   JsonValue,
   OperationDefinition,
-  OperationEvents,
+  EventPipeline,
 } from '../../src/contracts/index.js';
 import { typedArtifact } from '../../src/contracts/models/measurement.js';
 import {
@@ -29,7 +29,11 @@ export async function managerFixture(
     policy?: JsonObject;
     initialize?(context: RuntimeContext): Promise<void>;
     disposeDriver?(): Promise<void>;
-    driverEvents?(events: OperationEvents): void;
+    driverEvents?(
+      events: EventPipeline,
+      config: JsonObject,
+      context: RuntimeContext,
+    ): void;
   } = {},
 ): Promise<{
   manager: Manager;
@@ -78,7 +82,8 @@ export async function managerFixture(
         output_schema: { type: 'object' },
       }),
       configSchema: { type: 'object' },
-      async create(_config, _context) {
+      async create(config, ctx) {
+        options.driverEvents?.(ctx.event, config, ctx);
         return {
           execute: (_input, context) => execute(context),
           async dispose() {
@@ -87,7 +92,7 @@ export async function managerFixture(
         };
       },
     };
-    registry.registerOperation(driver, options.driverEvents);
+    registry.registerOperation(driver);
     for (const plugin of options.plugins ?? [])
       registry.registerOperation(plugin);
     const bindings = {

@@ -120,13 +120,14 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 
 ### Plugin diagnostics and resource cleanup
 
-Plugins can subscribe to either event at registration. The framework dispatches by binding and waits for the handler's reply. An explicit `arsi cleanup` request addresses each distinct `(bindingId, pluginId)` pair in the saved Recipes. If a resumed run switched plugins and reused all evaluation results, a later cleanup request reaches both subscribed plugins. A plugin with no resources returns `[]`.
+Plugins subscribe to either event in `create(config, ctx)`. Full `doctor` creates a temporary instance for each effective binding. Manual `cleanup` visits each distinct `(bindingId, pluginId)` in the current and archived Recipes using its most recent saved configuration. This reaches previous plugins even when a resume reused every evaluation. The framework awaits the reply and instance disposal before visiting the next binding.
 
 ```js
-registry.registerOperation(myPlugin, (events) => {
-  events.on('rsi/doctor', checkEnvironment);
-  events.on('rsi/cleanup', cleanupResources);
-});
+export function create(config, ctx) {
+  ctx.event.on('rsi/doctor', checkEnvironment);
+  ctx.event.on('rsi/cleanup', cleanupResources);
+  return createOperation(config, ctx);
+}
 ```
 
 - `rsi/doctor` returns a `DoctorResult` for the effective Recipe binding. RSI aggregates these results.

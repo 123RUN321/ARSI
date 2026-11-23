@@ -1,3 +1,4 @@
+import { createApplicationInference } from '../../src/plugins/application-inference/service.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -145,7 +146,6 @@ import {
   FileWorkspaces,
 } from '../../src/runtime/storage/index.js';
 import { createFileApplication } from '../../src/plugins/shared/file-application/files.js';
-import { inferenceDefinition } from '../../src/plugins/application-inference/index.js';
 import { validateSkills } from '../../src/plugins/application-agentbundle/skills.js';
 import { digest } from '../../src/shared/json.js';
 
@@ -343,7 +343,7 @@ test('owned inference instance is ready, releases idempotently, and cleans cance
     healthcheck: { path: '/health', intervalMs: 10, timeoutMs: 1000 },
     shutdown: { gracePeriodMs: 100 },
   } satisfies InferenceConfig;
-  const app = await inferenceDefinition.create(config, services);
+  const app = await createApplicationInference(config, services);
   try {
     const initialized = await app.execute(
       { action: 'initialize' },
@@ -397,7 +397,7 @@ test('owned inference instance is ready, releases idempotently, and cleans cance
       /already leased/,
     );
     assert.equal((await fetch(endpoint.replace('/v1', '/health'))).status, 200);
-    const restarted = await inferenceDefinition.create(config, services);
+    const restarted = await createApplicationInference(config, services);
     await assert.rejects(
       restarted.execute(
         { action: 'release', instanceId: 'first' },
@@ -426,7 +426,7 @@ test('owned inference instance is ready, releases idempotently, and cleans cance
       [],
     );
     await assert.rejects(fetch(endpoint, { signal: AbortSignal.timeout(300) }));
-    const cancelledApp = await inferenceDefinition.create(
+    const cancelledApp = await createApplicationInference(
       {
         ...config,
         healthcheck: { path: '/never', intervalMs: 10, timeoutMs: 1000 },
@@ -470,7 +470,7 @@ test('owned inference instance is ready, releases idempotently, and cleans cance
         { healthcheck: { path: '/never', intervalMs: 10, timeoutMs: 100 } },
       ],
     ] satisfies [string, Partial<InferenceConfig>][]) {
-      const failing = await inferenceDefinition.create(
+      const failing = await createApplicationInference(
         { ...config, ...override },
         services,
       );
@@ -533,7 +533,7 @@ test('inference recovery checks private process state and lock ownership before 
   const root = await mkdtemp(join(tmpdir(), 'rsi-inference-recovery-'));
   const services = fixtureServices(root);
   const ctx = context(root).extend(services);
-  const app = await inferenceDefinition.create(
+  const app = await createApplicationInference(
     {
       target: { schema: tinyTarget },
       baseline: { directory: root },

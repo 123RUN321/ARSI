@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   OperationDefinition,
   ReflectionInput,
@@ -17,11 +16,8 @@ export const reflectionDefinition: OperationDefinition<
   description: 'Propose revisions to optimization guidance.',
   contract: reflectionContract,
   configSchema,
-  create: createReflectionAgent,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkReflectionAgent);
+    return createReflectionAgent(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(reflectionDefinition, (events) => {
-    events.on('rsi/doctor', checkReflectionAgent);
-  });
-}

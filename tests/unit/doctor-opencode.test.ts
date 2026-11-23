@@ -1,3 +1,4 @@
+import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -34,8 +35,7 @@ test('OpenCode doctor composes native configuration and rejects V1 without claim
     directory: root,
     signal: AbortSignal.timeout(15000),
   };
-  const diagnose = () =>
-    runtime.registry.dispatch(binding.pluginId, 'rsi/doctor', context);
+  const diagnose = () => diagnoseBinding(runtime.registry, context);
   const result = await diagnose();
   assert.deepEqual(
     result.checks.map((c) => [c.id, c.status]),

@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   OperationDefinition,
   IterativeProposerInput,
@@ -17,11 +16,8 @@ export const optunaProposerDefinition: OperationDefinition<
   description: 'Propose parameter candidates using Optuna optimization.',
   contract: iterativeProposerContract,
   configSchema,
-  create: createOptunaProposer,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkOptunaDependencies);
+    return createOptunaProposer(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(optunaProposerDefinition, (events) => {
-    events.on('rsi/doctor', checkOptunaDependencies);
-  });
-}

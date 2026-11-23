@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { mkdir, mkdtempDisposable } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { lock } from 'proper-lockfile';
 import type {
@@ -6,9 +7,11 @@ import type {
   CleanupResult,
   FactStore,
   JsonObject,
+  JsonValue,
   JsonSchema,
+  RuntimeContext,
 } from '../../contracts/index.js';
-import { errorText } from '../../shared/errors.js';
+import { errorText, redactConfiguration } from '../../shared/errors.js';
 import { json, object, string } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import type { Registry } from '../registry/index.js';
@@ -21,7 +24,7 @@ import {
 } from './definition-lock.js';
 import { acquireExecutionLock } from './execution-lock.js';
 import type { Manager } from './index.js';
-import type { Instances } from './instances.js';
+import { type Instances, withBindingInstance } from './instances.js';
 import {
   experimentCleanupState,
   readExperimentCleanupState,
@@ -411,19 +414,27 @@ async function readCleanupBindings({
   facts,
   experimentId,
   signal,
-}: ExperimentCleanupContext): Promise<CleanupBinding[]> {
-  const bindings = new Map<string, CleanupBinding>();
-  function add(bindingId: string, plugin: unknown): void {
+}: ExperimentCleanupContext): Promise<
+  (CleanupBinding & { config?: JsonValue })[]
+> {
+  const bindings = new Map<string, CleanupBinding & { config?: JsonValue }>();
+  function add(
+    bindingId: string,
+    plugin: unknown,
+    config: JsonValue | undefined,
+  ): void {
     const pluginId = string(plugin, 'cleanup plugin ID');
-    bindings.set(JSON.stringify([bindingId, pluginId]), {
-      bindingId,
-      pluginId,
-    });
+    const key = JSON.stringify([bindingId, pluginId]);
+    // Definitions are traversed newest first.
+    if (!bindings.has(key)) bindings.set(key, { bindingId, pluginId, config });
   }
   function addRecipe(recipe: JsonObject): void {
-    add('_application', object(recipe.application).plugin);
-    for (const [name, entry] of Object.entries(object(recipe.bindings ?? {})))
-      add(name, object(entry).plugin);
+    const application = object(recipe.application);
+    add('_application', application.plugin, application.config);
+    for (const [name, entry] of Object.entries(object(recipe.bindings ?? {}))) {
+      const binding = object(entry);
+      add(name, binding.plugin, binding.config);
+    }
   }
 
   let definition: JsonObject;
@@ -442,8 +453,10 @@ async function readCleanupBindings({
     assertDefinitionDigest(definition);
     addRecipe(object(definition.recipe));
     if (definition.reflection) {
-      const { implementation } = object(definition.reflection);
-      add('_reflection', object(implementation).ref);
+      const implementation = object(
+        object(definition.reflection).implementation,
+      );
+      add('_reflection', implementation.ref, implementation.config);
     }
     if (definition.retry === undefined) break;
     const ref = string(
@@ -459,6 +472,37 @@ async function readCleanupBindings({
   return [...bindings.values()];
 }
 
+async function cleanupBinding(
+  registry: Registry,
+  runtime: RuntimeContext,
+  context: CleanupContext,
+  config: JsonValue | undefined,
+  ownership: AbortSignal,
+): Promise<CleanupResult[] | undefined> {
+  await using directory = await mkdtempDisposable(
+    join(tmpdir(), 'arsi-cleanup-'),
+  );
+  const bindingContext = runtime.extend({
+    experimentId: context.experimentId,
+    bindingId: context.bindingId,
+    callId: 'cleanup',
+    directory: directory.path,
+    dataDirectory: context.dataDirectory,
+    facts: context.facts,
+    signal: context.signal,
+    cleanup: ownership,
+  });
+  return await withBindingInstance(
+    registry,
+    {
+      plugin: context.pluginId,
+      config: object(config === undefined ? {} : config),
+    },
+    bindingContext,
+    (events) => events.serial('rsi/cleanup', context),
+  );
+}
+
 /**
  * Await one cleanup reply per distinct binding and plugin in the saved Recipes.
  * The caller holds the execution lock for writes. Its ownership signal lets handlers
@@ -466,6 +510,7 @@ async function readCleanupBindings({
  */
 export async function dispatchRecipeCleanup(
   registry: Registry,
+  runtime: RuntimeContext,
   request: ExperimentCleanupContext,
   ownership: AbortSignal = request.signal,
 ): Promise<BindingCleanupResult[]> {
@@ -476,14 +521,17 @@ export async function dispatchRecipeCleanup(
   };
   context.signal.throwIfAborted();
   const results: BindingCleanupResult[] = [];
-  for (const owner of await readCleanupBindings(context)) {
+  for (const { config, ...owner } of await readCleanupBindings(context)) {
     if (context.signal.aborted) break;
     try {
-      if (!registry.handles(owner.pluginId, 'rsi/cleanup')) continue;
-      const entries = await registry.dispatch(owner.pluginId, 'rsi/cleanup', {
-        ...context,
-        ...owner,
-      });
+      const entries = await cleanupBinding(
+        registry,
+        runtime,
+        { ...context, ...owner },
+        config,
+        ownership,
+      );
+      if (entries === undefined) continue;
       validate(cleanupResultSchema, entries, 'Plugin cleanup results');
       const expected = context.dryRun ? 'preview' : 'complete';
       if (
@@ -503,7 +551,7 @@ export async function dispatchRecipeCleanup(
         ...owner,
         key: owner.bindingId,
         status: 'pending',
-        error: errorText(error),
+        error: redactConfiguration(config)(errorText(error)),
       });
     }
   }
@@ -550,6 +598,7 @@ export async function collectExperimentCleanup(
     }
     report.results = await dispatchRecipeCleanup(
       manager.options.registry,
+      manager.context,
       {
         experimentId,
         dryRun,

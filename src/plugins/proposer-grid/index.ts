@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type { OperationDefinition } from '../../contracts/index.js';
 import {
   gridProposerContract,
@@ -18,11 +17,8 @@ export const gridProposerDefinition: OperationDefinition<
   description: 'Propose parameter candidates from a deterministic grid.',
   contract: gridProposerContract,
   configSchema,
-  create: createGridProposer,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkOperationConfiguration);
+    return createGridProposer(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(gridProposerDefinition, (events) => {
-    events.on('rsi/doctor', checkOperationConfiguration);
-  });
-}

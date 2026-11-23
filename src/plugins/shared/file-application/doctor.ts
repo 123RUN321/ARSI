@@ -11,7 +11,11 @@ import type {
 import { runDoctorCheck } from '../../../shared/doctor-check.js';
 import { object, string } from '../../../shared/json.js';
 import { parseConfig } from '../../../shared/schema.js';
-import { readTarget, type FileApplicationConfig } from './files.js';
+import {
+  readInstance,
+  readTarget,
+  type FileApplicationConfig,
+} from './files.js';
 
 function missing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
@@ -136,6 +140,7 @@ export async function checkBaselineDirectory(
 
 export async function checkFileApplication(
   context: DoctorContext,
+  application: Operation,
   {
     verification,
     capability,
@@ -183,47 +188,36 @@ export async function checkFileApplication(
       return candidate;
     },
   });
-  let operation: Operation | undefined;
   let candidateRef: string | undefined;
-  try {
-    const verified = await runDoctorCheck(
-      verification,
-      async (signal) => {
-        const scope = runtime.extend({ signal });
-        operation = await context.binding.definition.create(
-          context.binding.config,
-          scope,
-        );
-        const result = object(
-          await operation.execute({ action: 'initialize' }, scope),
-        );
-        if (result.action !== 'initialize')
-          throw new Error('Application returned no initialization result');
-        candidateRef = string(
-          result.initialCandidateRef,
-          'initialCandidateRef',
-        );
-      },
-      { signal: context.signal },
-    );
-    checks.push(verified);
-    if (verified.status !== 'passed' || !operation || !candidateRef) {
-      checks.push({
-        id: 'acquire-instance',
-        status: 'unchecked',
-        reason: 'Application initialization did not complete.',
-      });
-      return result;
-    }
-    const application = operation;
+  const verified = await runDoctorCheck(
+    verification,
+    async (signal) => {
+      const scope = runtime.extend({ signal });
+      const result = object(
+        await application.execute({ action: 'initialize' }, scope),
+      );
+      if (result.action !== 'initialize')
+        throw new Error('Application returned no initialization result');
+      candidateRef = string(result.initialCandidateRef, 'initialCandidateRef');
+    },
+    { signal: context.signal },
+  );
+  checks.push(verified);
+  const instanceId = `doctor-instance-${randomUUID()}`;
+  let acquired = false;
+  if (verified.status !== 'passed' || !candidateRef) {
+    checks.push({
+      id: 'acquire-instance',
+      status: 'unchecked',
+      reason: 'Application initialization did not complete.',
+    });
+  } else {
     const initialCandidateRef = candidateRef;
     checks.push(
       await runDoctorCheck(
         'acquire-instance',
         async (signal) => {
-          const instanceId = `doctor-instance-${randomUUID()}`;
           const scope = runtime.extend({ signal });
-          let acquired = false;
           try {
             const result = object(
               await application.execute(
@@ -254,30 +248,24 @@ export async function checkFileApplication(
                 { action: 'release', instanceId },
                 runtime.extend({ signal: runtime.cleanup }),
               );
-              const instance = await runtime.facts.read(
-                'instances',
-                instanceId,
-              );
-              if (instance.status !== 'released')
-                throw new Error(
-                  'Application instance release was not confirmed',
-                );
             }
           }
         },
         { signal: context.signal },
       ),
     );
-  } finally {
-    if (operation) {
-      const application = operation;
-      checks.push(
-        await runDoctorCheck('cleanup', async () => application.dispose(), {
-          signal: runtime.cleanup,
-        }),
-      );
-    }
-    context.signal.throwIfAborted();
   }
+  checks.push(
+    await runDoctorCheck(
+      'cleanup',
+      async () => {
+        const instance = await readInstance(runtime, instanceId);
+        if ((acquired || instance) && instance?.status !== 'released')
+          throw new Error('Application instance release was not confirmed');
+      },
+      { signal: runtime.cleanup },
+    ),
+  );
+  context.signal.throwIfAborted();
   return result;
 }

@@ -1,3 +1,4 @@
+import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
@@ -52,8 +53,7 @@ if (args.includes('--dump-config')) console.log('- id: fixture');
 else if (args.includes('auth')) { assert.deepEqual(args, ['auth', 'status', args.includes('--help') ? '--help' : '--json']); console.log(args.includes('--help') ? '--json' : JSON.stringify({loggedIn:true})); }
 else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.stringify(flags)}); }`,
     );
-    const diagnose = () =>
-      runtime.registry.dispatch(pluginId, 'rsi/doctor', context);
+    const diagnose = () => diagnoseBinding(runtime.registry, context);
     let report = await diagnose();
     assert.deepEqual(
       report.checks.map((c) => c.status),

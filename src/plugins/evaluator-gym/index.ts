@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   DoctorContext,
   DoctorResult,
@@ -37,11 +36,8 @@ export const gymDefinition: OperationDefinition<
     'Run mode-restricted Gym training evaluations or holdout promotions.',
   contract: gymContract,
   configSchema: gymPluginConfigSchema,
-  create: (config, context) => createGymOperation(config, context),
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', doctor);
+    return createGymOperation(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(gymDefinition, (events) => {
-    events.on('rsi/doctor', doctor);
-  });
-}

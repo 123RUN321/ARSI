@@ -4,8 +4,13 @@ import type {
   RuntimeContext,
   EventPipeline,
 } from '../../contracts/index.js';
+import type { Context } from '@deepseek-ai/cordis';
 import type { Registry } from '../registry/index.js';
-import type { EventScope, ManagedEvents } from '../services/events.js';
+import {
+  createIsolatedInstance,
+  type EventScope,
+  type ManagedEvents,
+} from '../services/events.js';
 
 interface Instance {
   operation: Operation;
@@ -175,4 +180,36 @@ export class Instances {
         'Instance cleanup failed',
       );
   }
+}
+
+/** Address a command to a fresh instance, including bindings skipped during resume. */
+export async function withBindingInstance<T>(
+  registry: Registry,
+  binding: Binding,
+  context: RuntimeContext,
+  request: (events: Context, runtime: RuntimeContext) => Promise<T>,
+): Promise<T | undefined> {
+  context.signal.throwIfAborted();
+  await using lifetime = new AsyncDisposableStack();
+  lifetime.defer(registry.retain(binding.plugin));
+  const { events, runtime, operation } = await createIsolatedInstance(
+    context,
+    async (ctx) => {
+      try {
+        return await registry.createManagedOperation(
+          binding.plugin,
+          structuredClone(binding.config),
+          ctx,
+        );
+      } catch (cause) {
+        throw new Error(
+          `Failed to initialize ${binding.plugin} for binding ${context.bindingId}`,
+          { cause },
+        );
+      }
+    },
+  );
+  lifetime.defer(operation.dispose);
+  context.signal.throwIfAborted();
+  return await request(events, runtime);
 }

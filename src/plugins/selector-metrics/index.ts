@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   MetricSelectorInput,
   MetricSelectorOutput,
@@ -17,11 +16,8 @@ export const metricSelectorDefinition: OperationDefinition<
   description: 'Select candidates using recorded metrics.',
   contract: metricSelectorContract,
   configSchema,
-  create: createMetricSelector,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkOperationConfiguration);
+    return createMetricSelector(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(metricSelectorDefinition, (events) => {
-    events.on('rsi/doctor', checkOperationConfiguration);
-  });
-}

@@ -1,4 +1,3 @@
-import type { Registry } from '../../runtime/registry/index.js';
 import type {
   MetricSelectorInput,
   MetricSelectorOutput,
@@ -19,11 +18,8 @@ export const inferenceSelectorDefinition: OperationDefinition<
     'Improve inference constraint feasibility before optimizing performance.',
   contract: metricSelectorContract,
   configSchema,
-  create: createInferenceSelector,
+  create(config, ctx) {
+    ctx.event.on('rsi/doctor', checkOperationConfiguration);
+    return createInferenceSelector(config, ctx);
+  },
 };
-
-export function register(registry: Registry): void {
-  registry.registerOperation(inferenceSelectorDefinition, (events) => {
-    events.on('rsi/doctor', checkOperationConfiguration);
-  });
-}

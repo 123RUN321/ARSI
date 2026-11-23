@@ -1,57 +1,58 @@
 import { fileURLToPath } from 'node:url';
-import type { Registry } from './registry/index.js';
+import { Registry } from './registry/index.js';
 import { Policy } from './policy/index.js';
-import * as applicationAgentbundle from '../plugins/application-agentbundle/index.js';
-import * as applicationInference from '../plugins/application-inference/index.js';
-import * as agentPi from '../plugins/agent-pi/index.js';
-import * as agentClaudeCode from '../plugins/agent-claudecode/index.js';
-import * as agentOpenCode from '../plugins/agent-opencode/index.js';
-import * as agentDsh from '../plugins/agent-dsh/index.js';
-import * as agentCodex from '../plugins/agent-codex/index.js';
-import * as proposerAgent from '../plugins/proposer-agent/index.js';
-import * as proposerOperator from '../plugins/proposer-operator/index.js';
-import * as summarizerOperator from '../plugins/summarizer-operator/index.js';
-import * as proposerGrid from '../plugins/proposer-grid/index.js';
-import * as proposerOptuna from '../plugins/proposer-optuna/index.js';
-import * as proposerParetoEvolution from '../plugins/proposer-pareto-evolution/index.js';
-import * as memoryAgent from '../plugins/memory-agent/index.js';
-import * as reflectionAgent from '../plugins/reflection-agent/index.js';
-import * as evaluatorAgentbench from '../plugins/evaluator-agentbench/index.js';
-import * as evaluatorGym from '../plugins/evaluator-gym/index.js';
-import * as evaluatorInferencebench from '../plugins/evaluator-inferencebench/index.js';
-import * as selectorInference from '../plugins/selector-inference/index.js';
-import * as selectorMetrics from '../plugins/selector-metrics/index.js';
-import * as selectorArtifacts from '../plugins/selector-artifacts/index.js';
-import * as applicationKernel from '../plugins/application-kernel/index.js';
-import * as evaluatorOperatorbench from '../plugins/evaluator-operatorbench/index.js';
+import { agentbundleDefinition } from '../plugins/application-agentbundle/index.js';
+import { inferenceDefinition } from '../plugins/application-inference/index.js';
+import { piDefinition } from '../plugins/agent-pi/index.js';
+import { claudeCodeDefinition } from '../plugins/agent-claudecode/index.js';
+import { openCodeDefinition } from '../plugins/agent-opencode/index.js';
+import { dshDefinition } from '../plugins/agent-dsh/index.js';
+import { codexDefinition } from '../plugins/agent-codex/index.js';
+import { proposerDefinition } from '../plugins/proposer-agent/index.js';
+import { operatorProposerDefinition } from '../plugins/proposer-operator/index.js';
+import { operatorSummarizerDefinition } from '../plugins/summarizer-operator/index.js';
+import { gridProposerDefinition } from '../plugins/proposer-grid/index.js';
+import { optunaProposerDefinition } from '../plugins/proposer-optuna/index.js';
+import { paretoEvolutionProposerDefinition } from '../plugins/proposer-pareto-evolution/index.js';
+import { memoryDefinition } from '../plugins/memory-agent/index.js';
+import { reflectionDefinition } from '../plugins/reflection-agent/index.js';
+import { agentbenchDefinition } from '../plugins/evaluator-agentbench/index.js';
+import { gymDefinition } from '../plugins/evaluator-gym/index.js';
+import { inferencebenchDefinition } from '../plugins/evaluator-inferencebench/index.js';
+import { inferenceSelectorDefinition } from '../plugins/selector-inference/index.js';
+import { metricSelectorDefinition } from '../plugins/selector-metrics/index.js';
+import { artifactSelectorDefinition } from '../plugins/selector-artifacts/index.js';
+import { kernelApplicationDefinition } from '../plugins/application-kernel/index.js';
+import { operatorbenchDefinition } from '../plugins/evaluator-operatorbench/index.js';
+import type { OperationDefinition } from '../contracts/index.js';
 /** Startup code is the sole built-in registration list. Registration never runs an experiment. */
 export async function registerBuiltins(registry: Registry): Promise<void> {
-  const plugins = [
-    applicationAgentbundle,
-    applicationInference,
-    agentPi,
-    agentCodex,
-    agentClaudeCode,
-    agentDsh,
-    agentOpenCode,
-    proposerAgent,
-    proposerOperator,
-    summarizerOperator,
-    proposerGrid,
-    proposerOptuna,
-    proposerParetoEvolution,
-    memoryAgent,
-    reflectionAgent,
-    evaluatorAgentbench,
-    evaluatorGym,
-    evaluatorInferencebench,
-    selectorInference,
-    selectorMetrics,
-    selectorArtifacts,
-    applicationKernel,
-    evaluatorOperatorbench,
+  const definitions: OperationDefinition[] = [
+    agentbundleDefinition,
+    inferenceDefinition,
+    piDefinition,
+    codexDefinition,
+    claudeCodeDefinition,
+    dshDefinition,
+    openCodeDefinition,
+    proposerDefinition,
+    operatorProposerDefinition,
+    operatorSummarizerDefinition,
+    gridProposerDefinition,
+    optunaProposerDefinition,
+    paretoEvolutionProposerDefinition,
+    memoryDefinition,
+    reflectionDefinition,
+    agentbenchDefinition,
+    gymDefinition,
+    inferencebenchDefinition,
+    inferenceSelectorDefinition,
+    metricSelectorDefinition,
+    artifactSelectorDefinition,
+    kernelApplicationDefinition,
+    operatorbenchDefinition,
   ];
-  for (const plugin of plugins) await plugin.register(registry);
+  for (const definition of definitions) registry.registerOperation(definition);
   for (const path of [
     'harness2/policy.yaml',
     'wikiskill/policy.yaml',
