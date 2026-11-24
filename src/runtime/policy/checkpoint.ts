@@ -62,8 +62,11 @@ export function validateCheckpointBoundary(
   complete: JsonValue,
 ): void {
   if (
-    complete !== true ||
-    (path !== 'policy-completed' && !/^steps\/.+\/iteration-\d+$/.test(path))
+    typeof complete !== 'boolean' ||
+    (path !== 'policy-completed' &&
+      !/^steps\/.+\/(iteration-\d+|@step-completed|@loop-completed)$/.test(
+        path,
+      ))
   )
     throw new Error(`checkpoint.boundaries: invalid boundary ${path}`);
 }

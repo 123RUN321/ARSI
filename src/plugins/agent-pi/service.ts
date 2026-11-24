@@ -7,6 +7,7 @@ import type {
   Operation,
 } from '../../contracts/index.js';
 import { parseConfig } from '../../shared/schema.js';
+import { checkPiAgent } from './doctor.js';
 
 import {
   configSchema,
@@ -21,7 +22,8 @@ export const createAgentPi: OperationDefinition<
   AgentInput,
   AgentOutput,
   AgentPiConfig
->['create'] = async (rawConfig) => {
+>['create'] = async (rawConfig, ctx) => {
+  ctx.event?.on('rsi/doctor', checkPiAgent);
   const config = parseConfig<ResolvedAgentPiConfig>(
     configSchema,
     rawConfig,
@@ -35,25 +37,26 @@ export const createAgentPi: OperationDefinition<
         task: PiTask,
         signal: AbortSignal,
       ): Promise<AgentOutput> {
-        if (task.parentRunId !== null)
-          context.event.emit('rsi/agent-observation', {
-            runId: task.runId,
-            event: {
-              type: 'message.completed',
-              messageId: 'task',
-              role: 'user',
-              text: task.goal,
-            },
-          });
         const session = await createPiSession(
           config,
-          (role, goal, parent, childSignal) =>
-            runTask(
+          async (role, goal, parent, childSignal) => {
+            childSignal.throwIfAborted();
+            const runId = `child-${randomUUID()}`;
+            context.event.emit('rsi/agent-observation', {
+              runId: parent.runId,
+              event: {
+                type: 'subagent.activity',
+                activity: 'started',
+                childRunId: runId,
+                text: goal,
+              },
+            });
+            return runTask(
               {
                 ...parent,
                 role,
                 goal,
-                runId: `child-${randomUUID()}`,
+                runId,
                 parentRunId: parent.runId,
                 outputSchema: {
                   type: 'object',
@@ -63,7 +66,8 @@ export const createAgentPi: OperationDefinition<
                 },
               },
               childSignal,
-            ),
+            );
+          },
         );
         return session.execute(task, context.extend({ signal }));
       }

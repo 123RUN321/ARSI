@@ -1,3 +1,5 @@
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   parseUserConfig as parseSdkConfig,
   type UserConfig as SdkEvaluatorConfig,
@@ -6,6 +8,13 @@ import {
 import type { JsonObject, JsonValue } from '../../../contracts/index.js';
 
 export type { SdkEvaluatorConfig };
+
+export function evaluatorNetworkConfigPath(): string {
+  const path = process.env.EVALUATOR_NETWORK_CONFIG;
+  return path
+    ? resolve(path)
+    : join(homedir(), '.arsi-evaluator', 'network.yaml');
+}
 
 /** SDK options in a JSON Recipe. A plugin may supply service fields at execution. */
 export type EvaluatorConfig = {

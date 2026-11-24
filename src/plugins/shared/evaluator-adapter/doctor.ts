@@ -1,6 +1,5 @@
 import { lstat, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import type {
   DoctorContext,
   DoctorResult,
@@ -9,7 +8,10 @@ import type {
 import { runDoctorCheck } from '../../../shared/doctor-check.js';
 import { errorText } from '../../../shared/errors.js';
 import { object, string } from '../../../shared/json.js';
-import type { SdkEvaluatorConfig } from './configuration.js';
+import {
+  evaluatorNetworkConfigPath,
+  type SdkEvaluatorConfig,
+} from './configuration.js';
 import {
   sdkDoctor,
   type SdkDoctorOptions,
@@ -20,9 +22,8 @@ async function networkConfigPath(
   directory: string,
   signal: AbortSignal,
 ): Promise<string> {
-  if (process.env.EVALUATOR_NETWORK_CONFIG)
-    return resolve(process.env.EVALUATOR_NETWORK_CONFIG);
-  const configured = join(homedir(), '.arsi-evaluator', 'network.yaml');
+  const configured = evaluatorNetworkConfigPath();
+  if (process.env.EVALUATOR_NETWORK_CONFIG) return configured;
   try {
     await lstat(configured);
     return configured;

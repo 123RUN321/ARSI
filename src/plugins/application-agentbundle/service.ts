@@ -9,6 +9,7 @@ import type {
 import { createFileApplication } from '../shared/file-application/files.js';
 import { validateSkills } from './skills.js';
 import type { AgentbundleConfig } from './schema.js';
+import { checkAgentbundleApplication } from './doctor.js';
 
 export const createApplicationAgentbundle: OperationDefinition<
   ApplicationInput,
@@ -18,7 +19,7 @@ export const createApplicationAgentbundle: OperationDefinition<
   config,
   services,
 ): Promise<Operation<ApplicationInput, ApplicationOutput>> => {
-  return createFileApplication(config, services, {
+  const operation = await createFileApplication(config, services, {
     capability: 'agentbundle',
     async verify(directory, context): Promise<JsonObject> {
       context.signal.throwIfAborted();
@@ -37,4 +38,8 @@ export const createApplicationAgentbundle: OperationDefinition<
     async release(): Promise<void> {},
     async dispose(): Promise<void> {},
   });
+  services.event?.on('rsi/doctor', (request) =>
+    checkAgentbundleApplication(request, operation),
+  );
+  return operation;
 };

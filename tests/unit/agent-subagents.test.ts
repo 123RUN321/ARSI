@@ -58,6 +58,14 @@ test('native child observations belong to an internal run without fabricated Run
     message: { id: 'm1', content: [{ type: 'text', text: 'findings' }] },
   });
   assert.deepEqual(observations[1], {
+    runId: 'main',
+    event: {
+      type: 'subagent.activity',
+      activity: 'started',
+      childRunId: 'child-tool',
+    },
+  });
+  assert.deepEqual(observations[2], {
     runId: 'child-tool',
     event: {
       type: 'run.started',
@@ -65,6 +73,6 @@ test('native child observations belong to an internal run without fabricated Run
       parentRunId: 'main',
     },
   });
-  assert.equal(observations[2]?.runId, 'child-tool');
-  assert(!('callId' in observations[1]!));
+  assert.equal(observations[3]?.runId, 'child-tool');
+  assert(observations.every((observation) => !('callId' in observation)));
 });

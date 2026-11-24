@@ -6,7 +6,6 @@ import type {
 import { configSchema, type AgentEditingConfig } from './schema.js';
 import { proposerContract } from '../../contracts/plugin-types/index.js';
 import { createProposerAgent } from './service.js';
-import { checkProposerAgent } from './doctor.js';
 export const proposerDefinition: OperationDefinition<
   ProposerInput,
   ProposerOutput,
@@ -17,5 +16,4 @@ export const proposerDefinition: OperationDefinition<
   contract: proposerContract,
   configSchema,
   create: createProposerAgent,
-  doctor: checkProposerAgent,
 };

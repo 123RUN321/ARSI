@@ -106,8 +106,12 @@ test('committed step events and loop boundaries carry stable paths without stage
     const key =
       event.boundary === 'policy-completed'
         ? 'policy-completed'
-        : `${event.stepPath}/iteration-${event.iteration}`;
-    assert.equal((checkpoint.boundaries as JsonObject)[key], true);
+        : event.boundary === 'iteration-completed'
+          ? `${event.stepPath}/iteration-${event.iteration}`
+          : `${event.stepPath}/@${event.boundary}`;
+    assert.equal(event.hasTopLevelLoop, true);
+    assert.equal(event.stepId, event.stepPath?.split('/').at(-1));
+    assert.equal((checkpoint.boundaries as JsonObject)[key], false);
     trace.push(`boundary:${key}`);
     await Promise.resolve();
   });
@@ -127,13 +131,20 @@ test('committed step events and loop boundaries carry stable paths without stage
     'start-a',
     'start-b',
     'steps/first/iteration-0/advance',
+    'boundary:steps/first/iteration-0/advance/@step-completed',
     'boundary:steps/first/iteration-0',
     'steps/first/iteration-1/advance',
+    'boundary:steps/first/iteration-1/advance/@step-completed',
     'boundary:steps/first/iteration-1',
     'steps/first',
+    'boundary:steps/first/@loop-completed',
+    'boundary:steps/first/@step-completed',
     'steps/second/iteration-0/advance',
+    'boundary:steps/second/iteration-0/advance/@step-completed',
     'boundary:steps/second/iteration-0',
     'steps/second',
+    'boundary:steps/second/@loop-completed',
+    'boundary:steps/second/@step-completed',
     'boundary:policy-completed',
     'completed',
   ]);
@@ -170,7 +181,7 @@ test('recovery skips committed steps and boundaries while marking execution resu
   );
   assert.deepEqual(resumed, [false, true]);
   assert.equal(steps, 5);
-  assert.equal(boundaries, 4);
+  assert.equal(boundaries, 11);
 });
 test('notification errors preserve commits and native synchronous listener truncation', async (t) => {
   const context = new Context();
@@ -198,16 +209,16 @@ test('notification errors preserve commits and native synchronous listener trunc
     'rsi/policy-completed',
   ]);
 });
-test('boundary listener failure preserves durable progress and recovery resumes after that boundary', async (t) => {
+test('boundary listener failure preserves the step and redelivers the pending boundary on resume', async (t) => {
   const context = new Context();
   t.after(() => context.fiber.dispose());
   let checkpoint: JsonObject = {};
-  let advanced = false;
+  const delivered: string[] = [];
   const off = context.on('rsi/policy-boundary-completed', async () => {
     throw new Error('boundary listener failed');
   });
-  context.on('rsi/policy-boundary-completed', () => {
-    advanced = true;
+  context.on('rsi/policy-boundary-completed', (event) => {
+    delivered.push(`${event.boundary}:${event.stepPath ?? ''}`);
     return undefined;
   });
   const policy = new Policy(definition);
@@ -226,15 +237,53 @@ test('boundary listener failure preserves durable progress and recovery resumes 
     undefined,
   );
   assert.equal(
-    (checkpoint.boundaries as JsonObject)['steps/first/iteration-0'],
-    true,
+    (checkpoint.boundaries as JsonObject)[
+      'steps/first/iteration-0/advance/@step-completed'
+    ],
+    false,
   );
-  assert.equal(advanced, false);
+  assert.deepEqual(delivered, []);
   off();
   assert.equal(
     await policy.execute({ ...runOptions, restore: checkpoint }),
     12,
   );
+  assert.equal(delivered[0], 'step-completed:steps/first/iteration-0/advance');
+  assert.equal(delivered.length, 11);
+});
+
+test('nested loops and parallel foreach items produce only eligible serial boundaries', async (t) => {
+  const context = new Context();
+  t.after(() => context.fiber.dispose());
+  const boundaries: string[] = [];
+  context.on('rsi/policy-boundary-completed', (event) => {
+    assert.equal(event.hasTopLevelLoop, false);
+    boundaries.push(`${event.boundary}:${event.stepId ?? ''}`);
+    return undefined;
+  });
+  const nested = { id: 'nested', type: 'loop', maxIterations: 1, steps: [] };
+  const each = {
+    id: 'parallel',
+    type: 'foreach',
+    foreach: [1, 2],
+    as: 'item',
+    key: '${{ item }}',
+    concurrency: 2,
+    steps: [nested],
+  };
+  await new Policy({
+    ...definition,
+    steps: [
+      { id: 'branch', type: 'if', if: true, then: { steps: [nested] } },
+      each,
+    ],
+  }).execute(options(context));
+  assert.deepEqual(boundaries, [
+    'step-completed:nested',
+    'step-completed:branch',
+    'step-completed:parallel',
+    'policy-completed:',
+  ]);
 });
 test('checkpoint failure emits no step event and a durable snapshot can finish on recovery', async (t) => {
   const context = new Context();

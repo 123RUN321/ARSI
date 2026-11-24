@@ -1,3 +1,4 @@
+import { createIsolatedInstance } from '../manager/instances.js';
 import { managedAgentOperation } from '../services/agent-execution/task.js';
 import { agentContract } from '../../contracts/plugin-types/agent.js';
 import { Context } from '@deepseek-ai/cordis';
@@ -7,8 +8,6 @@ import type {
   Operation,
   OperationDefinition,
   RuntimeContext,
-  DoctorContext,
-  DoctorResult,
 } from '../../contracts/index.js';
 import {
   defineContract,
@@ -84,15 +83,9 @@ export class Registry {
           'configSchema',
           'implementationDigest',
           'create',
-          'doctor',
         ].includes(key),
     );
     if (unknown) throw new Error(`Plugin definition: unknown field ${unknown}`);
-    if (
-      definition.doctor !== undefined &&
-      typeof definition.doctor !== 'function'
-    )
-      throw new Error(`Plugin ${definition.id}: doctor must be a function`);
     if (
       this.registrations.has(definition.id) ||
       this.policyFiles.has(definition.id)
@@ -104,35 +97,23 @@ export class Registry {
       services: RuntimeContext,
     ): Promise<Operation> => {
       validate(definition.configSchema, config, 'plugin config');
-      const operation = await definition.create(config as C, services);
-      return contract.id === agentContract.id
-        ? managedAgentOperation(operation)
-        : operation;
+      const instantiate = async (
+        runtime: RuntimeContext,
+      ): Promise<Operation> => {
+        const operation = await definition.create(config as C, runtime);
+        return contract.id === agentContract.id
+          ? managedAgentOperation(operation)
+          : operation;
+      };
+      if (services.event) return instantiate(services);
+      const context = services.extend({
+        bindingId: services.bindingId ?? definition.id,
+      });
+      return (await createIsolatedInstance(context, instantiate)).operation;
     };
-    const { doctor, ...capabilities } = definition;
     const registered: OperationDefinition = {
-      ...capabilities,
+      ...definition,
       contract,
-      ...(doctor
-        ? {
-            async doctor(context: DoctorContext): Promise<DoctorResult> {
-              validate(
-                definition.configSchema,
-                context.binding.config,
-                'plugin doctor config',
-              );
-              return doctor.call(definition, {
-                ...context,
-                binding: {
-                  name: context.binding.name,
-                  pluginId: context.binding.pluginId,
-                  definition: context.binding.definition,
-                  config: context.binding.config as C,
-                },
-              });
-            },
-          }
-        : {}),
       async create(config, services) {
         const operation = await create(config, services);
         return {

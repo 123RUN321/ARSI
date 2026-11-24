@@ -21,6 +21,7 @@ import { digest, object, string, unknownKeys } from '../../shared/json.js';
 import { InferenceStartupError } from '../../shared/errors.js';
 import { createRemoteBackend } from './remote.js';
 import type { InferenceConfig } from './schema.js';
+import { checkInferenceApplication } from './doctor.js';
 interface OwnedProcess {
   child: ChildProcess;
   exited: Promise<void>;
@@ -105,6 +106,7 @@ export const createApplicationInference: OperationDefinition<
   config,
   services,
 ): Promise<Operation<ApplicationInput, ApplicationOutput>> => {
+  services.event?.on('rsi/doctor', checkInferenceApplication);
   if ('remote' in config) {
     if ('start' in config && config.start !== undefined)
       throw new Error('remote and start are mutually exclusive');

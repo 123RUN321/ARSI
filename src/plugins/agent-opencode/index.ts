@@ -1,4 +1,3 @@
-import { checkOpenCodeAgent } from './doctor.js';
 import type {
   AgentInput,
   AgentOutput,
@@ -17,6 +16,5 @@ export const openCodeDefinition: OperationDefinition<
   description: 'Execute agent tasks through the OpenCode backend.',
   contract: agentContract,
   configSchema,
-  doctor: checkOpenCodeAgent,
   create: createAgentOpenCode,
 };

@@ -935,6 +935,7 @@
 .inspector-toolbar {
   padding: 10px;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 8px;
@@ -942,13 +943,40 @@
 }
 .inspector-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 3px;
+}
+.inspector-agents {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.inspector-agents {
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--muted);
+}
+.inspector-agent-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.inspector-agent-select select {
+  min-width: 0;
+  min-height: 32px;
+  max-width: 100%;
 }
 .trace-inspector button {
   font: inherit;
   cursor: pointer;
 }
 .inspector-toolbar button,
+.inspector-filters button,
 .inspector-tabs button,
 .inspector-detail footer button,
 .inspector-pagination button {
@@ -959,9 +987,52 @@
   font-size: 12px;
 }
 .inspector-toolbar button[aria-pressed='true'],
+.inspector-filters button[aria-pressed='true'],
 .inspector-tabs button[aria-pressed='true'] {
   background: var(--accent);
   color: var(--primary);
+}
+.inspector-agents button {
+  min-height: 32px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.inspector-agents button[aria-pressed='true'] {
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--border);
+  font-weight: 600;
+}
+.inspector-inputs {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.inspector-inputs > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 14px;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.inspector-inputs > summary::-webkit-details-marker {
+  display: none;
+}
+.inspector-inputs > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--muted-foreground);
+  border-bottom: 1.5px solid var(--muted-foreground);
+  transform: rotate(-45deg);
+}
+.inspector-inputs[open] > summary::before {
+  transform: rotate(45deg);
+}
+.inspector-inputs > summary:hover {
+  background: var(--muted);
 }
 .inspector-toolbar input {
   min-width: 0;
@@ -979,6 +1050,9 @@
 .inspector-events {
   overflow: auto;
   min-width: 0;
+}
+.trace-load-boundary {
+  height: 1px;
 }
 .inspector-step {
   background: var(--muted);
@@ -1082,6 +1156,11 @@
   grid-template-columns: 70px minmax(0, 1fr);
   font-size: 12px;
 }
+.trace-reported-states {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .inspector-detail-content h4 {
   font-size: 12px;
   margin: 18px 0 8px;
@@ -1096,7 +1175,8 @@
   border-left: 2px solid #d8cfe6;
   padding-left: 12px;
 }
-.inspector-detail-content pre {
+.inspector-detail-content pre,
+.inspector-input-view pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   background: var(--muted);
@@ -1104,6 +1184,75 @@
   border-radius: 5px;
   font-size: 12px;
   line-height: 1.7;
+}
+.inspector-input-view {
+  padding: 4px clamp(12px, 2vw, 18px) 16px;
+  min-width: 0;
+}
+.inspector-input-view p {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.inspector-input-view pre {
+  max-height: 300px;
+  overflow: auto;
+}
+.trace-inputs {
+  display: grid;
+}
+.trace-input-task {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--muted);
+}
+.trace-input-task:not(:only-child) {
+  margin-bottom: 8px;
+}
+.trace-input-task p:last-child {
+  margin: 0;
+}
+.trace-inputs h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.trace-task-fields {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 13px;
+}
+.trace-task-fields dt {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.trace-task-fields dd {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.trace-task-fields dd:last-child {
+  margin-bottom: 0;
+}
+.trace-input-disclosure {
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+}
+.trace-input-disclosure:last-child {
+  border-bottom: 0;
+}
+.trace-input-disclosure summary,
+.trace-input-file summary {
+  padding: 10px 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.trace-input-file summary {
+  font-weight: 500;
 }
 .inspector-detail footer,
 .inspector-pagination {
@@ -1161,6 +1310,12 @@
   .inspector-toolbar label,
   .inspector-toolbar input {
     width: 100%;
+  }
+  .inspector-agent-select select {
+    flex: 1;
+  }
+  .inspector-agents button {
+    min-height: 44px;
   }
 }
 

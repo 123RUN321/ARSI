@@ -1,7 +1,7 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import { runDoctorCheck } from '../../shared/doctor-check.js';
 import { probeModelAccess, type ModelAccessResult } from './model-access.js';
-import { resolveModelConfig } from './service.js';
+import { resolveModelConfig } from './session.js';
 
 export async function checkPiAgent(
   context: DoctorContext,
@@ -12,31 +12,24 @@ export async function checkPiAgent(
     'model-config',
     async (signal) => {
       const config = context.binding.config;
-      const operation = await context.binding.definition.create(
-        config,
-        context.runtime.extend({ signal }),
-      );
+      signal.throwIfAborted();
+      resolved = resolveModelConfig(config);
+      let url: URL;
       try {
-        resolved = resolveModelConfig(config);
-        let url: URL;
-        try {
-          url = new URL(resolved.base_url);
-        } catch {
-          throw new Error(
-            'agent.pi base_url must resolve to an HTTP(S) endpoint',
-          );
-        }
-        if (
-          !['http:', 'https:'].includes(url.protocol) ||
-          url.username ||
-          url.password
-        ) {
-          throw new Error(
-            'agent.pi base_url must resolve to a credential-free HTTP(S) endpoint',
-          );
-        }
-      } finally {
-        await operation.dispose();
+        url = new URL(resolved.base_url);
+      } catch {
+        throw new Error(
+          'agent.pi base_url must resolve to an HTTP(S) endpoint',
+        );
+      }
+      if (
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.username ||
+        url.password
+      ) {
+        throw new Error(
+          'agent.pi base_url must resolve to a credential-free HTTP(S) endpoint',
+        );
       }
     },
     options,

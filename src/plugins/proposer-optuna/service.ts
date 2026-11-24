@@ -28,6 +28,7 @@ import {
   workerPath,
   type OptunaWorker,
 } from './worker.js';
+import { checkOptunaDependencies } from './doctor.js';
 
 function cardinality(config: ResolvedOptunaConfig): number | null {
   let count = 1;
@@ -74,9 +75,12 @@ function idleOutput(stateRef: string): IterativeProposerOutput {
 
 export async function createOptunaProposer(
   raw: OptunaConfig,
-  _services: RuntimeContext,
+  ctx: RuntimeContext,
   worker: OptunaWorker = runOptunaWorker,
 ): Promise<Operation<IterativeProposerInput, IterativeProposerOutput>> {
+  ctx.event?.on('rsi/doctor', (request) =>
+    checkOptunaDependencies(request, worker),
+  );
   const config = parseOptunaConfig(raw);
   const workerDigest = digest(await readFile(workerPath, 'utf8'));
   const settings = object(config);

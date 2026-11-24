@@ -74,11 +74,11 @@ test('an ordinary registered Agent gets recording and final Schema validation wi
   );
   assert.equal(runs, 1);
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
-  assert.equal(records.items[0]?.type, 'observation.gap');
+  assert.deepEqual(records.items, []);
   assert.equal(records.recording, 'closed');
 });
 
-test('an Agent without native observations records a gap and leaves lifecycle facts to its receipt', async (t) => {
+test('an Agent without native observations seals an empty stream and leaves lifecycle facts to its receipt', async (t) => {
   const f = await agentFixture();
   t.after(() => f.close());
   assert.deepEqual(
@@ -91,8 +91,7 @@ test('an Agent without native observations records a gap and leaves lifecycle fa
     { answer: 'ok' },
   );
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
-  assert.equal(records.items.length, 1);
-  assert.equal(records.items[0]?.type, 'observation.gap');
+  assert.deepEqual(records.items, []);
   assert.equal(records.recording, 'closed');
 });
 
@@ -112,6 +111,7 @@ test('invalid optional observations report a gap without failing execution', asy
   });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
   assert.equal(records.recording, 'closed');
+  assert.equal(records.gaps, 1);
   assert(
     records.items.some(
       (item) =>

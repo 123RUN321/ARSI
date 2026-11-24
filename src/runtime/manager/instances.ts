@@ -1,11 +1,27 @@
+import type { Context } from '@deepseek-ai/cordis';
 import type {
   Binding,
   Operation,
   RuntimeContext,
   EventPipeline,
+  OperationEventMap,
 } from '../../contracts/index.js';
 import type { Registry } from '../registry/index.js';
-import type { EventScope, ManagedEvents } from '../services/events.js';
+import { type EventScope, ManagedEvents } from '../services/events.js';
+
+// Cordis supplies the explicit dispatch target to this hook before invoking listeners.
+function restrictBindingRequests(
+  events: ManagedEvents,
+  target?: EventScope,
+): void {
+  events.context.on('internal/dispatch', (_mode, name, _args, caller) => {
+    if (
+      (name === 'rsi/doctor' || name === 'rsi/cleanup') &&
+      (!target || caller !== target.context)
+    )
+      throw new Error(`${name} requires an explicit request to a binding`);
+  });
+}
 
 interface Instance {
   operation: Operation;
@@ -28,7 +44,9 @@ export class Instances {
     private readonly registry: Registry,
     private readonly events: ManagedEvents,
     private readonly context: (bindingId: string) => RuntimeContext,
-  ) {}
+  ) {
+    restrictBindingRequests(events);
+  }
 
   prepare(
     bindingId: string,
@@ -175,4 +193,101 @@ export class Instances {
         'Instance cleanup failed',
       );
   }
+}
+
+// Standalone calls and CLI commands both own an instance outside an experiment.
+export async function createIsolatedInstance(
+  context: RuntimeContext,
+  create: (runtime: RuntimeContext) => Promise<Operation>,
+): Promise<{
+  scope: EventScope;
+  runtime: RuntimeContext;
+  operation: Operation;
+}> {
+  const events = new ManagedEvents({
+    context: (_bindingId, callId, signal) =>
+      context.extend({
+        callId,
+        signal: context.signal
+          ? AbortSignal.any([context.signal, signal])
+          : signal,
+      }),
+    diagnostic: () => {},
+  });
+  const scope = events.prepare(context.bindingId);
+  restrictBindingRequests(events, scope);
+  const runtime = context.extend({ event: scope.event });
+  await using lifetime = new AsyncDisposableStack();
+  lifetime.defer(() => events.dispose());
+  const operation = await create(runtime);
+  lifetime.defer(() => operation.dispose());
+  lifetime.defer(() => {
+    events.deactivate(scope);
+    events.abort(scope);
+    return events.idle(scope);
+  });
+  events.activate(scope);
+  const owned = lifetime.move();
+  return {
+    scope,
+    runtime,
+    operation: {
+      execute: (input, ctx) =>
+        operation.execute(
+          input,
+          ctx.event ? ctx : ctx.extend({ event: scope.event }),
+        ),
+      dispose: () => owned.disposeAsync(),
+    },
+  };
+}
+
+/** Address a command to a fresh instance, including bindings skipped during resume. */
+export async function withBindingInstance<
+  Name extends keyof OperationEventMap,
+  Result,
+>(
+  registry: Registry,
+  binding: Binding,
+  context: RuntimeContext,
+  name: Name,
+  request: (
+    target: Context,
+    event: Name,
+    runtime: RuntimeContext,
+  ) => Promise<Result>,
+): Promise<Result | undefined> {
+  context.signal.throwIfAborted();
+  await using lifetime = new AsyncDisposableStack();
+  lifetime.defer(registry.retain(binding.plugin));
+  const { scope, runtime, operation } = await createIsolatedInstance(
+    context,
+    async (ctx) => {
+      try {
+        return await registry.createManagedOperation(
+          binding.plugin,
+          structuredClone(binding.config),
+          ctx,
+        );
+      } catch (cause) {
+        throw new Error(
+          `Failed to initialize ${binding.plugin} for binding ${context.bindingId}`,
+          { cause },
+        );
+      }
+    },
+  );
+  lifetime.defer(operation.dispose);
+  context.signal.throwIfAborted();
+  const handlers = [...scope.subscriptions].filter(
+    (entry) => entry.name === name,
+  );
+  if (!handlers.length) return undefined;
+  if (handlers.length > 1)
+    throw new Error(
+      `Expected one handler for ${name} on binding ${context.bindingId}`,
+    );
+  const result = await request(scope.context, name, runtime);
+  if (result == null) throw new Error(`Plugin returned no result for ${name}`);
+  return result;
 }

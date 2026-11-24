@@ -5,13 +5,14 @@ import { join, resolve } from 'node:path';
 import type { JsonSchema, JsonValue } from '../../contracts/index.js';
 import { configPathFields, isResourceUrl } from '../../shared/paths.js';
 import { runDoctorCheck } from '../../shared/doctor-check.js';
-import { errorText } from '../../shared/errors.js';
+import { errorText, redactConfiguration } from '../../shared/errors.js';
 import { json, object } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
+import type { Registry } from '../registry/index.js';
 import type { Runtime } from '../context.js';
 import { Recipe } from '../loaders/recipe.js';
 import { Manager } from '../manager/index.js';
-import { ManagedEvents } from '../services/events.js';
+import { withBindingInstance } from '../manager/instances.js';
 import type {
   DoctorBinding,
   DoctorCheck,
@@ -56,46 +57,52 @@ const doctorResultSchema: JsonSchema = {
   },
 };
 
-function redactor(value?: JsonValue): (message: string) => string {
-  const secrets = new Set<string>();
-  for (const [name, secret] of Object.entries(process.env))
-    if (/key|token|secret|password|authorization/i.test(name) && secret)
-      secrets.add(secret);
-  const visit = (entry: JsonValue | undefined): void => {
-    if (Array.isArray(entry)) entry.forEach(visit);
-    else if (entry && typeof entry === 'object')
-      for (const [key, child] of Object.entries(entry)) {
-        if (
-          /key|token|secret|password|authorization/i.test(key) &&
-          typeof child === 'string'
-        ) {
-          secrets.add(child);
-          for (const match of child.matchAll(
-            /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
-          )) {
-            const secret = process.env[match[1]];
-            if (secret) secrets.add(secret);
-          }
-        } else visit(child);
-      }
-  };
-  visit(value);
-  return (message) => {
-    for (const secret of [...secrets].sort((a, b) => b.length - a.length))
-      if (secret.length > 0) message = message.replaceAll(secret, '[redacted]');
-    return message.replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/g, '$1[redacted]@');
-  };
-}
-
 export function doctorFailure(stage: string, error: unknown): DoctorReport {
   return {
     recipeId: null,
     summary: { passed: 0, failed: 1, unchecked: 0 },
     missingResources: [],
     checks: [
-      { id: stage, status: 'failed', reason: redactor()(errorText(error)) },
+      {
+        id: stage,
+        status: 'failed',
+        reason: redactConfiguration()(errorText(error)),
+      },
     ],
   };
+}
+
+export async function diagnoseBinding(
+  registry: Registry,
+  context: DoctorContext,
+): Promise<DoctorResult> {
+  const { binding, signal, directory } = context;
+  try {
+    const result = await withBindingInstance(
+      registry,
+      { plugin: binding.pluginId, config: binding.config },
+      context.runtime.extend({ bindingId: binding.name, signal, directory }),
+      'rsi/doctor',
+      (target, event, runtime) =>
+        target.serial(target, event, { ...context, runtime }),
+    );
+    return (
+      result ?? {
+        checks: [
+          {
+            id: 'plugin',
+            status: 'unchecked',
+            reason: `Binding ${binding.name}, implementation ${binding.pluginId}, has no doctor capability.`,
+          },
+        ],
+      }
+    );
+  } catch (error) {
+    signal.throwIfAborted();
+    return {
+      checks: [{ id: 'script', status: 'failed', reason: errorText(error) }],
+    };
+  }
 }
 
 /** Internal runner: never runs a Policy or writes to the invoking experiment store. */
@@ -122,7 +129,7 @@ export async function doctorRecipe(
     missingResources: [],
     checks: [{ id: 'recipe.validate', status: 'passed' }],
   };
-  const redact = redactor({
+  const redact = redactConfiguration({
     recipe: recipe.toJSON(),
     reflection: recipe.reflection?.implementation.config ?? {},
   });
@@ -161,12 +168,6 @@ export async function doctorRecipe(
       return original();
     }
   };
-  const events = new ManagedEvents({
-    context: () => isolated.context,
-    diagnostic: ({ error }) => {
-      throw error;
-    },
-  });
   const denied = async (): Promise<never> => {
     throw new Error(
       'Doctor does not execute Agents, Policies, or Measurements',
@@ -177,7 +178,6 @@ export async function doctorRecipe(
     cleanup: new AbortController().signal,
     experimentId: 'doctor',
     callId: 'doctor',
-    event: events.event,
     artifacts: {
       putJson: artifacts.putJson.bind(artifacts),
       capture: artifacts.capture.bind(artifacts),
@@ -259,6 +259,7 @@ export async function doctorRecipe(
           ];
         else report.missingResources.push(item);
       };
+      let pathsValid = true;
       for (const field of configPathFields(
         binding.definition.configSchema,
         binding.config,
@@ -295,22 +296,22 @@ export async function doctorRecipe(
           { signal },
         );
         addCheck(check);
+        if (check.status === 'failed') pathsValid = false;
         if (missing)
           addMissing({
             field: `config${field.pointer.replaceAll('/', '.')}`,
             kind: field.kind,
             reference,
-            checksNotRun: [],
+            checksNotRun: options.staticOnly ? [] : ['plugin'],
           });
       }
-      const doctor = binding.definition.doctor;
-      if (options.staticOnly || !doctor) {
+      if (options.staticOnly || !pathsValid) {
         addCheck({
           id: 'plugin',
           status: 'unchecked',
           reason: options.staticOnly
             ? 'Component diagnostics were skipped by --static.'
-            : `Binding ${binding.name}, implementation ${binding.pluginId}, has no doctor capability; registration, contract, and configuration were validated.`,
+            : 'Component diagnostics were skipped because a declared local path failed validation.',
         });
         continue;
       }
@@ -320,10 +321,10 @@ export async function doctorRecipe(
         registry: runtime.registry,
         directory,
         signal,
-        runtime: base.extend({ directory, bindingId: binding.name }),
+        runtime: base,
       };
       try {
-        const result = await doctor(context);
+        const result = await diagnoseBinding(runtime.registry, context);
         signal.throwIfAborted();
         validate(doctorResultSchema, result, 'Doctor result');
         const ids = new Set(report.checks.map(({ id }) => id));
@@ -349,22 +350,20 @@ export async function doctorRecipe(
         addCheck({
           id: 'script',
           status: 'failed',
-          reason: `${errorText(error)} Plugin availability is unknown.`,
+          reason: errorText(error),
         });
       }
     }
   } finally {
-    const cleanups = await Promise.allSettled([
-      isolated.dispose(),
-      events.dispose(),
-    ]);
-    for (const [index, cleanup] of cleanups.entries())
-      if (cleanup.status === 'rejected')
-        add({
-          id: `doctor.cleanup.${index}`,
-          status: 'failed',
-          reason: errorText(cleanup.reason),
-        });
+    try {
+      await isolated.dispose();
+    } catch (error) {
+      add({
+        id: 'doctor.cleanup.runtime',
+        status: 'failed',
+        reason: errorText(error),
+      });
+    }
     try {
       await rm(temporary, { recursive: true, force: true });
     } catch (error) {

@@ -8,6 +8,7 @@ import type {
 import { json, object, string } from '../../shared/json.js';
 import { editResource } from '../shared/agent-editing/index.js';
 import { prepareDocumentPreviews } from './document-previews.js';
+import { checkReflectionAgent } from './doctor.js';
 
 export const reflectionReviewer = {
   name: 'reflection-reviewer',
@@ -20,7 +21,8 @@ export const createReflectionAgent: OperationDefinition<
   ReflectionInput,
   ReflectionOutput,
   AgentEditingConfig
->['create'] = async (config, _context) => {
+>['create'] = async (config, ctx) => {
+  ctx.event?.on('rsi/doctor', checkReflectionAgent);
   return {
     async execute(input, context) {
       json(input);

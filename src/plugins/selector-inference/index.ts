@@ -4,7 +4,6 @@ import type {
   OperationDefinition,
 } from '../../contracts/index.js';
 import { metricSelectorContract } from '../../contracts/plugin-types/index.js';
-import { checkOperationConfiguration } from '../shared/doctor/checks.js';
 import { configSchema, type MetricSelectorConfig } from './schema.js';
 import { createInferenceSelector } from './service.js';
 
@@ -19,5 +18,4 @@ export const inferenceSelectorDefinition: OperationDefinition<
   contract: metricSelectorContract,
   configSchema,
   create: createInferenceSelector,
-  doctor: checkOperationConfiguration,
 };

@@ -6,6 +6,7 @@ export async function runDshProcess(
   prompt: string,
   onLine: (line: string) => void,
   launch: AgentProcessLauncher,
+  observation: Parameters<typeof runNativeJsonProcess>[5],
 ): Promise<void> {
   await runNativeJsonProcess(
     executable,
@@ -13,5 +14,6 @@ export async function runDshProcess(
     prompt,
     onLine,
     launch,
+    observation,
   );
 }

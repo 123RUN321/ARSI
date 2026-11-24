@@ -47,6 +47,7 @@ import {
   type ParetoEvolutionState,
   type RoundReport,
 } from './engine.js';
+import { checkParetoEvolutionProposer } from './doctor.js';
 
 function safePath(path: string): string {
   const parts = path.split('/');
@@ -909,7 +910,9 @@ export const createParetoEvolutionProposer: OperationDefinition<
   ParetoEvolutionConfig
 >['create'] = async (
   raw,
+  ctx,
 ): Promise<Operation<IterativeProposerInput, IterativeProposerOutput>> => {
+  ctx.event?.on('rsi/doctor', checkParetoEvolutionProposer);
   const settings = parseConfig<ParetoEvolutionConfig>(
     configSchema,
     raw,

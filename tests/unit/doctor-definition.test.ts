@@ -40,33 +40,33 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { proposerContract, applicationContract } from ${JSON.stringify(contracts)};
 import { runDoctorCheck } from ${JSON.stringify(publicApi)};
-export const calls = { doctor: 0, create: 0, execute: 0 };
+export const calls = { doctor: 0, create: 0, execute: 0, dispose: 0 };
 export const customDefinition = {
   id: 'proposer.custom', contract: proposerContract,
   configSchema: { type: 'object', properties: {
     inputFile: { type: 'string', 'x-rsi-path': 'file' },
     label: { type: 'string', default: 'schema-default' }
   }, required: ['inputFile'], additionalProperties: false },
-  async create() { calls.create++; return {
-    async execute(input) { calls.execute++; return {status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'}; },
-    async dispose() {}
-  }; },
-  async doctor(context) {
-    calls.doctor++;
-    if (this.id !== context.binding.pluginId) throw Error('Doctor lost its definition receiver');
-    const details = { pluginId: context.binding.pluginId, label: context.binding.config.label, input: context.binding.config.inputFile, directory: context.directory };
-    const check = await runDoctorCheck('content', async signal => {
-      await writeFile(join(context.directory, 'owned-marker'), 'owned');
-      const content = await readFile(context.binding.config.inputFile, { encoding: 'utf8', signal });
-      if (content !== 'ready') throw Error('Input must be ready: ' + process.env.DOCTOR_PUBLIC_FIXTURE_SECRET);
-    }, { signal: context.signal, details });
-    return { checks: [check] };
+  async create(config, ctx) {
+    calls.create++;
+    ctx.event.on('rsi/doctor', async (context) => {
+      calls.doctor++;
+      const details = { pluginId: context.binding.pluginId, label: context.binding.config.label, input: context.binding.config.inputFile, directory: context.directory };
+      const check = await runDoctorCheck('content', async signal => {
+        await writeFile(join(context.directory, 'owned-marker'), 'owned');
+        const content = await readFile(context.binding.config.inputFile, { encoding: 'utf8', signal });
+        if (content !== 'ready') throw Error('Input must be ready: ' + process.env.DOCTOR_PUBLIC_FIXTURE_SECRET);
+      }, { signal: context.signal, details });
+      return { checks: [check] };
+    });
+    return { async execute(input) { calls.execute++; return {status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'}; }, async dispose(){calls.dispose++;} };
   }
 };
+const inactive = { async execute() { throw Error('unexpected business call'); }, async dispose() {} };
 export function register(registry) {
   registry.registerOperation(customDefinition);
-  registry.registerOperation({...customDefinition,id:'proposer.no-doctor',doctor:undefined});
-  registry.registerOperation({id:'application.custom',contract:applicationContract,configSchema:{type:'object'},async create(){throw Error('Doctor must not create an uncovered Application');}});
+  registry.registerOperation({...customDefinition,id:'proposer.no-doctor', async create(){return inactive;}});
+  registry.registerOperation({id:'application.custom',contract:applicationContract,configSchema:{type:'object'},async create(){return inactive;}});
   registry.registerPolicy('policy.custom-doctor', ${JSON.stringify(join(root, 'policy.json'))});
 }
 `,
@@ -123,7 +123,12 @@ export function register(registry) {
   const module: { calls: { doctor: number; create: number; execute: number } } =
     await import(pathToFileURL(modulePath).href);
   const recipe = await Recipe.load(path, runtime.registry);
-  assert.deepEqual(module.calls, { doctor: 0, create: 0, execute: 0 });
+  assert.deepEqual(module.calls, {
+    doctor: 0,
+    create: 0,
+    execute: 0,
+    dispose: 0,
+  });
   const operation = await runtime.registry
     .get('proposer.custom')
     .create(recipe.bindings.custom.config, new RuntimeContext());
@@ -132,7 +137,12 @@ export function register(registry) {
     new RuntimeContext(),
   );
   await operation.dispose();
-  assert.deepEqual(module.calls, { doctor: 0, create: 1, execute: 1 });
+  assert.deepEqual(module.calls, {
+    doctor: 0,
+    create: 1,
+    execute: 1,
+    dispose: 1,
+  });
   const report = await doctorRecipe(runtime, path);
   assert.equal(report.summary.failed, 0, JSON.stringify(report));
   const content = report.checks.find((check) => check.id === 'custom.content');
@@ -142,7 +152,12 @@ export function register(registry) {
   assert.equal(content?.details?.label, 'recipe-value');
   assert.equal(typeof content?.details?.directory, 'string');
   await assert.rejects(access(String(content?.details?.directory)));
-  assert.deepEqual(module.calls, { doctor: 1, create: 1, execute: 1 });
+  assert.deepEqual(module.calls, {
+    doctor: 1,
+    create: 2,
+    execute: 1,
+    dispose: 2,
+  });
   await writeFile(input, 'broken');
   const broken = await doctorRecipe(runtime, path);
   assert.equal(
@@ -167,6 +182,11 @@ export function register(registry) {
       ?.status,
     'passed',
   );
-  assert.deepEqual(module.calls, { doctor: 2, create: 1, execute: 1 });
+  assert.deepEqual(module.calls, {
+    doctor: 2,
+    create: 3,
+    execute: 1,
+    dispose: 3,
+  });
   assert.deepEqual(await runtime.manager.list(), []);
 });

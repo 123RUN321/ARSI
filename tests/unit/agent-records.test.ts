@@ -39,7 +39,7 @@ test('record pagination reaches beyond the former 4 MiB prefix without dropping 
     runId: 'main',
     event: { type: 'run.finished', status: 'completed' },
   });
-  writer.close();
+  await writer.close();
   const page = await readAgentRecords(root, 4999, 100, true);
   assert.equal(page.total, 5002);
   assert.equal(page.items[0]?.sequence, 5000);
@@ -68,7 +68,7 @@ test('an interrupted trailing append exposes only complete records', async (t) =
     runId: 'main',
     event: { type: 'run.started', backend: 'test', parentRunId: null },
   });
-  writer.close();
+  await writer.close();
   await appendFile(join(root, 'agent', 'events.jsonl'), '{"sequence":2');
   const page = await readAgentRecords(root, 0, 100, true);
   assert.equal(page.items.length, 1);
@@ -97,6 +97,10 @@ test('an append failure disables recording without cancelling execution or chang
   assert.deepEqual(
     await f.execute({
       async execute(_input, context) {
+        context.event.emit('rsi/agent-observation', {
+          runId: 'main',
+          event: { type: 'run.started', backend: 'test', parentRunId: null },
+        });
         await rm(join(f.context.directory, 'agent', 'payloads'), {
           recursive: true,
         });
@@ -122,6 +126,7 @@ test('an append failure disables recording without cancelling execution or chang
   );
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
   assert.equal(records.items.length, 1);
+  assert.equal(records.recording, 'interrupted');
 });
 
 test('a close failure cannot replace a successful result', async (t) => {
@@ -131,8 +136,8 @@ test('a close failure cannot replace a successful result', async (t) => {
   t.mock.method(
     FileAgentRecorder.prototype,
     'close',
-    function (this: FileAgentRecorder) {
-      originalClose.call(this);
+    async function (this: FileAgentRecorder) {
+      await originalClose.call(this, false);
       throw new Error('Disk sync failed');
     },
   );
@@ -158,8 +163,8 @@ test('unconfirmed process cleanup remains unknown when closing the record also f
   t.mock.method(
     FileAgentRecorder.prototype,
     'close',
-    function (this: FileAgentRecorder) {
-      originalClose.call(this);
+    async function (this: FileAgentRecorder) {
+      await originalClose.call(this, false);
       throw new Error('Disk sync failed');
     },
   );

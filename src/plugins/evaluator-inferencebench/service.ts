@@ -24,11 +24,13 @@ import {
 } from '../shared/evaluator-adapter/configuration.js';
 import { normalizeEvaluation } from './measurement.js';
 import { configSchema, type EvaluatorConfig } from './schema.js';
+import { inferencebenchDoctor } from './doctor.js';
 export async function createInferencebench(
   config: EvaluatorConfig,
-  _context: RuntimeContext,
+  ctx: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<InferencebenchInput, InferencebenchOutput>> {
+  ctx.event?.on('rsi/doctor', inferencebenchDoctor);
   validate(configSchema, config, 'evaluator config');
   return {
     async execute(input, context): Promise<InferencebenchOutput> {

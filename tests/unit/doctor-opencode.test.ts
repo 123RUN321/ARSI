@@ -1,3 +1,4 @@
+import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -5,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRuntime } from '../../src/runtime/context.js';
 import type { DoctorContext } from '../../src/contracts/index.js';
-import { openCodeDefinition } from '../../src/plugins/agent-opencode/index.js';
 
 test('OpenCode doctor composes native configuration and rejects V1 without claiming model access', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'opencode-doctor-'));
@@ -20,7 +20,7 @@ test('OpenCode doctor composes native configuration and rejects V1 without claim
   const binding = {
     name: 'agent',
     pluginId: 'agent.opencode',
-    definition: openCodeDefinition,
+    definition: runtime.registry.get('agent.opencode'),
     config: { executable: resolve('tests/fixtures/opencode-cli.cjs') },
   };
   const context: DoctorContext = {
@@ -35,8 +35,8 @@ test('OpenCode doctor composes native configuration and rejects V1 without claim
     directory: root,
     signal: AbortSignal.timeout(15000),
   };
-  const doctor = openCodeDefinition.doctor!;
-  const result = await doctor(context);
+  const diagnose = () => diagnoseBinding(runtime.registry, context);
+  const result = await diagnose();
   assert.deepEqual(
     result.checks.map((c) => [c.id, c.status]),
     [
@@ -57,7 +57,7 @@ test('OpenCode doctor composes native configuration and rejects V1 without claim
       cli,
       `const args=process.argv.slice(2);console.log(args.includes('--help')?'--standalone --format --agent --model --archived':args.includes('--version')?${JSON.stringify(version)}:${JSON.stringify(body)});`,
     );
-    const report = await doctor(context);
+    const report = await diagnose();
     assert.equal(report.checks.find((c) => c.id === failed)?.status, 'failed');
     assert(!JSON.stringify(report).includes('native-secret-invalid-json'));
     assert.equal(report.checks.at(-1)?.status, 'unchecked');

@@ -5,18 +5,25 @@ import { object } from '../../shared/json.js';
 export function piObservations(
   record: (event: AgentObservation) => void,
   runId: string,
-): (value: AgentSessionEvent) => void {
+): {
+  observe: (value: AgentSessionEvent) => void;
+  finishMessage: (text: string) => void;
+} {
   let serial = 0;
-  return (value) => {
+  let lastMessage:
+    | Extract<AgentObservation['event'], { type: 'message.completed' }>
+    | undefined;
+  const emit = (event: AgentObservation['event']): void =>
+    record({ runId, event });
+  const observe = (value: AgentSessionEvent): void => {
     const event = object(JSON.parse(JSON.stringify(value)));
-    const emit = (observation: AgentObservation['event']): void =>
-      record({ runId, event: observation });
     if (event.type === 'message_end') {
       const message = object(event.message);
       const content = Array.isArray(message.content)
         ? message.content.map((block) => object(block))
         : [];
-      emit({
+      const isToolTurn = message.stopReason === 'toolUse';
+      lastMessage = {
         type: 'message.completed',
         messageId: `message-${serial++}`,
         role: String(message.role),
@@ -28,7 +35,9 @@ export function piObservations(
           .filter((block) => block.type === 'thinking')
           .map((block) => String(block.thinking))
           .join(''),
-      });
+        ...(isToolTurn ? { phase: 'commentary' } : {}),
+      };
+      emit(lastMessage);
       if (message.usage !== undefined)
         emit({
           type: 'usage.reported',
@@ -58,5 +67,24 @@ export function piObservations(
         output: event.result ?? null,
         status: event.isError ? 'failed' : 'succeeded',
       });
+  };
+  return {
+    observe,
+    finishMessage(text) {
+      if (!text.trim()) return;
+      emit({
+        type: 'message.completed',
+        messageId:
+          lastMessage?.text === text
+            ? lastMessage.messageId
+            : `message-${serial++}`,
+        role: 'assistant',
+        text,
+        ...(lastMessage?.text === text && lastMessage.thinking
+          ? { thinking: lastMessage.thinking }
+          : {}),
+        phase: 'final_answer',
+      });
+    },
   };
 }
