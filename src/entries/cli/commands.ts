@@ -26,7 +26,7 @@ export async function runCommand(
   argv: string[],
   context: CommandContext,
 ): Promise<CommandResult> {
-  let result: (CommandResult & { json?: unknown }) | undefined;
+  let result: CommandResult | undefined;
   let commanderExit: CommanderError | undefined;
   const program = new Command('arsi')
     .description('Make everything rsi-able')
@@ -136,7 +136,10 @@ export async function runCommand(
     const runtime = await context.openRuntime(
       program.opts<{ pluginDir: string[] }>().pluginDir,
     );
-    result = { exitCode: 0, json: await execute(runtime) };
+    result = {
+      exitCode: 0,
+      stdout: JSON.stringify(await execute(runtime), null, 2) + '\n',
+    };
   }
 
   function runExperiment(
@@ -163,9 +166,9 @@ export async function runCommand(
     });
     result = {
       exitCode: report.checks.some(({ status }) => status === 'failed') ? 1 : 0,
-      ...(options.json
-        ? { json: report }
-        : { stdout: formatDoctorSummary(report, recipePath) }),
+      stdout: options.json
+        ? JSON.stringify(report, null, 2) + '\n'
+        : formatDoctorSummary(report, recipePath),
     };
   }
 
@@ -212,7 +215,7 @@ export async function runCommand(
         : report.results.some(({ status }) => status === 'pending');
     result = {
       exitCode: context.signal.aborted ? 130 : incomplete ? 1 : 0,
-      json: report,
+      stdout: JSON.stringify(report, null, 2) + '\n',
     };
   }
 
@@ -256,10 +259,5 @@ export async function runCommand(
   }
   if (!result)
     throw new Error('Choose a subcommand; use --help for available commands');
-  if ('json' in result)
-    return {
-      exitCode: result.exitCode,
-      stdout: JSON.stringify(result.json, null, 2) + '\n',
-    };
   return result;
 }
