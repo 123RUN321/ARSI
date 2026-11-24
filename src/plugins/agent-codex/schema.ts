@@ -7,13 +7,11 @@ export type AgentCodexConfig = {
   timeoutMs?: number;
 };
 
-export const defaultExecutable = 'codex';
-
 export const configSchema: JsonSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    executable: { type: 'string', minLength: 1, default: defaultExecutable },
+    executable: { type: 'string', minLength: 1, default: 'codex' },
     model: { type: 'string', minLength: 1, pattern: '\\S' },
     thinkingLevel: { type: 'string', minLength: 1, pattern: '\\S' },
     timeoutMs: {

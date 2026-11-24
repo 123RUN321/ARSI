@@ -7,7 +7,7 @@ import type {
 } from '../../contracts/index.js';
 import { checkCodexAgent } from './doctor.js';
 
-import { defaultExecutable, type AgentCodexConfig } from './schema.js';
+import type { AgentCodexConfig } from './schema.js';
 import { runSession } from './session.js';
 
 export const createAgentCodex: OperationDefinition<
@@ -21,7 +21,7 @@ export const createAgentCodex: OperationDefinition<
       if (request.role !== undefined)
         throw new Error('For Codex role delegation, use native spawn_agent');
       return runSession({
-        executable: config.executable ?? defaultExecutable,
+        executable: config.executable ?? 'codex',
         model: config.model,
         reasoningEffort: config.thinkingLevel,
         directory: request.cwd,

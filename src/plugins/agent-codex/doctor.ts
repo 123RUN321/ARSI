@@ -7,7 +7,6 @@ import { projectMarker } from '../shared/agent-editing/project.js';
 import { executablePath } from '../shared/doctor/executable.js';
 import { runCommand } from '../shared/doctor/process.js';
 import { codexCommand } from './executable.js';
-import { defaultExecutable } from './schema.js';
 
 export async function checkCodexAgent(
   context: DoctorContext,
@@ -21,7 +20,7 @@ export async function checkCodexAgent(
     async (signal) => {
       const configured =
         context.binding.config.executable === undefined
-          ? defaultExecutable
+          ? 'codex'
           : string(context.binding.config.executable);
       const command = codexCommand(configured);
       const executable = await executablePath(

@@ -12,7 +12,7 @@ import type {
 import { object, string } from '../../shared/json.js';
 import { checkDshAgent } from './doctor.js';
 
-import { defaultExecutable, type AgentDshConfig } from './schema.js';
+import type { AgentDshConfig } from './schema.js';
 import { runDshProcess } from './process.js';
 import { dshObservations } from './observations.js';
 
@@ -65,7 +65,7 @@ export const createAgentDsh: OperationDefinition<
       let finalText: string | undefined;
       try {
         await runDshProcess(
-          config.executable ?? defaultExecutable,
+          config.executable ?? 'dsh',
           patch,
           JSON.stringify({
             goal: request.goal,

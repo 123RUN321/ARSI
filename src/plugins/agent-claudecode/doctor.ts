@@ -5,14 +5,13 @@ import {
   checkNativeAgent,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
-import { defaultExecutable } from './schema.js';
 
 export async function checkClaudeCodeAgent(
   context: DoctorContext,
 ): Promise<DoctorResult> {
   const result = await checkNativeAgent(
     context,
-    defaultExecutable,
+    'claude',
     ['--help'],
     [
       '--print',
@@ -44,7 +43,7 @@ export async function checkClaudeCodeAgent(
       async (signal) => {
         const help = await runNativeAgentCommand(
           context,
-          defaultExecutable,
+          'claude',
           ['auth', 'status', '--help'],
           signal,
         );
@@ -54,7 +53,7 @@ export async function checkClaudeCodeAgent(
           );
         const stdout = await runNativeAgentCommand(
           context,
-          defaultExecutable,
+          'claude',
           ['auth', 'status', '--json'],
           signal,
           [0, 1],
