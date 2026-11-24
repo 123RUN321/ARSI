@@ -48,10 +48,12 @@ flowchart TD
    - Probes use the configuration produced by merging Policy defaults and Recipe overrides.
    - A loading error produces a failed diagnostic and stops component probes.
 3. **Check declared prerequisites.** For the Application, each effective binding and the configured Reflection implementation, doctor checks local files and directories marked with `x-rsi-path` for existence, type and readability. It checks that fields marked with `x-rsi-binding` name Recipe bindings that implement the declared contracts.
-4. **Run component checks.** If a declared local path fails validation, doctor marks the binding’s `plugin` check `unchecked`, lists the failed path checks in its reason, and continues with the next binding. For bindings with valid paths, doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`.
+4. **Run component checks.** If a declared local path fails validation, doctor reports that failure and continues with the next binding. For bindings with valid paths, doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`.
 5. **Clean up and report.** RSI checks use isolated temporary storage, propagate cancellation, release the instances and processes they create, and remove temporary files. Checks can read existing artifacts as inputs. RSI keeps its captures and writes in the temporary Runtime.
 
 ### Reading the summary and JSON report
+
+Each binding stops at its first failed prerequisite or plugin check. Other bindings continue. The summary states that the failed plugin’s subsequent checks were not completed; counts reflect only emitted checks.
 
 By default, `doctor` writes a readable summary to stdout. It gives the check counts, explains failures and unchecked checks, and reports available fixes. For a missing file, it shows the path, the configuration field to update, and any blocked checks.
 
@@ -68,7 +70,7 @@ The report contains the following fields, including when configuration loading o
 | `recipeId` | Loaded Recipe ID, or `null` if loading did not succeed.                                    |
 | `checks`   | Individual results with `id` and `status`. A check may also include scope and evidence. |
 
-Use `checks` to count results by status or find failures. Optional fields include `binding`, `pluginId`, `reason` and `details`. Read `reason` for the error, available fixes or why a check was skipped. Declared path checks report each invalid field, including fields that refer to the same path.
+Use `checks` to count results by status or find failures. Optional fields include `binding`, `pluginId`, `reason` and `details`. Read `reason` for the error, available fixes or a limitation of the diagnostic scope.
 
 Component check IDs start with the binding name. In a full check, a binding named `agent` using Pi produces `agent.model-config` and `agent.model-access`. A different binding name changes the prefix.
 
@@ -145,11 +147,11 @@ Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/co
 
 | Type                 | Purpose                                                                                                                                                                                                                         |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | An asynchronous `rsi/doctor` handler that receives `DoctorContext<C>` and returns `Promise<DoctorResult>`.                                                                                                                      |
+| `OperationDoctor<C>` | A handler for `rsi/doctor` that returns `DoctorResult` or `Promise<DoctorResult>`. |
 | `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                            |
 | `DoctorResult`       | The component's results in `checks`. For failures, use `reason` to identify the cause and what to fix. For skipped checks, explain the failed prerequisite in `reason`. The framework prefixes check IDs with the binding name. |
 
-The framework reports invalid binding references before dispatching the handler. If the binding's declared paths pass, its handler can still run independent checks.
+The framework checks binding references before dispatching the handler. An invalid reference stops that binding.
 
 - `C` is the component configuration type. Here `schema.ts` exports `type CustomConfig = { inputFile: string }`, so TypeScript infers `context.binding.config.inputFile` as `string`.
 
@@ -157,7 +159,7 @@ In this example, the existing `configSchema` declares a required string named `i
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { runDoctorCheck } from 'arsi';
+import { failed, passed, runDoctorCheck } from 'arsi';
 import type { OperationDoctor } from 'arsi/contracts';
 import type { CustomConfig } from './schema.js';
 
@@ -173,7 +175,9 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
     },
     { signal: context.signal },
   );
-  return { checks: [inputContent] };
+  if (inputContent.status === 'failed')
+    return failed(inputContent.id, inputContent.reason);
+  return passed('input-content');
 };
 ```
 

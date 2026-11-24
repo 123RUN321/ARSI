@@ -1,3 +1,4 @@
+import { passed } from '../../../shared/doctor-check.js';
 import type { DoctorResult } from '../../../contracts/index.js';
 
 export function missingPath(error: unknown): string | undefined {
@@ -14,5 +15,5 @@ export function missingPath(error: unknown): string | undefined {
 
 /** Reaching this handler confirms the factory accepted the effective configuration. */
 export function checkOperationConfiguration(): DoctorResult {
-  return { checks: [{ id: 'configuration', status: 'passed' }] };
+  return passed('configuration');
 }

@@ -27,6 +27,8 @@ import type {
 } from '../../src/contracts/index.js';
 import { runCommand } from '../../src/plugins/shared/doctor/process.js';
 import {
+  failed,
+  passed,
   runDoctorCheck,
   runDoctorProbe,
 } from '../../src/shared/doctor-check.js';
@@ -53,6 +55,13 @@ test('doctor probes return data only after successful completion and keep report
   assert.match(failed.check.reason ?? '', /missing input/);
   const check = await runDoctorCheck('input', async () => {}, options);
   assert.deepEqual(check, { id: 'input', status: 'passed' });
+});
+
+test('doctor result constructors are synchronous and keep the public report shape', () => {
+  assert.deepEqual(failed('prompt', 'Restore prompt.md.'), {
+    checks: [{ id: 'prompt', status: 'failed', reason: 'Restore prompt.md.' }],
+  });
+  assert.deepEqual(passed(), { checks: [{ id: 'plugin', status: 'passed' }] });
 });
 
 async function fixture(): Promise<{
@@ -279,9 +288,9 @@ test('a rejected Target path skips the Application factory and still probes othe
   );
   assert.equal(
     byId.get('application.resource.baseline.directory')?.status,
-    'passed',
+    undefined,
   );
-  assert.equal(byId.get('application.plugin')?.status, 'unchecked');
+  assert.equal(byId.get('application.plugin'), undefined);
   assert.equal(byId.get('left.configuration')?.status, 'passed');
   assert.equal(byId.get('right.configuration')?.status, 'passed');
   verifyReport(report);
@@ -342,11 +351,7 @@ test('doctor checks declared paths and continues with component diagnostics', as
         .map(({ id }) => id),
       ['left.component', 'right.component'],
     );
-    assert.match(
-      missing.checks.find(({ id }) => id === 'application.plugin')?.reason ??
-        '',
-      /application\.resource\.input/,
-    );
+    assert.ok(!missing.checks.some(({ id }) => id === 'application.plugin'));
     verifyReport(missing);
 
     await writeFile(join(f.root, 'input.txt'), 'fixture');
@@ -364,7 +369,7 @@ test('doctor checks declared paths and continues with component diagnostics', as
   }
 });
 
-test('doctor checks declared Agent references independently of plugin diagnostics', async (t) => {
+test('doctor stops a binding at its first invalid reference and continues other bindings', async (t) => {
   const f = await fixture();
   t.after(f.dispose);
   f.doctors({ 'agent.pi': async () => ({ checks: [] }) });
@@ -395,7 +400,7 @@ test('doctor checks declared Agent references independently of plugin diagnostic
     }
     assert.equal(
       report.checks.find(({ id }) => id === 'application.plugin')?.status,
-      'unchecked',
+      expectedError ? undefined : 'unchecked',
     );
     verifyReport(report);
   }
@@ -425,12 +430,12 @@ test('doctor checks declared Agent references independently of plugin diagnostic
   );
   assert.equal(
     report.checks.find(({ id }) => id === 'application.independent')?.status,
-    'passed',
+    undefined,
   );
   verifyReport(report);
 });
 
-test('doctor explains every failed path that prevented plugin checks', async (t) => {
+test('doctor reports the first failed path and stops the binding', async (t) => {
   const f = await fixture();
   t.after(f.dispose);
   const recipe = object(JSON.parse(await readFile(f.path, 'utf8')));
@@ -446,19 +451,18 @@ test('doctor explains every failed path that prevented plugin checks', async (t)
     [{ baseline: link + '/' }, ['baseline']],
     [{ baseline: link + '/.' }, ['baseline']],
     [{ baseline: f.root + '/absent/../baseline' }, ['baseline']],
-    [{ baseline: './absent', input: './absent' }, ['input', 'baseline']],
+    [{ baseline: './absent', input: './absent' }, ['input']],
   ] as const) {
     object(recipe.application).config = config;
     await writeFile(f.path, JSON.stringify(recipe));
     const report = await doctorRecipe(f.runtime, f.path);
     const skipped = report.checks.find(({ id }) => id === 'application.plugin');
-    assert.equal(skipped?.status, 'unchecked');
+    assert.equal(skipped, undefined);
     for (const field of failedFields) {
       const id = `application.resource.${field}`;
       const failure = report.checks.find((check) => check.id === id);
       assert.equal(failure?.status, 'failed');
       assert.ok(failure.reason?.includes(`application.config.${field}`));
-      assert.ok(skipped.reason?.includes(id));
     }
     assert.equal(
       report.checks.find(({ id }) => id === 'left.configuration')?.status,
@@ -504,10 +508,7 @@ test('doctor gates the inference factory on its script and probes the executable
       .map(({ id }) => id),
     ['application.resource.remote.script'],
   );
-  assert.match(
-    report.checks.find(({ id }) => id === 'application.plugin')?.reason ?? '',
-    /application\.resource\.remote\.script/,
-  );
+  assert.ok(!report.checks.some(({ id }) => id === 'application.plugin'));
   await writeFile(
     join(f.root, 'absent.py'),
     'raise RuntimeError("must not run")',
@@ -652,7 +653,10 @@ test('agent editor doctor uses declared path failures and still checks skill con
         .map(({ id }) => id),
       [blocker],
     );
-    assert.equal(checks.get('editor.binding.agentRef')?.status, 'passed');
+    assert.equal(
+      checks.get('editor.binding.agentRef')?.status,
+      failedId === 'editing-inputs' ? 'passed' : undefined,
+    );
     if (failedId === 'editing-inputs') {
       assert.match(
         checks.get('editor.prepare-project')?.reason ?? '',
@@ -664,7 +668,7 @@ test('agent editor doctor uses declared path failures and still checks skill con
           ?.reason?.includes(join(f.root, 'skill', 'SKILL.md')),
       );
     } else {
-      assert.ok(checks.get('editor.plugin')?.reason?.includes(blocker));
+      assert.equal(checks.get('editor.plugin'), undefined);
     }
     verifyReport(report);
   }
@@ -1178,7 +1182,7 @@ test('CLI doctor explains missing files, blocked work and network fixes in its d
     assert.match(summary, /Fix:.*application\.config\.input/);
     assert.match(
       summary,
-      /Unchecked checks[\s\S]*application\.plugin.*application\.resource\.input/,
+      /Subsequent checks for this plugin were not completed/,
     );
     assert.match(summary, /Dataset download.*Connection timed out/);
     assert.match(summary, /Configure the download proxy/);

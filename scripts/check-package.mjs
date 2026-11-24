@@ -285,19 +285,14 @@ export function register(registry){
       assert.equal(failed?.status, 'failed');
       assert.ok(failed.reason.includes(inputPath));
       assert.match(failed.reason, /correct custom\.config\.inputFile/);
-      const unchecked = report.checks.find(
-        (check) => check.id === 'custom.plugin',
-      );
-      assert.equal(unchecked?.status, 'unchecked');
-      assert.match(unchecked.reason, /custom\.resource\.inputFile/);
-      for (const check of [failed, unchecked])
-        assert.deepEqual(Object.keys(check).sort(), [
-          'binding',
-          'id',
-          'pluginId',
-          'reason',
-          'status',
-        ]);
+      assert.ok(!report.checks.some((check) => check.id === 'custom.plugin'));
+      assert.deepEqual(Object.keys(failed).sort(), [
+        'binding',
+        'id',
+        'pluginId',
+        'reason',
+        'status',
+      ]);
       return true;
     },
   );
@@ -922,16 +917,13 @@ export function checkExecution(context:Parameters<OperationDefinition['create']>
     join(consumer, 'doctor-consumer.ts'),
     `
 import {proposerContract,type RuntimeContext,type Operation,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorResult} from 'arsi/contracts';
-import {runDoctorCheck,type OperationDoctor as RootOperationDoctor,type DoctorResult as RootDoctorResult} from 'arsi';
+import {failed,passed,runDoctorCheck,type OperationDoctor as RootOperationDoctor,type DoctorResult as RootDoctorResult} from 'arsi';
 type Config={inputFile:string};
 export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Config>):Promise<DoctorResult>=>{
  const path:string=context.binding.config.inputFile;
  const input=await runDoctorCheck('input',async signal=>{signal.throwIfAborted();void path;},{signal:context.signal});
- if(input.status==='failed')return{checks:[
-  input,
-  {id:'remote',status:'unchecked',reason:'The input check failed. Restore the file named by inputFile.'},
- ]};
- const result:RootDoctorResult={checks:[input,{id:'remote',status:'unchecked',reason:'No remote probe.'}]};
+ if(input.status==='failed')return failed(input.id,input.reason);
+ const result:RootDoctorResult=passed('input');
  return result;
 };
 const rootDoctor:RootOperationDoctor<Config>=checkCustom;void rootDoctor;

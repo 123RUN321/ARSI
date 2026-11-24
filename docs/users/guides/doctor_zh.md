@@ -32,7 +32,7 @@ flowchart TD
     I --> J{"声明的本地路径均有效？"}
     J -- 是 --> K["创建绑定实例，调用其可选的 rsi/doctor"]
     K --> Q["汇总结果、未订阅或初始化失败"]
-    J -- 否 --> L["将该组件的 plugin 检查<br/>记为 unchecked"]
+    J -- 否 --> L["报告首个失败<br/>停止该绑定的后续检查"]
     Q --> M["补充绑定信息并汇集结果"]
     L --> M
     M --> N{"还有组件？"}
@@ -48,10 +48,12 @@ flowchart TD
    - 探测使用合并 Policy 默认配置与 Recipe 覆盖后的配置。
    - 加载失败时输出失败诊断，不再执行组件探测。
 3. **检查已声明的前提。** 对 Application、每个生效绑定及已配置的 Reflection 实现，检查 Schema 中用 `x-rsi-path` 标记的本地文件或目录是否存在、类型是否正确、是否可读，并检查用 `x-rsi-binding` 标记的字段是否指向实现了指定契约的 Recipe 绑定。
-4. **执行组件检查。** 若声明的本地路径检查失败，doctor 将该绑定的 `plugin` 检查记为 `unchecked`，在原因中列出失败的路径检查，然后继续检查下一个绑定。路径检查通过时，doctor 会创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。
+4. **执行组件检查。** 若声明的本地路径检查失败，doctor 报告该失败，然后继续检查下一个绑定。路径检查通过时，doctor 会创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。
 5. **清理并输出。** RSI 检查使用隔离临时存储，传递取消信号，释放自己创建的实例与进程，并删除临时文件。原有 artifacts 可作为输入读取，RSI 产生的捕获与写入留在临时 Runtime 内。
 
 ### 阅读摘要和 JSON 报告
+
+每个绑定遇到首个前提或插件检查错误后立即返回，其他绑定继续检查。摘要会说明失败插件的后续检查未完成，数量只统计实际输出的检查项。
 
 `doctor` 默认向 stdout 输出可读摘要。摘要给出各状态的数量，解释失败项和未检查项，并显示已有的修复建议。遇到缺失文件时，摘要会指出路径、需要修改的配置字段，以及受阻的检查。
 
@@ -68,7 +70,7 @@ arsi doctor my-experiment/recipe.yaml --json
 | `recipeId` | 已加载的 Recipe ID。未能成功加载时为 `null`。            |
 | `checks`   | 每项结果包含 `id` 和 `status`，也可附上检查范围和证据。 |
 
-从 `checks` 筛选失败项或按状态计数。可选字段包括 `binding`、`pluginId`、`reason` 和 `details`。通过 `reason` 查看失败原因、未检查的原因和可用的修复建议。声明路径检查会逐个报告有问题的配置字段，即使多个字段引用同一路径。
+从 `checks` 筛选失败项或按状态计数。可选字段包括 `binding`、`pluginId`、`reason` 和 `details`。通过 `reason` 查看失败原因、未检查的原因和可用的修复建议。
 
 组件检查 ID 以绑定名开头。完整检查时，名为 `agent` 的 Pi 绑定会产生 `agent.model-config` 和 `agent.model-access`。更换绑定名后，前缀也随之变化。
 
@@ -145,11 +147,11 @@ arsi doctor my-experiment/recipe.yaml --json
 
 | 类型                   | 用途                                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------------ |
-| `OperationDoctor<C>` | `rsi/doctor` 异步处理器的类型，接收 `DoctorContext<C>` 并返回 `Promise<DoctorResult>`。                         |
+| `OperationDoctor<C>` | `rsi/doctor` 处理器，返回 `DoctorResult` 或 `Promise<DoctorResult>`。 |
 | `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。 |
 | `DoctorResult`       | 组件通过 `checks` 返回检查结果。失败时，在 `reason` 中说明原因和修复方法。跳过检查时，在 `reason` 中说明哪个前提失败。框架为检查 ID 添加绑定名前缀。      |
 
-框架在调用处理器前报告无效的绑定引用。只要该绑定声明的路径通过检查，处理器仍可执行独立检查。
+框架在调用处理器前检查绑定引用。引用无效时，该绑定立即停止检查。
 
 - `C` 是组件配置类型。本例在 `schema.ts` 中导出 `type CustomConfig = { inputFile: string }`，那么 `context.binding.config.inputFile` 就会被推导为 `string`。
 
@@ -157,7 +159,7 @@ arsi doctor my-experiment/recipe.yaml --json
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { runDoctorCheck } from 'arsi';
+import { failed, passed, runDoctorCheck } from 'arsi';
 import type { OperationDoctor } from 'arsi/contracts';
 import type { CustomConfig } from './schema.js';
 
@@ -173,7 +175,9 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
     },
     { signal: context.signal },
   );
-  return { checks: [inputContent] };
+  if (inputContent.status === 'failed')
+    return failed(inputContent.id, inputContent.reason);
+  return passed('input-content');
 };
 ```
 

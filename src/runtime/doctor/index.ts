@@ -103,21 +103,13 @@ async function checkBinding(
   reportBuilder: DoctorReportBuilder,
 ): Promise<void> {
   const { binding, signal } = context;
-  const failedPaths: string[] = [];
   for await (const check of checkDeclaredPaths(binding, signal)) {
     reportBuilder.addBindingCheck(binding, check);
-    if (check.status === 'failed')
-      failedPaths.push(`${binding.name}.${check.id}`);
+    if (check.status === 'failed') return;
   }
-  for await (const check of checkDeclaredBindings(context))
+  for await (const check of checkDeclaredBindings(context)) {
     reportBuilder.addBindingCheck(binding, check);
-  if (failedPaths.length) {
-    reportBuilder.addBindingCheck(binding, {
-      id: 'plugin',
-      status: 'unchecked',
-      reason: `Plugin checks did not run because these path checks failed: ${failedPaths.join(', ')}.`,
-    });
-    return;
+    if (check.status === 'failed') return;
   }
 
   try {

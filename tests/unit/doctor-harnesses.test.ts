@@ -305,8 +305,7 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       const skipped = report.checks.find(
         (check) => check.id === 'application.plugin',
       );
-      assert.equal(skipped?.status, 'unchecked');
-      assert.ok(skipped.reason?.includes(resourceId));
+      assert.equal(skipped, undefined);
       assert.equal(
         report.checks.find((check) => check.id === independentChecks[name])
           ?.status,

@@ -31,6 +31,10 @@ export function formatDoctorSummary(
       );
     }
     lines.push(...describeProbes(check));
+    if (check.binding)
+      lines.push(
+        '  Subsequent checks for this plugin were not completed. Correct the failure and rerun doctor.',
+      );
   }
 
   if (unchecked.length) lines.push('', 'Unchecked checks');

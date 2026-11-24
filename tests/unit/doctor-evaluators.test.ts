@@ -335,7 +335,7 @@ test('cancelling evaluator doctor reaches the SDK boundary and propagates interr
       controller.abort(new Error('Interrupted'));
     });
   })(ctx);
-  await assert.rejects(task, /Interrupted/);
+  await assert.rejects(async () => task, /Interrupted/);
   assert.equal(observed?.aborted, true);
 });
 

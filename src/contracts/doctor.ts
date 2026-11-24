@@ -61,7 +61,7 @@ export interface DoctorContext<C extends JsonObject = JsonObject> {
   readonly signal: AbortSignal;
 }
 
-/** An asynchronous handler for the binding instance’s `rsi/doctor` event. */
+/** A handler for the binding instance’s `rsi/doctor` event. */
 export type OperationDoctor<C extends JsonObject = JsonObject> = (
   context: DoctorContext<C>,
-) => Promise<DoctorResult>;
+) => DoctorResult | Promise<DoctorResult>;

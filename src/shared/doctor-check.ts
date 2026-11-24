@@ -1,6 +1,40 @@
 import type { DoctorResult, JsonObject } from '../contracts/index.js';
 import { errorText } from './errors.js';
 
+export function failed(
+  id: string,
+  reason: string | undefined,
+  details?: JsonObject,
+): DoctorResult {
+  return {
+    checks: [
+      {
+        id,
+        status: 'failed',
+        ...(reason ? { reason } : {}),
+        ...(details ? { details } : {}),
+      },
+    ],
+  };
+}
+
+export function passed(
+  id = 'plugin',
+  reason?: string,
+  details?: JsonObject,
+): DoctorResult {
+  return {
+    checks: [
+      {
+        id,
+        status: 'passed',
+        ...(reason ? { reason } : {}),
+        ...(details ? { details } : {}),
+      },
+    ],
+  };
+}
+
 export function missingInputReason(
   field: string,
   kind: string,
@@ -29,7 +63,7 @@ interface DoctorCheckOptions {
 
 export async function runDoctorCheck(
   id: string,
-  action: (signal: AbortSignal) => Promise<void>,
+  action: (signal: AbortSignal) => void | Promise<void>,
   options: DoctorCheckOptions,
 ): Promise<DoctorResult['checks'][number]> {
   const { check } = await runDoctorProbe(id, action, options);
@@ -39,7 +73,7 @@ export async function runDoctorCheck(
 /** The action must release its work on cancellation. */
 export async function runDoctorProbe<T>(
   id: string,
-  action: (signal: AbortSignal) => Promise<T>,
+  action: (signal: AbortSignal) => T | Promise<T>,
   options: DoctorCheckOptions,
 ): Promise<{ check: DoctorResult['checks'][number]; value?: T }> {
   const { signal, timeoutMs = 60000, reason, details } = options;
