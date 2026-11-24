@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { access, lstat } from 'node:fs/promises';
-import { missingInputError, passed } from '../../../shared/doctor-check.js';
-import type { DoctorResult } from '../../../contracts/index.js';
+import { missingInputError } from '../../../shared/doctor-check.js';
+import type { DoctorStep } from '../../../contracts/index.js';
 
 export function missingPath(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;
@@ -15,8 +15,18 @@ export function missingPath(error: unknown): string | undefined {
   return missingPath(error.cause);
 }
 
-export function checkOperationConfiguration(): DoctorResult {
-  return passed('configuration');
+export function checkOperationConfiguration(): DoctorStep[] {
+  function checkConfiguration(signal: AbortSignal): boolean {
+    signal.throwIfAborted();
+    return true;
+  }
+  return [
+    {
+      id: 'configuration',
+      check: checkConfiguration,
+      reason: 'Correct the operation configuration.',
+    },
+  ];
 }
 
 export async function requireReadablePath(
