@@ -14,7 +14,12 @@ export interface DoctorCheck {
 }
 
 export interface DoctorResult {
-  checks: Omit<DoctorCheck, 'binding' | 'pluginId'>[];
+  checks: {
+    id: string;
+    status: 'passed' | 'failed' | 'unchecked';
+    reason?: string;
+    details?: JsonObject;
+  }[];
 }
 
 export interface DoctorReport {
