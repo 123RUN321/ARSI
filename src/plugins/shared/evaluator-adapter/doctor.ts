@@ -5,18 +5,96 @@ import type {
   DoctorResult,
   JsonObject,
 } from '../../../contracts/index.js';
-import { runDoctorCheck } from '../../../shared/doctor-check.js';
+import { runDoctorProbe } from '../../../shared/doctor-check.js';
 import { errorText } from '../../../shared/errors.js';
 import { object, string } from '../../../shared/json.js';
 import {
   evaluatorNetworkConfigPath,
   type SdkEvaluatorConfig,
 } from './configuration.js';
-import {
-  sdkDoctor,
-  type SdkDoctorOptions,
-  type SdkDoctorRunner,
-} from './doctor-sdk.js';
+import { sdkDoctor, type SdkDoctorRunner } from './doctor-sdk.js';
+
+/** Report configuration preparation and any diagnostics produced by the SDK. */
+export async function checkSdkDoctor(
+  context: DoctorContext,
+  prepareConfig: (
+    context: DoctorContext,
+    env: NodeJS.ProcessEnv,
+  ) => SdkEvaluatorConfig | Promise<SdkEvaluatorConfig>,
+  run: SdkDoctorRunner = sdkDoctor,
+): Promise<{ checks: DoctorResult['checks']; reported: boolean }> {
+  const configuration = await runDoctorProbe(
+    'configuration',
+    async (signal) => {
+      const env = { ...process.env };
+      const config = await prepareConfig(context, env);
+      const configPath = join(context.directory, 'evaluator.json');
+      await writeFile(configPath, JSON.stringify(config), {
+        mode: 0o600,
+        signal,
+      });
+      return {
+        configPath,
+        networkConfigPath: await networkConfigPath(context.directory, signal),
+        env,
+      };
+    },
+    { signal: context.signal },
+  );
+  const checks: DoctorResult['checks'] = [configuration.check];
+  const options = configuration.value;
+  if (!options) {
+    checks.push({
+      id: 'sdk-doctor',
+      status: 'unchecked',
+      reason:
+        'Evaluator SDK doctor was not run because its configuration could not be prepared.',
+    });
+    return { checks, reported: false };
+  }
+  let result: SdkReport;
+  try {
+    // The SDK owns the complete diagnostic workflow and its per-probe limits.
+    result = parseSdkDoctorReport(
+      await run({ ...options, signal: context.signal }),
+    );
+    context.signal.throwIfAborted();
+  } catch (error) {
+    context.signal.throwIfAborted();
+    checks.push({
+      id: 'sdk-doctor',
+      status: 'failed',
+      reason: `${errorText(error)} Plugin availability is unknown unless established by another check.`,
+    });
+    return { checks, reported: false };
+  }
+  checks.push({
+    id: 'sdk-doctor',
+    status: 'passed',
+    reason: 'Evaluator SDK doctor returned its diagnostic report.',
+  });
+  for (const [index, check] of result.checks.entries())
+    checks.push({
+      id: `sdk.check-${index}`,
+      status: doctorStatus(check.status),
+      reason: `${check.name}: ${check.detail}`,
+      details: {
+        sdkName: check.name,
+        sdkStatus: check.status,
+      },
+    });
+  const networkStatus = string(result.network.status);
+  checks.push({
+    id: 'sdk.network',
+    status: doctorStatus(networkStatus),
+    reason:
+      networkStatus === 'passed'
+        ? 'Evaluator SDK network probes passed; see the SDK probe evidence for their scope.'
+        : 'Evaluator SDK network probes did not all pass; inspect the SDK probe evidence and guidance.',
+    details: result.network,
+  });
+  return { checks, reported: true };
+}
 
 async function networkConfigPath(
   directory: string,
@@ -43,7 +121,7 @@ type SdkReport = {
   network: JsonObject;
 };
 
-function report(value: unknown): SdkReport {
+function parseSdkDoctorReport(value: unknown): SdkReport {
   const native = object(value, 'SDK doctor report');
   if (!Array.isArray(native.checks) || !native.checks.length)
     throw new Error('SDK doctor report.checks must be a nonempty array');
@@ -93,85 +171,4 @@ function doctorStatus(
   status: string,
 ): DoctorResult['checks'][number]['status'] {
   return status === 'passed' || status === 'failed' ? status : 'unchecked';
-}
-
-/** Report configuration preparation and any diagnostics produced by the SDK. */
-export async function checkSdkDoctor(
-  ctx: DoctorContext,
-  prepareConfig: (
-    ctx: DoctorContext,
-    env: NodeJS.ProcessEnv,
-  ) => SdkEvaluatorConfig | Promise<SdkEvaluatorConfig>,
-  run: SdkDoctorRunner = sdkDoctor,
-): Promise<{ checks: DoctorResult['checks']; reported: boolean }> {
-  let options: Omit<SdkDoctorOptions, 'signal'> | undefined;
-  const configuration = await runDoctorCheck(
-    'configuration',
-    async (signal) => {
-      signal.throwIfAborted();
-      const env = { ...process.env };
-      const config = await prepareConfig(ctx, env);
-      const configPath = join(ctx.directory, 'evaluator.json');
-      await writeFile(configPath, JSON.stringify(config), {
-        mode: 0o600,
-        signal,
-      });
-      options = {
-        configPath,
-        networkConfigPath: await networkConfigPath(ctx.directory, signal),
-        env,
-      };
-    },
-    { signal: ctx.signal },
-  );
-  const checks: DoctorResult['checks'] = [configuration];
-  if (configuration.status !== 'passed' || !options) {
-    checks.push({
-      id: 'sdk-doctor',
-      status: 'unchecked',
-      reason:
-        'Evaluator SDK doctor was not run because its configuration could not be prepared.',
-    });
-    return { checks, reported: false };
-  }
-  let result: SdkReport;
-  try {
-    // The SDK owns the complete diagnostic workflow and its per-probe limits.
-    result = report(await run({ ...options, signal: ctx.signal }));
-    ctx.signal.throwIfAborted();
-  } catch (error) {
-    ctx.signal.throwIfAborted();
-    checks.push({
-      id: 'sdk-doctor',
-      status: 'failed',
-      reason: `${errorText(error)} Plugin availability is unknown unless established by another check.`,
-    });
-    return { checks, reported: false };
-  }
-  checks.push({
-    id: 'sdk-doctor',
-    status: 'passed',
-    reason: 'Evaluator SDK doctor returned its diagnostic report.',
-  });
-  for (const [index, check] of result.checks.entries())
-    checks.push({
-      id: `sdk.check-${index}`,
-      status: doctorStatus(check.status),
-      reason: `${check.name}: ${check.detail}`,
-      details: {
-        sdkName: check.name,
-        sdkStatus: check.status,
-      },
-    });
-  const networkStatus = string(result.network.status);
-  checks.push({
-    id: 'sdk.network',
-    status: doctorStatus(networkStatus),
-    reason:
-      networkStatus === 'passed'
-        ? 'Evaluator SDK network probes passed; see the SDK probe evidence for their scope.'
-        : 'Evaluator SDK network probes did not all pass; inspect the SDK probe evidence and guidance.',
-    details: result.network,
-  });
-  return { checks, reported: true };
 }

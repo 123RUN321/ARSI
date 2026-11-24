@@ -7,20 +7,20 @@ import type { SdkDoctorRunner } from '../shared/evaluator-adapter/doctor-sdk.js'
 import { loadOperatorTask } from '../shared/operator-task.js';
 import { prepareEvaluationConfig } from './service.js';
 
-async function prepareConfig(
-  ctx: DoctorContext,
+async function prepareOperatorbenchConfig(
+  context: DoctorContext,
   env: NodeJS.ProcessEnv,
 ): Promise<SdkEvaluatorConfig> {
   const directory = string(
-    object(ctx.binding.config.task, 'task').directory,
+    object(context.binding.config.task, 'task').directory,
     'task.directory',
   );
   const task = await loadOperatorTask(directory);
-  const config = prepareEvaluationConfig(ctx.binding.config, {
+  const config = prepareEvaluationConfig(context.binding.config, {
     selected: task.cases[0]!,
     operation: 'evaluate',
-    directory: ctx.directory,
-    manifest: join(ctx.directory, 'manifest.json'),
+    directory: context.directory,
+    manifest: join(context.directory, 'manifest.json'),
   });
   env.RSI_KERNEL_REPLAY_NO_MODEL_KEY = 'not-a-secret-no-model-calls';
   return config;
@@ -29,8 +29,12 @@ async function prepareConfig(
 export function createOperatorbenchDoctor(
   run?: SdkDoctorRunner,
 ): OperationDoctor {
-  return async (ctx) => {
-    const { checks } = await checkSdkDoctor(ctx, prepareConfig, run);
+  return async (context) => {
+    const { checks } = await checkSdkDoctor(
+      context,
+      prepareOperatorbenchConfig,
+      run,
+    );
     return { checks };
   };
 }

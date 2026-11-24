@@ -14,87 +14,10 @@ import { checkSdkDoctor } from '../shared/evaluator-adapter/doctor.js';
 import type { SdkDoctorRunner } from '../shared/evaluator-adapter/doctor-sdk.js';
 import { prepareEvaluationConfig } from './service.js';
 
-function taskIds(value: JsonValue): string[] {
-  if (Array.isArray(value)) return value.flatMap(taskIds);
-  if (value !== null && typeof value === 'object')
-    return Object.entries(value).flatMap(([key, entry]) =>
-      /taskIds$/i.test(key) && Array.isArray(entry)
-        ? entry.filter((item): item is string => typeof item === 'string')
-        : taskIds(entry),
-    );
-  return [];
-}
-
-async function bundleDirectory(
-  ctx: DoctorContext,
-  checks: DoctorResult['checks'],
-): Promise<string> {
-  const baseline = plain(ctx.recipe.application.config.baseline);
-  if (typeof baseline.directory === 'string') return baseline.directory;
-  if (typeof baseline.artifactRef === 'string') {
-    const directory = join(ctx.directory, 'baseline');
-    await ctx.runtime.artifacts.materialize(baseline.artifactRef, directory);
-    return directory;
-  }
-  checks.push({
-    id: 'application-instance',
-    status: 'unchecked',
-    reason:
-      'The Application supplies its instance during execution; SDK doctor uses a temporary path without establishing instance readiness.',
-  });
-  return ctx.directory;
-}
-
-async function prepareConfig(
-  ctx: DoctorContext,
-  checks: DoctorResult['checks'],
-): Promise<SdkEvaluatorConfig> {
-  if (
-    ['application.inference', 'application.kernel'].includes(
-      ctx.recipe.application.pluginId,
-    )
-  )
-    throw new Error(
-      'evaluator.agentbench requires an Application with the agentbundle capability.',
-    );
-  return prepareEvaluationConfig(ctx.binding.config, {
-    taskIds: [...new Set(taskIds(ctx.recipe.policyConfig))],
-    execution: { directory: await bundleDirectory(ctx, checks) },
-    directory: ctx.directory,
-  });
-}
-
 export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
-  return async (ctx) => {
-    const checks: DoctorResult['checks'] = [];
-    const sdk = await checkSdkDoctor(
-      ctx,
-      (ctx) => prepareConfig(ctx, checks),
-      run,
-    );
-    const { directory } = plain(ctx.recipe.application.config.baseline);
-    const bundleCheck = sdk.checks.find(
-      (check) =>
-        check.status === 'failed' &&
-        check.details?.sdkName === 'AgentBundle path',
-    );
-    if (bundleCheck && typeof directory === 'string') {
-      await access(directory).catch((error: unknown) => {
-        if (missingPath(error)) {
-          bundleCheck.reason = [
-            bundleCheck.reason,
-            missingInputReason(
-              'application.config.baseline.directory',
-              'directory',
-              directory,
-            ),
-          ]
-            .filter(Boolean)
-            .join(' ');
-        }
-      });
-    }
-    checks.push(...sdk.checks);
+  return async (context) => {
+    const sdk = await checkSdkDoctor(context, prepareAgentbenchConfig, run);
+    const checks = await explainBundleChecks(context, sdk.checks);
     if (sdk.reported)
       checks.push(
         {
@@ -115,3 +38,96 @@ export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
 }
 
 export const agentbenchDoctor = createAgentbenchDoctor();
+
+function taskIds(value: JsonValue): string[] {
+  if (Array.isArray(value)) return value.flatMap(taskIds);
+  if (value !== null && typeof value === 'object')
+    return Object.entries(value).flatMap(([key, entry]) =>
+      /taskIds$/i.test(key) && Array.isArray(entry)
+        ? entry.filter((item): item is string => typeof item === 'string')
+        : taskIds(entry),
+    );
+  return [];
+}
+
+async function prepareBundleDirectory(context: DoctorContext): Promise<string> {
+  const baseline = plain(context.recipe.application.config.baseline);
+  if (typeof baseline.directory === 'string') return baseline.directory;
+  if (typeof baseline.artifactRef === 'string') {
+    const directory = join(context.directory, 'baseline');
+    await context.runtime.artifacts.materialize(
+      baseline.artifactRef,
+      directory,
+    );
+    return directory;
+  }
+  return context.directory;
+}
+
+async function prepareAgentbenchConfig(
+  context: DoctorContext,
+): Promise<SdkEvaluatorConfig> {
+  if (
+    ['application.inference', 'application.kernel'].includes(
+      context.recipe.application.pluginId,
+    )
+  )
+    throw new Error(
+      'evaluator.agentbench requires an Application with the agentbundle capability.',
+    );
+  return prepareEvaluationConfig(context.binding.config, {
+    taskIds: [...new Set(taskIds(context.recipe.policyConfig))],
+    execution: { directory: await prepareBundleDirectory(context) },
+    directory: context.directory,
+  });
+}
+
+async function explainBundleChecks(
+  context: DoctorContext,
+  sdkChecks: DoctorResult['checks'],
+): Promise<DoctorResult['checks']> {
+  const baseline = plain(context.recipe.application.config.baseline);
+  const checks = [...sdkChecks];
+  if (
+    !['application.inference', 'application.kernel'].includes(
+      context.recipe.application.pluginId,
+    ) &&
+    typeof baseline.directory !== 'string' &&
+    typeof baseline.artifactRef !== 'string'
+  ) {
+    checks.unshift({
+      id: 'application-instance',
+      status: 'unchecked',
+      reason:
+        'The Application supplies its instance during execution; SDK doctor uses a temporary path without establishing instance readiness.',
+    });
+  }
+  const bundleIndex = checks.findIndex(
+    (check) =>
+      check.status === 'failed' &&
+      check.details?.sdkName === 'AgentBundle path',
+  );
+  const directory = baseline.directory;
+  if (bundleIndex < 0 || typeof directory !== 'string') return checks;
+  try {
+    await access(directory);
+  } catch (error) {
+    if (missingPath(error)) {
+      const check = checks[bundleIndex]!;
+      checks[bundleIndex] = {
+        ...check,
+        reason: [
+          check.reason,
+          missingInputReason(
+            'application.config.baseline.directory',
+            'directory',
+            directory,
+          ),
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    }
+  }
+  return checks;
+}
