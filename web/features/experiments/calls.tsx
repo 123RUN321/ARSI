@@ -379,7 +379,7 @@ export function Calls({
     callDurations(calls).map((item) => [item.callId, item.seconds]),
   );
   return (
-    <Card>
+    <Card className="call-history">
       <CardHeader>
         <div className="section-heading">
           <div>
