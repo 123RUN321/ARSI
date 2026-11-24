@@ -1,5 +1,5 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import { failed, passed, runDoctorCheck } from '../../shared/doctor-check.js';
 import { object } from '../../shared/json.js';
 import { parseOptunaConfig } from './schema.js';
 import {
@@ -12,10 +12,10 @@ export async function checkOptunaDependencies(
   context: DoctorContext,
   worker: OptunaWorker = runOptunaWorker,
 ): Promise<DoctorResult> {
+  const config = parseOptunaConfig(context.binding.config);
   const dependencies = await runDoctorCheck(
     'python-dependencies',
     async (signal) => {
-      const config = parseOptunaConfig(context.binding.config);
       const result = await worker(
         config,
         {
@@ -31,5 +31,7 @@ export async function checkOptunaDependencies(
     },
     { signal: context.signal },
   );
-  return { checks: [dependencies] };
+  if (dependencies.status === 'failed')
+    return failed(dependencies.id, dependencies.reason, dependencies.details);
+  return passed('python-dependencies');
 }

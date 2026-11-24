@@ -244,7 +244,7 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
   const workingResult = await runDoctor(working);
   assert.deepEqual(
     workingResult.checks.map((check) => check.status),
-    ['passed', 'passed'],
+    ['passed'],
   );
   for (const modules of [
     [config.modules[0]!, config.modules[0]!],
@@ -253,14 +253,15 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
     const broken = f.probe('proposer.pareto-evolution', { ...config, modules });
     const brokenResult = await runDoctor(broken);
     assert.equal(brokenResult.checks[0]!.status, 'failed');
-    assert.equal(brokenResult.checks[1]!.status, 'unchecked');
+    assert.equal(brokenResult.checks.length, 1);
   }
   const missing = f.probe('proposer.pareto-evolution', {
     ...config,
     modules: [{ id: 'missing', path: 'missing.md' }],
   });
   const missingResult = await runDoctor(missing);
-  assert.equal(missingResult.checks[1]!.status, 'failed');
+  assert.equal(missingResult.checks.length, 1);
+  assert.equal(missingResult.checks[0]!.status, 'failed');
   assert.ok(
     missingResult.checks
       .find(({ id }) => id === 'baseline-modules')
@@ -285,7 +286,7 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
   const artifactResult = await runDoctor(artifact);
   assert.deepEqual(
     artifactResult.checks.map((check) => check.status),
-    ['passed', 'passed'],
+    ['passed'],
   );
 });
 
@@ -392,7 +393,7 @@ test('proposer.operator loads task, stage prompts and knowledge without retrieva
   const workingResult = await runDoctor(working);
   assert.deepEqual(
     workingResult.checks.map((check) => check.status),
-    ['passed', 'passed'],
+    ['passed'],
   );
   await rm(join(prompts, 'repair.md'));
   const missingPrompt = f.probe('proposer.operator', config);
