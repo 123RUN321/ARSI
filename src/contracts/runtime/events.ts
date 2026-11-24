@@ -62,7 +62,8 @@ export interface BeforeAgentInvokeEvent {
   readonly callerBindingId: string;
   readonly callerDirectory: string;
   readonly agentRef: string;
-  readonly input: AgentInput;
+  /** Deeply frozen snapshot of the request passed to invokeAgent. */
+  readonly input: Readonly<AgentInput>;
 }
 export type BeforeAgentInvokeResult =
   | { kind: 'proceed'; input: AgentInput; metadata?: JsonObject }

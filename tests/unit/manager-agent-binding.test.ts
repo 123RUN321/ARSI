@@ -52,11 +52,9 @@ test('Agent admission composes request transformations and records both waterfal
           return { kind: 'reject', reason: 'fixture veto' };
         const current = await next();
         if (current.kind === 'reject') return current;
-        return {
-          kind: 'proceed',
-          input: { ...current.input, goal: current.input.goal + '-inner' },
-          metadata: { inner: true },
-        };
+        current.input.goal += '-inner';
+        assert.equal(info.input.goal, 'test');
+        return { ...current, metadata: { inner: true } };
       });
       ctx.event.on('rsi/before-call', async (_info, next) => {
         const current = await next();
@@ -97,6 +95,46 @@ test('Agent admission composes request transformations and records both waterfal
   } finally {
     await fixture.dispose();
   }
+});
+
+test('Agent invocation listeners cannot change the caller or the forwarded request by assignment', async (t) => {
+  const agent: OperationDefinition = {
+    id: 'test.echo-agent',
+    contract: agentContract,
+    configSchema: { type: 'object' },
+    async create() {
+      return { execute: async (input) => input, async dispose() {} };
+    },
+  };
+  const fixture = await managerFixture(
+    async (ctx) => {
+      const request = {
+        goal: 'original',
+        cwd: await prepareAgentProject(ctx, 'test', {}, [], []),
+        outputSchema: { type: 'object', required: ['goal'] },
+      };
+      const expected = structuredClone(request);
+      ctx.event.on('rsi/before-agent-invoke', (event, next) => {
+        Reflect.set(event.input, 'goal', 'changed');
+        const required = event.input.outputSchema.required;
+        assert.ok(Array.isArray(required));
+        Reflect.set(required, 0, 'cwd');
+        return next();
+      });
+
+      const received = await ctx.invokeAgent('agent', request);
+      assert.deepEqual(
+        { caller: request, agent: received },
+        { caller: expected, agent: expected },
+      );
+      request.outputSchema.required.push('next');
+      request.goal = 'next';
+      return {};
+    },
+    { plugins: [agent], bindings: { agent: { plugin: agent.id, config: {} } } },
+  );
+  t.after(() => fixture.dispose());
+  await fixture.run();
 });
 
 test('Manager invokes exact Agent bindings and never falls back to an implementation ID', async () => {

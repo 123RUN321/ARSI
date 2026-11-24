@@ -75,7 +75,7 @@
 | `callerBindingId` | `string` | 发起 Agent 调用的绑定名。 |
 | `callerDirectory` | `string` | 调用方拥有的执行目录。 |
 | `agentRef` | `string` | 选用的 Agent 绑定名。 |
-| `input` | `AgentInput` | 原始请求，包含 `goal`、`cwd`、`outputSchema` 和可选的 `role`。 |
+| `input` | `Readonly<AgentInput>` | 递归冻结的请求快照，包含 `goal`、`cwd`、`outputSchema` 和可选的 `role`。 |
 
 ### Agent 对话观察
 
@@ -186,7 +186,7 @@ factoryCtx.event.on('rsi/before-call', async (event, next) => {
 
 对于 `rsi/before-call`，默认决策为 `{ kind: 'proceed' }`，允许调用时可通过 `metadata` 为回执添加元数据。两个调用准入钩子都支持返回 `{ kind: 'reject', reason }` 拒绝请求，`reason` 必须为非空字符串。
 
-对于 `rsi/before-agent-invoke`，默认决策还包含原始 `input`。下面的监听保留后续监听返回的修改，并为来自 `proposer` 绑定的请求添加审计标记。
+对于 `rsi/before-agent-invoke`，默认决策包含一份独立的请求副本。要调整 Agent 请求，在返回的 `proceed` 决策中提供更新后的 `input`。下面的监听保留后续监听返回的修改，并为来自 `proposer` 绑定的请求添加审计标记。
 
 ```ts
 factoryCtx.event.on('rsi/before-agent-invoke', async (event, next) => {

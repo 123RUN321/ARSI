@@ -12,7 +12,7 @@ import type {
 } from '../../contracts/index.js';
 import { agentContract } from '../../contracts/plugin-types/agent.js';
 import { RuntimeContext } from '../../contracts/runtime/context.js';
-import { object, string, digest } from '../../shared/json.js';
+import { object, string, digest, freezeSnapshot } from '../../shared/json.js';
 import {
   assertCallAdmitted,
   createCallExecutor,
@@ -665,16 +665,20 @@ export class Manager {
             throw new Error(
               `Binding ${agentRef} does not implement contract.agent`,
             );
+          const event = freezeSnapshot({
+            experimentId: id,
+            callerBindingId: this.bindingId,
+            callerDirectory: this.directory,
+            agentRef,
+            input: structuredClone(input),
+          });
           const decision = await this.event.waterfall(
             'rsi/before-agent-invoke',
-            {
-              experimentId: id,
-              callerBindingId: this.bindingId,
-              callerDirectory: this.directory,
-              agentRef,
-              input,
-            },
-            async () => ({ kind: 'proceed', input }),
+            event,
+            async () => ({
+              kind: 'proceed',
+              input: structuredClone(event.input),
+            }),
           );
           this.signal.throwIfAborted();
           assertCallAdmitted(decision);
