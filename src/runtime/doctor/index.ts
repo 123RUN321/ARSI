@@ -8,6 +8,7 @@ import type {
 } from '../../contracts/index.js';
 import {
   errorText,
+  redactConfiguration,
   RuntimeCleanupInterruptedError,
 } from '../../shared/errors.js';
 import type { Runtime } from '../context.js';
@@ -20,7 +21,11 @@ import {
   declaredPathRules,
   runDoctorRules,
 } from './rules.js';
-import { createFailureReport, DoctorReportBuilder } from './report.js';
+import {
+  appendBindingResult,
+  createFailureReport,
+  redactDoctorReport,
+} from './report.js';
 
 /** The caller owns the Runtime if diagnosis throws before releasing it. */
 export async function runDoctor(
@@ -76,20 +81,23 @@ export async function doctorRecipe(
     return createFailureReport('recipe.validate', error);
   }
 
-  const reportBuilder = new DoctorReportBuilder(recipe.id, {
+  const redact = redactConfiguration({
     recipe: recipe.toJSON(),
     reflection: recipe.reflection?.implementation.config ?? {},
   });
-  reportBuilder.addCheck({ id: 'recipe.validate', status: 'passed' });
-  await checkBindings(sourceRuntime, recipe, reportBuilder, signal);
+  const report: DoctorReport = {
+    recipeId: recipe.id,
+    checks: [{ id: 'recipe.validate', status: 'passed' }],
+  };
+  await checkBindings(sourceRuntime, recipe, report, signal);
   signal.throwIfAborted();
-  return reportBuilder.build();
+  return redactDoctorReport(report, redact);
 }
 
 async function checkBindings(
   sourceRuntime: Runtime,
   recipe: Recipe,
-  reportBuilder: DoctorReportBuilder,
+  report: DoctorReport,
   signal: AbortSignal,
 ): Promise<void> {
   const bindings = getDoctorBindings(recipe, sourceRuntime.registry);
@@ -110,12 +118,12 @@ async function checkBindings(
           directory: bindingContext.directory,
           signal,
         },
-        reportBuilder,
+        report,
       );
     }
   } finally {
     for (const { id, error } of await probeRuntime.dispose())
-      reportBuilder.addCheck({
+      report.checks.push({
         id,
         status: 'failed',
         reason: errorText(error),
@@ -144,20 +152,24 @@ function getDoctorBindings(
 
 async function checkBinding(
   context: DoctorContext & { registry: Registry },
-  reportBuilder: DoctorReportBuilder,
+  report: DoctorReport,
 ): Promise<void> {
   const { binding, signal } = context;
   const prerequisites = await runDoctorRules(
     [...declaredPathRules(binding), ...bindingReferenceRules(context)],
     signal,
   );
-  reportBuilder.addBindingResult(binding, prerequisites);
+  appendBindingResult(report, binding, prerequisites);
   if (prerequisites.checks.some((check) => check.status === 'failed')) {
-    reportBuilder.addBindingCheck(binding, {
-      id: 'plugin',
-      status: 'unchecked',
-      reason:
-        'Plugin diagnostics were not executed because a declared prerequisite failed. Fix it and rerun doctor.',
+    appendBindingResult(report, binding, {
+      checks: [
+        {
+          id: 'plugin',
+          status: 'unchecked',
+          reason:
+            'Plugin diagnostics were not executed because a declared prerequisite failed. Fix it and rerun doctor.',
+        },
+      ],
     });
     return;
   }
@@ -165,13 +177,17 @@ async function checkBinding(
   try {
     const bindingResult = await diagnoseBinding(context.registry, context);
     signal.throwIfAborted();
-    reportBuilder.addBindingResult(binding, bindingResult);
+    appendBindingResult(report, binding, bindingResult);
   } catch (error) {
     signal.throwIfAborted();
-    reportBuilder.addBindingCheck(binding, {
-      id: 'script',
-      status: 'failed',
-      reason: `${errorText(error)} Plugin availability is unknown.`,
+    appendBindingResult(report, binding, {
+      checks: [
+        {
+          id: 'script',
+          status: 'failed',
+          reason: `${errorText(error)} Plugin availability is unknown.`,
+        },
+      ],
     });
   }
 }

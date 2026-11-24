@@ -4,36 +4,10 @@ import type {
   DoctorCheck,
   DoctorReport,
   DoctorResult,
-  JsonSchema,
   JsonValue,
 } from '../../contracts/index.js';
 import { errorText, redactConfiguration } from '../../shared/errors.js';
-import { json, object } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
-
-const doctorResultSchema: JsonSchema = {
-  type: 'object',
-  required: ['checks'],
-  additionalProperties: false,
-  properties: {
-    checks: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['id', 'status'],
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string', minLength: 1 },
-          status: { enum: ['passed', 'failed', 'unchecked'] },
-          reason: { type: 'string' },
-          details: { type: 'object' },
-        },
-      },
-    },
-  },
-};
-
-type LocalCheck = DoctorResult['checks'][number];
+import { object } from '../../shared/json.js';
 
 export function createFailureReport(
   checkId: string,
@@ -51,83 +25,60 @@ export function createFailureReport(
   };
 }
 
-function qualifyBindingCheck(
+export function appendBindingResult(
+  report: DoctorReport,
   binding: DoctorBinding,
-  localCheck: LocalCheck,
-): DoctorCheck {
-  return {
-    ...localCheck,
-    binding: binding.name,
-    pluginId: binding.pluginId,
-    id: `${binding.name}.${localCheck.id}`,
-  };
+  result: DoctorResult,
+): void {
+  const ids = new Set(report.checks.map((check) => check.id));
+  const checks = result.checks.map((check) => {
+    if (check.details !== undefined) object(check.details, 'Doctor details');
+    const id = `${binding.name}.${check.id}`;
+    if (ids.has(id)) throw new Error(`Duplicate doctor check ID: ${id}`);
+    ids.add(id);
+    return {
+      ...structuredClone(check),
+      id,
+      binding: binding.name,
+      pluginId: binding.pluginId,
+    };
+  });
+  report.checks.push(...checks);
 }
 
-export class DoctorReportBuilder {
-  private readonly checksById = new Map<string, DoctorCheck>();
-  private readonly redactText: (message: string) => string;
-
-  constructor(
-    private readonly recipeId: string,
-    configuration: JsonValue,
-  ) {
-    this.redactText = redactConfiguration(configuration);
-  }
-
-  addCheck(check: DoctorCheck): void {
-    if (this.checksById.has(check.id))
-      throw new Error(`Duplicate doctor check ID: ${check.id}`);
-    this.storeCheck(check);
-  }
-
-  addBindingCheck(binding: DoctorBinding, localCheck: LocalCheck): void {
-    this.addCheck(qualifyBindingCheck(binding, localCheck));
-  }
-
-  addBindingResult(binding: DoctorBinding, bindingResult: DoctorResult): void {
-    validate(doctorResultSchema, bindingResult, 'Doctor result');
-    const batchIds = new Set<string>();
-    const validatedChecks: DoctorCheck[] = [];
-    for (const localCheck of bindingResult.checks) {
-      const bindingCheck = qualifyBindingCheck(binding, localCheck);
-      if (localCheck.details !== undefined) json(localCheck.details);
-      if (this.checksById.has(bindingCheck.id) || batchIds.has(bindingCheck.id))
-        throw new Error(`Duplicate doctor check ID: ${bindingCheck.id}`);
-      batchIds.add(bindingCheck.id);
-      validatedChecks.push(bindingCheck);
-    }
-    for (const check of validatedChecks) this.storeCheck(check);
-  }
-
-  build(): DoctorReport {
+export function redactDoctorReport(
+  report: DoctorReport,
+  redact: (message: string) => string,
+): DoctorReport {
+  const ids = new Set<string>();
+  const checks = report.checks.map(({ reason, details, ...metadata }) => {
+    if (ids.has(metadata.id))
+      throw new Error(`Duplicate doctor check ID: ${metadata.id}`);
+    ids.add(metadata.id);
     return {
-      recipeId: this.recipeId,
-      checks: [...this.checksById.values()],
-    };
-  }
-
-  private storeCheck(check: DoctorCheck): void {
-    const { reason, details, ...metadata } = check;
-    this.checksById.set(check.id, {
       ...metadata,
-      ...(reason ? { reason: this.redactText(reason) } : {}),
-      ...(details ? { details: object(this.redactJson(details)) } : {}),
-    });
-  }
+      ...(reason ? { reason: redact(reason) } : {}),
+      ...(details ? { details: object(redactJson(details, redact)) } : {}),
+    };
+  });
+  return { recipeId: report.recipeId, checks };
+}
 
-  private redactJson(value: JsonValue): JsonValue {
-    if (typeof value === 'string') return this.redactText(value);
-    if (Array.isArray(value))
-      return value.map((entry) => this.redactJson(entry));
-    if (value !== null && typeof value === 'object')
-      return Object.fromEntries(
-        Object.entries(value).map(([key, child]) => [
-          key,
-          this.redactJson(child),
-        ]),
-      );
-    return value;
-  }
+function redactJson(
+  value: JsonValue,
+  redact: (message: string) => string,
+): JsonValue {
+  if (typeof value === 'string') return redact(value);
+  if (Array.isArray(value))
+    return value.map((child) => redactJson(child, redact));
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        key,
+        redactJson(child, redact),
+      ]),
+    );
+  return value;
 }
 
 export function formatDoctorSummary(
