@@ -11,6 +11,7 @@ import type {
 import {
   missingInputError,
   runDoctorCheck,
+  runDoctorProbe,
 } from '../../../shared/doctor-check.js';
 import { object, string } from '../../../shared/json.js';
 import { parseConfig } from '../../../shared/schema.js';
@@ -48,67 +49,66 @@ export async function checkBaselineDirectory(
   check: DoctorResult['checks'][number];
   directory?: string;
 }> {
-  let baselineDirectory: string | undefined;
-  const check = await runDoctorCheck(
+  const { check, value: directory } = await runDoctorProbe(
     'baseline',
-    async (signal) => {
-      const config = parseConfig<FileApplicationConfig>(
-        context.binding.definition.configSchema,
-        context.binding.config,
-        `${context.binding.name}.config`,
-      );
-      const { target } = await readTarget(
-        config,
-        context.runtime.rootDirectory,
-      );
-      let directory: string;
-      if ('directory' in config.baseline) {
-        directory = resolve(
-          context.runtime.rootDirectory,
-          config.baseline.directory,
-        );
-      } else {
-        directory = join(context.directory, 'baseline-input');
-        try {
-          await context.runtime.artifacts.materialize(
-            config.baseline.artifactRef,
-            directory,
-          );
-        } catch (error) {
-          if (missing(error))
-            throw missingInputError(
-              {
-                field: 'baseline.artifactRef',
-                kind: 'artifact',
-                reference: config.baseline.artifactRef,
-              },
-              error,
-            );
-          throw error;
-        }
-      }
-      for (const entry of target.entries)
-        if (entry.kind === 'file')
-          await requirePath(
-            join(directory, entry.path),
-            `target.entries.${entry.path}`,
-            'file',
-          );
-      if (entryFile)
-        await requirePath(
-          join(directory, entryFile),
-          `baseline.${entryFile}`,
-          'file',
-        );
-      signal.throwIfAborted();
-      baselineDirectory = directory;
-    },
+    (signal) => readBaselineDirectory(context, entryFile, signal),
     { signal: context.signal },
   );
-  return {
-    check,
-    directory: check.status === 'passed' ? baselineDirectory : undefined,
-  };
+  return { check, directory };
+}
+
+async function readBaselineDirectory(
+  context: DoctorContext,
+  entryFile: string | undefined,
+  signal: AbortSignal,
+): Promise<string> {
+  const config = parseConfig<FileApplicationConfig>(
+    context.binding.definition.configSchema,
+    context.binding.config,
+    `${context.binding.name}.config`,
+  );
+  const { target } = await readTarget(config, context.runtime.rootDirectory);
+  let directory: string;
+  if ('directory' in config.baseline) {
+    directory = resolve(
+      context.runtime.rootDirectory,
+      config.baseline.directory,
+    );
+  } else {
+    directory = join(context.directory, 'baseline-input');
+    try {
+      await context.runtime.artifacts.materialize(
+        config.baseline.artifactRef,
+        directory,
+      );
+    } catch (error) {
+      if (missing(error))
+        throw missingInputError(
+          {
+            field: 'baseline.artifactRef',
+            kind: 'artifact',
+            reference: config.baseline.artifactRef,
+          },
+          error,
+        );
+      throw error;
+    }
+  }
+  for (const entry of target.entries)
+    if (entry.kind === 'file')
+      await requirePath(
+        join(directory, entry.path),
+        `target.entries.${entry.path}`,
+        'file',
+      );
+  if (entryFile)
+    await requirePath(
+      join(directory, entryFile),
+      `baseline.${entryFile}`,
+      'file',
+    );
+  signal.throwIfAborted();
+  return directory;
 }
 
 export async function checkFileApplication(
@@ -166,8 +166,7 @@ export async function checkFileApplication(
       return candidate;
     },
   });
-  let candidateRef: string | undefined;
-  const verified = await runDoctorCheck(
+  const initialization = await runDoctorProbe(
     verification,
     async (signal) => {
       const scope = runtime.extend({ signal });
@@ -176,14 +175,15 @@ export async function checkFileApplication(
       );
       if (result.action !== 'initialize')
         throw new Error('Application returned no initialization result');
-      candidateRef = string(result.initialCandidateRef, 'initialCandidateRef');
+      return string(result.initialCandidateRef, 'initialCandidateRef');
     },
     { signal: context.signal },
   );
-  checks.push(verified);
+  checks.push(initialization.check);
+  const candidateRef = initialization.value;
   const instanceId = `doctor-instance-${randomUUID()}`;
   let acquired = false;
-  if (verified.status !== 'passed' || !candidateRef) {
+  if (!candidateRef) {
     checks.push({
       id: 'acquire-instance',
       status: 'unchecked',

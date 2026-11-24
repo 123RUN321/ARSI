@@ -4,6 +4,7 @@ import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
 import {
   missingInputError,
   runDoctorCheck,
+  runDoctorProbe,
 } from '../../../shared/doctor-check.js';
 import { parseConfig } from '../../../shared/schema.js';
 import { missingPath } from '../doctor/checks.js';
@@ -26,48 +27,16 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
   const skills = config.skills ?? [];
   const roles = checkedRoles(config);
   const options = { signal: context.signal };
-  let prompt = '';
-  const loaded = await runDoctorCheck(
+  const inputs = await runDoctorProbe(
     'editing-inputs',
-    async (signal) => {
-      try {
-        signal.throwIfAborted();
-        prompt = await loadAgentPrompt(config);
-        for (const directory of skills)
-          await readFile(join(directory, 'SKILL.md'), { signal });
-        for (const { role } of roles) await readFile(role.prompt, { signal });
-      } catch (error) {
-        const path = missingPath(error);
-        if (path) {
-          const skillIndex = skills.findIndex(
-            (directory) =>
-              path === directory || path === join(directory, 'SKILL.md'),
-          );
-          const checkedRole = roles.find(({ role }) => role.prompt === path);
-          const field =
-            path === config.prompt
-              ? 'prompt'
-              : skillIndex >= 0
-                ? `skills.${skillIndex}`
-                : (checkedRole?.promptField ?? 'guidance');
-          throw missingInputError(
-            {
-              field,
-              kind: path === config.guidance ? 'directory' : 'file',
-              reference: path,
-            },
-            error,
-          );
-        }
-        throw error;
-      }
-    },
+    (signal) => readEditingInputs(config, roles, signal),
     options,
   );
-  if (loaded.status !== 'passed') {
+  const prompt = inputs.value;
+  if (prompt === undefined) {
     return {
       checks: [
-        loaded,
+        inputs.check,
         {
           id: 'prepare-project',
           status: 'unchecked',
@@ -92,5 +61,45 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
     },
     options,
   );
-  return { checks: [loaded, prepared] };
+  return { checks: [inputs.check, prepared] };
+}
+
+async function readEditingInputs(
+  config: AgentEditingConfig,
+  roles: readonly CheckedRole[],
+  signal: AbortSignal,
+): Promise<string> {
+  const skills = config.skills ?? [];
+  try {
+    signal.throwIfAborted();
+    const prompt = await loadAgentPrompt(config);
+    for (const directory of skills)
+      await readFile(join(directory, 'SKILL.md'), { signal });
+    for (const { role } of roles) await readFile(role.prompt, { signal });
+    return prompt;
+  } catch (error) {
+    const path = missingPath(error);
+    if (path) {
+      const skillIndex = skills.findIndex(
+        (directory) =>
+          path === directory || path === join(directory, 'SKILL.md'),
+      );
+      const checkedRole = roles.find(({ role }) => role.prompt === path);
+      const field =
+        path === config.prompt
+          ? 'prompt'
+          : skillIndex >= 0
+            ? `skills.${skillIndex}`
+            : (checkedRole?.promptField ?? 'guidance');
+      throw missingInputError(
+        {
+          field,
+          kind: path === config.guidance ? 'directory' : 'file',
+          reference: path,
+        },
+        error,
+      );
+    }
+    throw error;
+  }
 }

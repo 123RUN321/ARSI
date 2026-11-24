@@ -14,13 +14,19 @@ import {
   requirePath,
 } from '../shared/file-application/doctor.js';
 import { safePath } from '../shared/file-application/target.js';
+import type {
+  InferenceConfig,
+  LocalInferenceConfig,
+  RemoteInferenceConfig,
+} from './schema.js';
 
 export async function checkInferenceApplication(
-  context: DoctorContext,
+  context: DoctorContext<InferenceConfig>,
 ): Promise<DoctorResult> {
-  const { check, directory: baseline } = await checkBaselineDirectory(context);
-  const checks = [check];
-  if (!baseline) {
+  const baseline = await checkBaselineDirectory(context);
+  const checks = [baseline.check];
+  const directory = baseline.directory;
+  if (!directory) {
     checks.push({
       id: 'launch-prerequisites',
       status: 'unchecked',
@@ -29,24 +35,17 @@ export async function checkInferenceApplication(
     });
     return { checks };
   }
+
   const config = context.binding.config;
-  const remote =
-    config.remote === undefined ? undefined : object(config.remote);
-  if (remote) {
-    const executableCheck = await runDoctorCheck(
+  const options = { signal: context.signal };
+  if ('remote' in config) {
+    const interpreter = await runDoctorCheck(
       'remote-executable',
-      async (signal) => {
-        const executable =
-          remote.executable === undefined
-            ? 'python3'
-            : string(remote.executable);
-        await executablePath(executable, process.cwd());
-        await runCommand(executable, ['--version'], { signal });
-      },
-      { signal: context.signal },
+      (signal) => checkRemoteInterpreter(config.remote, signal),
+      options,
     );
-    checks.push(executableCheck);
-    if (executableCheck.status === 'failed') {
+    checks.push(interpreter);
+    if (interpreter.status === 'failed') {
       checks.push({
         id: 'launch-prerequisites',
         status: 'unchecked',
@@ -56,87 +55,93 @@ export async function checkInferenceApplication(
       return { checks };
     }
   }
-  checks.push(
-    await runDoctorCheck(
-      'launch-prerequisites',
-      async (signal) => {
-        if (remote) {
-          const parameters = join(
-            baseline,
-            safePath(remote.parametersFile ?? 'tuning.json'),
-          );
-          await requirePath(parameters, 'remote.parametersFile', 'file');
-          object(
-            JSON.parse(
-              await readFile(parameters, { encoding: 'utf8', signal }),
-            ),
-            'remote parameters',
-          );
-        } else {
-          const start = object(config.start);
-          const resources = object(config.resources ?? {});
-          if (!Array.isArray(start.argv))
-            throw new Error('start.argv must be an array');
-          const expand = (value: unknown): string => {
-            if (typeof value === 'string') return value;
-            const token = object(value, 'start.argv token');
-            const resource = string(token.resource);
-            const base =
-              resource === 'workspace'
-                ? baseline
-                : resource === 'port'
-                  ? '0'
-                  : string(resources[resource], `resources.${resource}`);
-            return token.path === undefined
-              ? base
-              : join(base, safePath(token.path));
-          };
-          const argv = start.argv.map(expand);
-          const cwd =
-            start.cwd === undefined
-              ? baseline
-              : join(baseline, safePath(start.cwd));
-          await requirePath(cwd, 'start.cwd', 'directory');
-          await executablePath(string(argv[0], 'start.argv[0]'), cwd);
-          for (const [index, value] of start.argv.entries()) {
-            if (typeof value === 'object' && value !== null) {
-              const token = object(value);
-              if (token.resource !== 'port') {
-                const reference = resolve(cwd, expand(value));
-                await access(reference, constants.R_OK).catch(
-                  (error: unknown) => {
-                    if (
-                      error instanceof Error &&
-                      'code' in error &&
-                      error.code === 'ENOENT'
-                    )
-                      throw missingInputError(
-                        {
-                          field: `start.argv.${index}`,
-                          kind: 'path',
-                          reference,
-                        },
-                        error,
-                      );
-                    throw error;
-                  },
-                );
-              }
-            }
-          }
-        }
-        const credentials = object(config.credentials ?? {});
-        if (credentials.apiKeyEnv !== undefined) {
-          const name = string(credentials.apiKeyEnv);
-          if (!process.env[name]?.trim())
-            throw new Error(
-              `credentials.apiKeyEnv references missing or empty environment variable ${name}`,
-            );
-        }
-        signal.throwIfAborted();
-      },
-      { signal: context.signal },
-    ),
+
+  const launch = await runDoctorCheck(
+    'launch-prerequisites',
+    async (signal) => {
+      if ('remote' in config)
+        await checkRemoteParameters(config.remote, directory, signal);
+      else await checkLocalLaunch(config, directory);
+      checkCredentials(config.credentials);
+      signal.throwIfAborted();
+    },
+    options,
   );
-  return { checks };
+  return { checks: [...checks, launch] };
+}
+
+async function checkRemoteInterpreter(
+  remote: RemoteInferenceConfig['remote'],
+  signal: AbortSignal,
+): Promise<void> {
+  const executable = remote.executable ?? 'python3';
+  await executablePath(executable, process.cwd());
+  await runCommand(executable, ['--version'], { signal });
+}
+
+async function checkRemoteParameters(
+  remote: RemoteInferenceConfig['remote'],
+  baseline: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const parameters = join(
+    baseline,
+    safePath(remote.parametersFile ?? 'tuning.json'),
+  );
+  await requirePath(parameters, 'remote.parametersFile', 'file');
+  object(
+    JSON.parse(await readFile(parameters, { encoding: 'utf8', signal })),
+    'remote parameters',
+  );
+}
+
+async function checkLocalLaunch(
+  config: LocalInferenceConfig,
+  baseline: string,
+): Promise<void> {
+  const { start, resources = {} } = config;
+  const expand = (
+    argument: LocalInferenceConfig['start']['argv'][number],
+  ): string => {
+    if (typeof argument === 'string') return argument;
+    const base =
+      argument.resource === 'workspace'
+        ? baseline
+        : argument.resource === 'port'
+          ? '0'
+          : string(
+              resources[argument.resource],
+              `resources.${argument.resource}`,
+            );
+    return argument.path === undefined
+      ? base
+      : join(base, safePath(argument.path));
+  };
+  const argv = start.argv.map(expand);
+  const cwd =
+    start.cwd === undefined ? baseline : join(baseline, safePath(start.cwd));
+  await requirePath(cwd, 'start.cwd', 'directory');
+  await executablePath(string(argv[0], 'start.argv[0]'), cwd);
+  for (const [index, argument] of start.argv.entries()) {
+    if (typeof argument === 'string' || argument.resource === 'port') continue;
+    const reference = resolve(cwd, expand(argument));
+    try {
+      await access(reference, constants.R_OK);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+        throw missingInputError(
+          { field: `start.argv.${index}`, kind: 'path', reference },
+          error,
+        );
+      throw error;
+    }
+  }
+}
+
+function checkCredentials(credentials: InferenceConfig['credentials']): void {
+  const name = credentials?.apiKeyEnv;
+  if (name !== undefined && !process.env[name]?.trim())
+    throw new Error(
+      `credentials.apiKeyEnv references missing or empty environment variable ${name}`,
+    );
 }
