@@ -4,19 +4,62 @@ import type {
   DoctorContext,
   DoctorRegistry,
   DoctorReport,
+  DoctorResult,
 } from '../../contracts/index.js';
-import { errorText } from '../../shared/errors.js';
+import {
+  errorText,
+  RuntimeCleanupInterruptedError,
+} from '../../shared/errors.js';
 import type { Runtime } from '../context.js';
 import { Recipe } from '../loaders/recipe.js';
+import { withBindingInstance } from '../manager/instances.js';
 import type { Registry } from '../registry/index.js';
-import { bindingReferenceRules } from './declared-bindings.js';
-import { diagnoseBinding } from './dispatch.js';
-import { declaredPathRules } from './declared-paths.js';
 import { openProbeRuntime } from './probe-runtime.js';
-import { runDoctorRules } from './rules.js';
+import {
+  bindingReferenceRules,
+  declaredPathRules,
+  runDoctorRules,
+} from './rules.js';
 import { createFailureReport, DoctorReportBuilder } from './report.js';
 
-export { diagnoseBinding };
+/** The caller owns the Runtime if diagnosis throws before releasing it. */
+export async function runDoctor(
+  recipePath: string,
+  {
+    signal,
+    openRuntime,
+    releaseRuntime,
+  }: {
+    signal: AbortSignal;
+    openRuntime(): Promise<Runtime>;
+    releaseRuntime(): Promise<void>;
+  },
+): Promise<DoctorReport> {
+  let runtime: Runtime;
+  try {
+    runtime = await openRuntime();
+  } catch (error) {
+    signal.throwIfAborted();
+    return createFailureReport('runtime.registration', error);
+  }
+
+  const report = await doctorRecipe(runtime, recipePath, { signal }).catch(
+    (error: unknown) => {
+      signal.throwIfAborted();
+      return createFailureReport('doctor.runtime', error);
+    },
+  );
+  try {
+    await releaseRuntime();
+  } catch (error) {
+    if (signal.aborted)
+      throw new RuntimeCleanupInterruptedError(signal.reason, error);
+    const cleanupReport = createFailureReport('runtime.cleanup', error);
+    report.checks.push(...cleanupReport.checks);
+  }
+  signal.throwIfAborted();
+  return report;
+}
 
 /** Internal runner: never runs a Policy or writes to the invoking experiment store. */
 export async function doctorRecipe(
@@ -130,5 +173,44 @@ async function checkBinding(
       status: 'failed',
       reason: `${errorText(error)} Plugin availability is unknown.`,
     });
+  }
+}
+
+export async function diagnoseBinding(
+  registry: Registry,
+  context: DoctorContext,
+): Promise<DoctorResult> {
+  const { binding, signal, directory } = context;
+  try {
+    const result = await withBindingInstance(
+      registry,
+      { plugin: binding.pluginId, config: binding.config },
+      context.runtime.extend({ bindingId: binding.name, signal, directory }),
+      'rsi/doctor',
+      async (target, event, runtime) => {
+        const rules = await target.serial(target, event, {
+          ...context,
+          runtime,
+        });
+        if (!rules) throw new Error('Doctor returned no check definitions.');
+        return runDoctorRules(rules, signal);
+      },
+    );
+    return (
+      result ?? {
+        checks: [
+          {
+            id: 'plugin',
+            status: 'unchecked',
+            reason: `Binding ${binding.name}, implementation ${binding.pluginId}, has no doctor capability.`,
+          },
+        ],
+      }
+    );
+  } catch (error) {
+    signal.throwIfAborted();
+    return {
+      checks: [{ id: 'script', status: 'failed', reason: errorText(error) }],
+    };
   }
 }

@@ -9,7 +9,7 @@ import {
 } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
-import { formatDoctorSummary } from '../../runtime/doctor/summary.js';
+import { formatDoctorSummary } from '../../runtime/doctor/report.js';
 
 export interface CommandContext {
   signal: AbortSignal;
@@ -157,7 +157,7 @@ export async function runCommand(
     recipePath: string,
     options: { json?: boolean },
   ): Promise<void> {
-    const { runDoctor } = await import('../../runtime/doctor/run-doctor.js');
+    const { runDoctor } = await import('../../runtime/doctor/index.js');
     const report = await runDoctor(recipePath, {
       signal: context.signal,
       openRuntime: () =>
