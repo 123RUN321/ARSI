@@ -4,21 +4,20 @@ import type {
   MemoryOutput,
   OperationDefinition,
 } from '../../contracts/index.js';
-import { json, string } from '../../shared/json.js';
+import { string } from '../../shared/json.js';
 import { editResource } from '../shared/agent-editing/index.js';
 import { buildComparisonContext } from './comparison.js';
 import { errorText } from '../../shared/errors.js';
-import { checkAgentEditor } from '../shared/agent-editing/doctor.js';
+import { agentEditorDoctorRules } from '../shared/agent-editing/doctor.js';
 
 export const createMemoryAgent: OperationDefinition<
   MemoryInput,
   MemoryOutput,
   AgentEditingConfig
 >['create'] = async (config, ctx) => {
-  ctx.event?.on('rsi/doctor', (request) => checkAgentEditor(request));
+  ctx.event?.on('rsi/doctor', (request) => agentEditorDoctorRules(request));
   return {
     async execute(input, context) {
-      json(input);
       try {
         const comparison =
           input.comparison === undefined
@@ -27,7 +26,7 @@ export const createMemoryAgent: OperationDefinition<
         const updated = await editResource(
           config,
           input,
-          input.memoryRef === null ? null : string(input.memoryRef),
+          input.memoryRef,
           context,
           comparison,
         );

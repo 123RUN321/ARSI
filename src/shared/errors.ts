@@ -51,9 +51,12 @@ export function redactConfiguration(
       }
   };
   visit(value);
+  const secretsByLength = [...secrets]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
   return (message) => {
-    for (const secret of [...secrets].sort((a, b) => b.length - a.length))
-      if (secret.length > 0) message = message.replaceAll(secret, '[redacted]');
+    for (const secret of secretsByLength)
+      message = message.replaceAll(secret, '[redacted]');
     return message.replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/g, '$1[redacted]@');
   };
 }

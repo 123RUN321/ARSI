@@ -8,7 +8,12 @@ export type OperatorSummarizerConfig = {
 
 export const configSchema = recordSchema(
   {
-    agentRef: { type: 'string', minLength: 1, default: 'agent' },
+    agentRef: {
+      type: 'string',
+      minLength: 1,
+      default: 'agent',
+      'x-rsi-binding': 'contract.agent',
+    },
     promptFile: { type: 'string', minLength: 1, 'x-rsi-path': 'file' },
     modelRequestTimeoutMs: { type: 'integer', minimum: 0, maximum: 2147483647 },
   },

@@ -1,47 +1,24 @@
-import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
-import { runDoctorCheck } from '../../../shared/doctor-check.js';
+import type { DoctorContext } from '../../../contracts/index.js';
 import { string } from '../../../shared/json.js';
 import { nativeAgentCommand } from '../native-agent/executable.js';
 import { runCommand } from './process.js';
 
-/** Check CLI compatibility without submitting a task or exposing native output. */
-export async function checkNativeAgent(
+export async function isNativeAgentCompatible(
   context: DoctorContext,
   command: string,
   helpArgs: string[],
   requiredFlags: string[],
-): Promise<DoctorResult> {
-  const available = await runDoctorCheck(
-    'executable',
-    async (signal) => {
-      const stdout = await runNativeAgentCommand(
-        context,
-        command,
-        helpArgs,
-        signal,
-      );
-      const missing = requiredFlags.filter(
-        (flag) =>
-          !new RegExp(`(?:^|\\s|,)${flag}(?=[\\s,=]|$)`, 'm').test(stdout),
-      );
-      if (missing.length)
-        throw new Error(
-          `Upgrade ${command}; required CLI options are missing: ${missing.join(', ')}.`,
-        );
-    },
-    { signal: context.signal },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const stdout = await runNativeAgentCommand(
+    context,
+    command,
+    helpArgs,
+    signal,
   );
-  return {
-    checks: [
-      available,
-      {
-        id: 'model-access',
-        status: 'unchecked',
-        reason:
-          'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
-      },
-    ],
-  };
+  return requiredFlags.every((flag) =>
+    new RegExp(`(?:^|\\s|,)${flag}(?=[\\s,=]|$)`, 'm').test(stdout),
+  );
 }
 
 /** Run another native preflight command with the same executable resolution. */
@@ -70,7 +47,7 @@ export async function runNativeAgentCommand(
     return stdout;
   } catch {
     throw new Error(
-      `${context.binding.pluginId} native preflight failed; check the CLI installation, profile and credentials.`,
+      `${context.binding.pluginId} native preflight failed; check ${context.binding.name}.config.executable, the CLI installation, profile and credentials.`,
     );
   }
 }

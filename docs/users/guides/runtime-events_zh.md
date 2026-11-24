@@ -79,9 +79,9 @@
 
 ### Agent 对话观察
 
-| 事件 | 发布时机 | 分发方式 | 参数 |
-| --- | --- | --- | --- |
-| `rsi/agent-observation` | Agent 后端获得观察数据时 | `emit` | `runId: string`：运行 ID，主 Agent 为 `main`。<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`：原生标识。<br>`event: AgentEvent`：统一观察数据，见[协议定义](../../../src/contracts/models/agent-record.ts)。 |
+| 事件                    | 发布时机                 | 分发方式 | 参数                                                                                                                                                                                                                                  |
+| ----------------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rsi/agent-observation` | Agent 后端获得观察数据时 | `emit`   | `runId: string`：运行 ID，主 Agent 为 `main`。<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`：原生标识。<br>`event: AgentEvent`：统一观察数据，见[协议定义](../../../src/contracts/models/agent-record.ts)。 |
 
 在 Runtime 管理的 Agent 的 `execute(input, ctx)` 中，通过当前 `ctx` 发布：
 
@@ -143,14 +143,14 @@ ctx.event.emit('rsi/agent-observation', {
 
 ### 插件诊断与资源清理
 
-插件在 `create(config, ctx)` 中按需订阅这两个事件。完整 `doctor` 在绑定声明的本地路径通过检查后创建临时实例。手动 `cleanup` 从当前和历次归档的 Recipe 中收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近一次保存的配置创建实例。即使续跑复用了全部评测结果，也能找到旧插件。框架等待回调和实例的 `dispose()` 完成，再处理下一个绑定。
+插件在 `create(config, ctx)` 中按需订阅这两个事件。`doctor` 在绑定声明的本地路径通过检查后创建临时实例。手动 `cleanup` 从当前和历次归档的 Recipe 中收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近一次保存的配置创建实例。即使续跑复用了全部评测结果，也能找到旧插件。框架等待回调和实例的 `dispose()` 完成，再处理下一个绑定。
 
 ```ts
 ctx.event.on('rsi/doctor', checkEnvironment);
 ctx.event.on('rsi/cleanup', cleanupResources);
 ```
 
-- `rsi/doctor` 为当前 Recipe 绑定返回 `DoctorResult`，由 RSI 汇总。
+- `rsi/doctor` 为当前 Recipe 绑定返回有序的 `DoctorRule[]` 定义，由 RSI 执行；首项失败后停止，并将后续项记为 `unchecked`。
 - `rsi/cleanup` 接收 `experimentId`、`bindingId`、`pluginId`、`dryRun`、`facts`、`dataDirectory` 和 `signal`，返回 `CleanupResult[]`。每项包含资源键 `key` 和状态 `preview`、`complete` 或 `pending`。没有待清理资源时返回 `[]`。`dryRun` 为 `true` 时只做预览，实际清理应支持重复执行。
 
 实例被替换或运行结束时，框架仍会等待各实例的 `dispose()` 释放句柄。

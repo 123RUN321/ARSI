@@ -1,6 +1,6 @@
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
+import { parameterFileDoctorRules } from '../shared/parameter-editing/doctor.js';
 import { parseOptunaConfig } from './schema.js';
 import {
   runOptunaWorker,
@@ -8,28 +8,36 @@ import {
   type OptunaWorker,
 } from './worker.js';
 
-export async function checkOptunaDependencies(
+export function optunaDoctorRules(
   context: DoctorContext,
   worker: OptunaWorker = runOptunaWorker,
-): Promise<DoctorResult> {
-  const dependencies = await runDoctorCheck(
-    'python-dependencies',
-    async (signal) => {
-      const config = parseOptunaConfig(context.binding.config);
-      const result = await worker(
-        config,
-        {
-          action: 'check',
-          sampler: object(config.sampler),
-          constraintHandling: config.constraintHandling,
-          searchSpace: config.searchSpace,
-          history: [],
-        },
-        signal,
-      );
-      validateOptunaWorkerResponse(result, 'check');
+): DoctorRule[] {
+  context.signal.throwIfAborted();
+  const config = parseOptunaConfig(context.binding.config);
+  async function arePythonDependenciesAvailable(
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const result = await worker(
+      config,
+      {
+        action: 'check',
+        sampler: object(config.sampler),
+        constraintHandling: config.constraintHandling,
+        searchSpace: config.searchSpace,
+        history: [],
+      },
+      signal,
+    );
+    validateOptunaWorkerResponse(result, 'check');
+    return true;
+  }
+  return [
+    ...parameterFileDoctorRules(context),
+    {
+      id: 'python-dependencies',
+      check: arePythonDependenciesAvailable,
+      reason:
+        'Install the required Python, Optuna and NumPy versions in the configured Python environment.',
     },
-    { signal: context.signal },
-  );
-  return { checks: [dependencies] };
+  ];
 }

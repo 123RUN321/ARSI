@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises';
 import {
-  operatorSummarizerContract,
   type JsonObject,
   type OperationDefinition,
   type OperatorSummarizerInput,
@@ -37,7 +36,12 @@ import {
   type OperatorHistoryArtifact,
   type OperatorSummary,
 } from '../shared/operator-attempt/schema.js';
-import { configSchema, type OperatorSummarizerConfig } from './schema.js';
+import type { OperatorSummarizerConfig } from './schema.js';
+import { operatorSummarizerDoctorRules } from './doctor.js';
+import {
+  candidateMetricFeedback,
+  projectMetricProfile,
+} from '../shared/operator-attempt/metric-evidence.js';
 
 function validateActions(
   input: OperatorSummarizerInput,
@@ -142,21 +146,25 @@ async function storeSummary(
   return { action: 'summarize', summaryRef, historyRef };
 }
 
+export async function readSummaryPrompt(
+  path: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const prompt = await readFile(path, { encoding: 'utf8', signal });
+  if (!prompt.trim())
+    throw new Error('Operator summary promptFile must not be empty');
+  return prompt;
+}
+
 export const createOperatorSummarizer: OperationDefinition<
   OperatorSummarizerInput,
   OperatorSummarizerOutput,
   OperatorSummarizerConfig
->['create'] = async (rawConfig) => {
-  const config = parseConfig<OperatorSummarizerConfig>(
-    configSchema,
-    rawConfig,
-    'Operator Summarizer config',
-  );
-  const prompt = await readFile(config.promptFile, 'utf8');
-  if (!prompt.trim())
-    throw new Error('Operator summary promptFile must not be empty');
+>['create'] = async (config, services) => {
+  services.event?.on('rsi/doctor', operatorSummarizerDoctorRules);
 
   async function explain(
+    prompt: string,
     input: OperatorSummarizerInput,
     parentRef: string,
     baselineMeasurementRef: string,
@@ -228,12 +236,8 @@ export const createOperatorSummarizer: OperationDefinition<
 
   return {
     async execute(input, context) {
-      validate(
-        operatorSummarizerContract.input_schema,
-        input,
-        'Operator Summarizer input',
-      );
       context.signal.throwIfAborted();
+      const prompt = await readSummaryPrompt(config.promptFile, context.signal);
       if (input.phase === 'static') {
         validateActions(input, input.entryCandidateRef);
         const analysis = await readAnalysis(input.analysisRef, null, context);
@@ -257,6 +261,7 @@ export const createOperatorSummarizer: OperationDefinition<
           ),
         );
         const content = await explain(
+          prompt,
           input,
           input.entryCandidateRef,
           baselineMeasurementRef,
@@ -312,35 +317,40 @@ export const createOperatorSummarizer: OperationDefinition<
       );
       let candidateProfile: JsonObject | null = null;
       if (input.candidateDiagnosticMeasurementRef !== null) {
-        if (!facts.accepted)
+        if (facts.wasTransformCorrect !== true)
           throw new Error(
-            'Non-promoted metric candidate cannot claim new diagnostics',
+            'Metric candidate diagnostics require a verified correct attempt',
           );
-        const selected = await readOperatorCandidate(
-          facts.selectedCandidateRef,
+        const measured = await readOperatorCandidate(
+          input.candidateRefs.at(-1)!,
           context,
         );
         candidateProfile = await profile(
           input.candidateDiagnosticMeasurementRef,
-          selected,
+          measured,
           await readAssessment(
             input.measurementRefs.at(-1)!,
-            selected.ref,
+            measured.ref,
             context,
           ),
           context,
           false,
         );
       }
+      const feedback =
+        candidateProfile === null
+          ? null
+          : candidateMetricFeedback(diagnostic, candidateProfile);
       const content = await explain(
+        prompt,
         input,
         parent.ref,
         input.incumbentMeasurementRef,
         {
           analysis,
           facts,
-          profile: diagnostic,
-          candidateProfile,
+          profile: projectMetricProfile(diagnostic),
+          candidateProfile: feedback,
         },
         context,
       );
@@ -354,6 +364,7 @@ export const createOperatorSummarizer: OperationDefinition<
           incumbentMeasurementRef: input.incumbentMeasurementRef,
           candidateDiagnosticMeasurementRef:
             input.candidateDiagnosticMeasurementRef,
+          ...(feedback === null ? {} : { candidateProfileFeedback: feedback }),
         },
         prior.history,
         context,

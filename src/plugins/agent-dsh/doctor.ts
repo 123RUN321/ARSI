@@ -1,56 +1,64 @@
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { parseDocument } from 'yaml';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
 import {
-  checkNativeAgent,
+  isNativeAgentCompatible,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
-export async function checkDshAgent(
+export function checkDshAgent(context: DoctorContext): DoctorRule[] {
+  const isExecutableCompatible = (signal: AbortSignal): Promise<boolean> =>
+    isNativeAgentCompatible(
+      context,
+      'dsh',
+      ['--profile', 'headless', '--help'],
+      ['--json', '--permission-mode', '--approval-policy'],
+      signal,
+    );
+  const isProfileValid = (signal: AbortSignal): Promise<boolean> =>
+    isDshProfileValid(context, signal);
+
+  return [
+    {
+      id: 'executable',
+      check: isExecutableCompatible,
+      reason: `The CLI lacks required CLI options. Check ${context.binding.name}.config.executable and upgrade the native CLI.`,
+    },
+    {
+      id: 'profile-config',
+      check: isProfileValid,
+      reason:
+        'DSH returned invalid or unsupported headless configuration. Check executable and repair the native headless profile.',
+    },
+    {
+      id: 'doctor',
+      reason:
+        'This DSH adapter has no native machine-readable health report. Configuration composition does not validate runtime model routes or stored credentials.',
+    },
+    {
+      id: 'model-access',
+      reason:
+        'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
+    },
+  ];
+}
+
+async function isDshProfileValid(
   context: DoctorContext,
-): Promise<DoctorResult> {
-  const result = await checkNativeAgent(
+  signal: AbortSignal,
+): Promise<boolean> {
+  const stdout = await runNativeAgentCommand(
     context,
     'dsh',
-    ['--profile', 'headless', '--help'],
-    ['--json', '--permission-mode', '--approval-policy'],
+    ['--profile', 'headless', '--dump-config'],
+    signal,
   );
-  if (result.checks[0].status !== 'passed') return result;
-  result.checks.splice(
-    1,
-    0,
-    await runDoctorCheck(
-      'profile-config',
-      async (signal) => {
-        const stdout = await runNativeAgentCommand(
-          context,
-          'dsh',
-          ['--profile', 'headless', '--dump-config'],
-          signal,
-        );
-        // Keep native expressions inert, and never include dump values or parser errors in diagnostics.
-        const document = parseDocument(stdout, { logLevel: 'silent' });
-        if (document.errors.length)
-          throw new Error('DSH returned invalid headless configuration.');
-        let value: unknown;
-        try {
-          value = document.toJS();
-        } catch {
-          throw new Error('DSH returned unsupported headless configuration.');
-        }
-        if (!Array.isArray(value) || value.length === 0)
-          throw new Error(
-            'DSH returned an empty or unsupported headless configuration.',
-          );
-      },
-      { signal: context.signal },
-    ),
-  );
-  result.checks.splice(2, 0, {
-    id: 'doctor',
-    status: 'unchecked',
-    reason:
-      'This DSH adapter has no native machine-readable health report. Configuration composition does not validate runtime model routes or stored credentials.',
-  });
-  return result;
+  // Keep native expressions inert, and never include dump values or parser errors in diagnostics.
+  const document = parseDocument(stdout, { logLevel: 'silent' });
+  if (document.errors.length) return false;
+  try {
+    const value: unknown = document.toJS();
+    return Array.isArray(value) && value.length > 0;
+  } catch {
+    return false;
+  }
 }

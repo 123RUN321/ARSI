@@ -79,9 +79,9 @@ The Manager dispatches `rsi/before-agent-invoke` as a `waterfall` when a plugin 
 
 ### Agent conversation observation
 
-| Event | Publication point | Dispatch | Parameters |
-| --- | --- | --- | --- |
-| `rsi/agent-observation` | Agent backend observations become available. | `emit` | `runId: string`: Run ID (`main` for the main Agent).<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`: Native identifiers.<br>`event: AgentEvent`: Normalized observation; see the [protocol](../../../src/contracts/models/agent-record.ts). |
+| Event                   | Publication point                            | Dispatch | Parameters                                                                                                                                                                                                                                                          |
+| ----------------------- | -------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rsi/agent-observation` | Agent backend observations become available. | `emit`   | `runId: string`: Run ID (`main` for the main Agent).<br>`native?: { sessionId?: string; turnId?: string; itemId?: string }`: Native identifiers.<br>`event: AgentEvent`: Normalized observation; see the [protocol](../../../src/contracts/models/agent-record.ts). |
 
 In a Runtime-managed Agent's `execute(input, ctx)`, publish through the current `ctx`:
 
@@ -143,14 +143,14 @@ Step and loop boundaries identify the step with `stepId` and `stepPath`. `hasTop
 
 ### Plugin diagnostics and resource cleanup
 
-Plugins subscribe to either event in `create(config, ctx)`. Full `doctor` creates a temporary instance after the binding’s declared local paths pass validation. Manual `cleanup` visits each distinct `(bindingId, pluginId)` in the current and archived Recipes using its most recent saved configuration. This reaches previous plugins even when a resume reused every evaluation. The framework awaits the reply and instance disposal before visiting the next binding.
+Plugins subscribe to either event in `create(config, ctx)`. `doctor` creates a temporary instance after the binding’s declared local paths pass validation. Manual `cleanup` visits each distinct `(bindingId, pluginId)` in the current and archived Recipes using its most recent saved configuration. This reaches previous plugins even when a resume reused every evaluation. The framework awaits the reply and instance disposal before visiting the next binding.
 
 ```ts
 ctx.event.on('rsi/doctor', checkEnvironment);
 ctx.event.on('rsi/cleanup', cleanupResources);
 ```
 
-- `rsi/doctor` returns a `DoctorResult` for the effective Recipe binding. RSI aggregates these results.
+- `rsi/doctor` returns ordered `DoctorRule[]` definitions. RSI executes them, stops at the first failure, and marks remaining definitions `unchecked`.
 - `rsi/cleanup` receives `experimentId`, `bindingId`, `pluginId`, `dryRun`, `facts`, `dataDirectory` and `signal`. Return a `CleanupResult[]` with a resource `key` and a status of `preview`, `complete` or `pending` for each entry. Return `[]` when nothing remains. Preview when `dryRun` is `true` and make cleanup safe to repeat.
 
 When an instance is replaced or its run ends, the framework waits for its `dispose()` to release its handles.

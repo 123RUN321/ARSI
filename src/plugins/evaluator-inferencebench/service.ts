@@ -9,9 +9,7 @@ import type {
   Operation,
   RuntimeContext,
 } from '../../contracts/index.js';
-import { inferencebenchContract } from '../../contracts/plugin-types/inferencebench.js';
 import { object, string } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
 import { plain, redact } from '../shared/evaluator-adapter/data.js';
 import {
   sdkRunner,
@@ -23,7 +21,7 @@ import {
   type SdkEvaluatorConfig,
 } from '../shared/evaluator-adapter/configuration.js';
 import { normalizeEvaluation } from './measurement.js';
-import { configSchema, type EvaluatorConfig } from './schema.js';
+import type { EvaluatorConfig } from './schema.js';
 import { inferencebenchDoctor } from './doctor.js';
 export async function createInferencebench(
   config: EvaluatorConfig,
@@ -31,10 +29,8 @@ export async function createInferencebench(
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<InferencebenchInput, InferencebenchOutput>> {
   ctx.event?.on('rsi/doctor', inferencebenchDoctor);
-  validate(configSchema, config, 'evaluator config');
   return {
     async execute(input, context): Promise<InferencebenchOutput> {
-      validate(inferencebenchContract.input_schema, input, 'evaluator input');
       context.signal.throwIfAborted();
       try {
         return await context.withInstance(

@@ -27,6 +27,10 @@ properties:
     type: integer
     minimum: 1
     default: 10
+  maxRejectedProfiles:
+    type: integer
+    minimum: 0
+    default: 2
   maxNoImprovement:
     type: integer
     minimum: 1

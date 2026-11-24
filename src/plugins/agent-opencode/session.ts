@@ -8,7 +8,7 @@ import type {
 import type { AgentInput, JsonObject } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
 import { runNativeJsonProcess } from '../shared/native-agent/json-process.js';
-import type { ResolvedAgentOpenCodeConfig } from './schema.js';
+import type { AgentOpenCodeConfig } from './schema.js';
 
 /** Retain native provider settings and normal host environment. */
 export function launchEnvironment(directory: string): NodeJS.ProcessEnv {
@@ -16,7 +16,7 @@ export function launchEnvironment(directory: string): NodeJS.ProcessEnv {
 }
 
 export async function runSession(options: {
-  config: ResolvedAgentOpenCodeConfig;
+  config: AgentOpenCodeConfig;
   directory: string;
   request: AgentInput;
   signal: AbortSignal;
@@ -42,7 +42,7 @@ export async function runSession(options: {
     outputSchema: request.outputSchema,
   });
   await runNativeJsonProcess(
-    config.executable,
+    config.executable ?? 'opencode',
     args,
     prompt,
     (line) => {

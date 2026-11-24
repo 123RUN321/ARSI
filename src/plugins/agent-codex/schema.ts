@@ -6,9 +6,6 @@ export type AgentCodexConfig = {
   thinkingLevel?: string;
   timeoutMs?: number;
 };
-export type ResolvedAgentCodexConfig = AgentCodexConfig & {
-  executable: string;
-};
 
 export const configSchema: JsonSchema = {
   type: 'object',

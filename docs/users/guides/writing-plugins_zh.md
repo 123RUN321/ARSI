@@ -51,9 +51,9 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 
 用 `registry.registerOperation(definition)` 注册插件。按需在 `create(config, ctx)` 中通过 `ctx.event.on` 订阅 `doctor` 和 `cleanup`。两个事件都可省略。诊断和清理命令都会创建临时实例，清理预览也如此。对可复用资源的修改应放在收到 `dryRun: false` 的清理回调中。示例见[插件诊断与资源清理](runtime-events_zh.md#插件诊断与资源清理)。
 
-| 能力      | 注册方式                                     | 处理器返回值                                          |
-| --------- | -------------------------------------------- | ----------------------------------------------------- |
-| `doctor`  | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorResult`，包含当前绑定的诊断结果。              |
+| 能力      | 注册方式                                        | 处理器返回值                                               |
+| --------- | ----------------------------------------------- | ---------------------------------------------------------- |
+| `doctor`  | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorRule[]`，包含当前绑定的有序检查定义。               |
 | `cleanup` | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，列出清理或预览结果。无资源时返回 `[]`。 |
 
 ### configSchema
@@ -64,23 +64,25 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 
 下表列出编写 `configSchema` 时常用的规则字段；
 
-| Schema 字段                          | 含义                                       | 写法示例                                                         |
-| ------------------------------------ | ------------------------------------------ | ---------------------------------------------------------------- |
-| `type`                               | 指定值的类型。                             | `type: 'object'`；允许空值时可用 `type: ['string', 'null']`。    |
-| `properties`                         | 定义对象有哪些字段及其类型。               | `properties: { reason: { type: 'string' } }`。                   |
-| `required`                           | 指定必须提供的字段。                       | `required: ['reason']`；仅写在 `properties` 中不会使字段必填。   |
-| `additionalProperties`               | 控制是否允许未声明的字段。                 | 通常填 `false`，使拼错或未知的字段在校验时报错。                 |
-| `default`                            | 在省略字段时补默认值。                     | `default: 1`；值须符合该字段的类型。                             |
-| `enum` / `const`                     | 限定可选值或固定值。                       | `enum: ['maximize', 'minimize']` / `const: 'retain-incumbent'`。 |
-| `minimum` / `maximum`                | 限定数值范围。                             | `type: 'integer', minimum: 1`。                                  |
-| `minLength` / `pattern`              | 限定字符串长度或格式。                     | `type: 'string', minLength: 1`。                                 |
-| `items` / `minItems` / `uniqueItems` | 指定数组元素类型、最少数量及是否允许重复。 | `items: { type: 'string' }, minItems: 1, uniqueItems: true`。    |
-| `oneOf`                              | 定义只能满足其中一种的结构。               | 填写 Schema 数组，常用于按 `action` 区分输入和输出。             |
-| `x-rsi-path`                         | 标记配置中的文件或目录路径。               | 在字符串字段上填写 `'x-rsi-path': 'file'` 或 `'directory'`。     |
+| Schema 字段                          | 含义                                       | 写法示例                                                              |
+| ------------------------------------ | ------------------------------------------ | --------------------------------------------------------------------- |
+| `type`                               | 指定值的类型。                             | `type: 'object'`；允许空值时可用 `type: ['string', 'null']`。         |
+| `properties`                         | 定义对象有哪些字段及其类型。               | `properties: { reason: { type: 'string' } }`。                        |
+| `required`                           | 指定必须提供的字段。                       | `required: ['reason']`；仅写在 `properties` 中不会使字段必填。        |
+| `additionalProperties`               | 控制是否允许未声明的字段。                 | 通常填 `false`，使拼错或未知的字段在校验时报错。                      |
+| `default`                            | 在省略字段时补默认值。                     | `default: 1`；值须符合该字段的类型。                                  |
+| `enum` / `const`                     | 限定可选值或固定值。                       | `enum: ['maximize', 'minimize']` / `const: 'retain-incumbent'`。      |
+| `minimum` / `maximum`                | 限定数值范围。                             | `type: 'integer', minimum: 1`。                                       |
+| `minLength` / `pattern`              | 限定字符串长度或格式。                     | `type: 'string', minLength: 1`。                                      |
+| `items` / `minItems` / `uniqueItems` | 指定数组元素类型、最少数量及是否允许重复。 | `items: { type: 'string' }, minItems: 1, uniqueItems: true`。         |
+| `oneOf`                              | 定义只能满足其中一种的结构。               | 填写 Schema 数组，常用于按 `action` 区分输入和输出。                  |
+| `x-rsi-path`                         | 标记配置中的文件或目录路径。               | 在字符串字段上填写 `'x-rsi-path': 'file'` 或 `'directory'`。          |
+| `x-rsi-binding`                      | 声明绑定引用所需的契约。                   | 在填写 Agent 绑定名的字段上设置 `'x-rsi-binding': 'contract.agent'`。 |
 
 Runtime 合并 Policy 和 Recipe 的配置后，补齐默认值、校验配置，并将结果传给 `create`。
 
-- 标记了 `x-rsi-path` 的相对路径按声明配置的文件定位：
+- 标记了 `x-rsi-path` 的相对路径按声明配置的文件定位。
+- 要求本地文件或目录的输入使用 `'local-file'` 或 `'local-directory'`。对于这些声明，doctor 会拒绝 URL 以及本身是符号链接的路径。
 
 - 插件也可以支持从环境变量读取配置。例如，`agent.pi` 的 `api_key` 可以这样填写：
 
@@ -93,9 +95,9 @@ Runtime 合并 Policy 和 Recipe 的配置后，补齐默认值、校验配置�
 
 ### create 的返回对象
 
-表中的 `create(config, context)` 用校验后的配置初始化插件，并返回一个对象，这个对象称为**插件实例**。
+Registry 会校验配置副本并填充 Schema 默认值，再把它交给 `create(config, context)`。该函数初始化插件并返回**插件实例**。
 
-Runtime 每次调用插件时，执行该对象的 `execute(input, context)`；同一对象可以重复使用，不再使用时调用 `dispose()` 释放资源。各方法的职责如下：
+Runtime 在调用 `execute(input, context)` 前按契约校验输入，调用结束后校验输出。它可以复用同一个实例，并在实例不再需要时调用 `dispose()` 释放资源。
 
 | 方法                      | 作用                                         | 写法                                                         |
 | ------------------------- | -------------------------------------------- | ------------------------------------------------------------ |
@@ -290,7 +292,7 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 arsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
 ```
 
-`doctor` 检查契约、绑定和配置，再向提供 `rsi/doctor` 处理器的每个选中绑定派发事件，并将返回的 `DoctorResult` 纳入报告。
+`doctor` 检查契约、绑定和配置，再向提供 `rsi/doctor` 处理器的每个选中绑定派发事件，执行返回的检查定义，并将结果纳入报告。
 
 ## 使用 RuntimeContext
 

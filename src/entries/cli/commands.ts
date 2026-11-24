@@ -9,6 +9,7 @@ import {
 } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
+import { formatDoctorSummary } from '../../runtime/doctor/report.js';
 
 export interface CommandContext {
   signal: AbortSignal;
@@ -25,7 +26,7 @@ export async function runCommand(
   argv: string[],
   context: CommandContext,
 ): Promise<CommandResult> {
-  let result: { exitCode: number; json?: unknown } | undefined;
+  let result: CommandResult = { exitCode: 0 };
   let commanderExit: CommanderError | undefined;
   const program = new Command('arsi')
     .description('Make everything rsi-able')
@@ -45,14 +46,6 @@ export async function runCommand(
       'after',
       '\nRun facts are saved in .rsi/ under the current directory.\nExtensions load from ~/.arsi/plugins/<name>/index.mjs by default.\nEach plugin directory must contain index.mjs exporting register(registry).',
     );
-  const openRuntime = (): Promise<Runtime> =>
-    context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir);
-  const runJson = async (
-    execute: (runtime: Runtime) => unknown,
-  ): Promise<void> => {
-    const runtime = await openRuntime();
-    result = { exitCode: 0, json: await execute(runtime) };
-  };
   program
     .command('run <recipe.yaml>')
     .description('Run or resume an experiment')
@@ -62,8 +55,8 @@ export async function runCommand(
   program
     .command('doctor <recipe.yaml>')
     .description('Check experiment configuration and runtime prerequisites')
-    .option('--static', 'Check configuration and declared local paths only')
-    .action(runDoctor);
+    .option('--json', 'Output the full report as JSON')
+    .action(runDoctorCommand);
   program
     .command('list')
     .description('List experiments, plugins, or policies')
@@ -102,21 +95,6 @@ export async function runCommand(
       '\nWith no ID or flags, cleanup previews the workspace. Checkpoints, results and logs are kept for --resume. Required images may be pulled or built again.',
     )
     .action(cleanup);
-  const reflection = program
-    .command('reflection')
-    .description('Inspect and apply reflection revisions');
-  reflection
-    .command('list [experiment-id]')
-    .description('List reflection revisions')
-    .action(forRevision((revisions, id) => revisions.list(id)));
-  reflection
-    .command('show <revisionID>')
-    .description('Show reflection revisions')
-    .action(forRevision((revisions, id) => revisions.show(requireId(id))));
-  reflection
-    .command('apply <revisionID>')
-    .description('Apply reflection revisions')
-    .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
   program
     .command('catalog')
     .description('Show registered contracts, plugins, and policies')
@@ -136,6 +114,33 @@ export async function runCommand(
       4317,
     )
     .action(startDashboard);
+  const reflection = program
+    .command('reflection')
+    .description('Inspect and apply reflection revisions');
+  reflection
+    .command('list [experiment-id]')
+    .description('List reflection revisions')
+    .action(forRevision((revisions, id) => revisions.list(id)));
+  reflection
+    .command('show <revisionID>')
+    .description('Show reflection revisions')
+    .action(forRevision((revisions, id) => revisions.show(requireId(id))));
+  reflection
+    .command('apply <revisionID>')
+    .description('Apply reflection revisions')
+    .action(forRevision((revisions, id) => revisions.apply(requireId(id))));
+
+  async function runJson(
+    execute: (runtime: Runtime) => unknown,
+  ): Promise<void> {
+    const runtime = await context.openRuntime(
+      program.opts<{ pluginDir: string[] }>().pluginDir,
+    );
+    result = {
+      exitCode: 0,
+      stdout: JSON.stringify(await execute(runtime), null, 2) + '\n',
+    };
+  }
 
   function runExperiment(
     file: string,
@@ -148,20 +153,23 @@ export async function runCommand(
     );
   }
 
-  async function runDoctor(
-    file: string,
-    options: { static?: boolean },
+  async function runDoctorCommand(
+    recipePath: string,
+    options: { json?: boolean },
   ): Promise<void> {
-    const { checkRecipe } = await import(
-      '../../runtime/doctor/check-recipe.js'
-    );
-    const report = await checkRecipe(file, {
+    const { runDoctor } = await import('../../runtime/doctor/index.js');
+    const report = await runDoctor(recipePath, {
       signal: context.signal,
-      staticOnly: options.static ?? false,
-      openRuntime,
+      openRuntime: () =>
+        context.openRuntime(program.opts<{ pluginDir: string[] }>().pluginDir),
       releaseRuntime: context.releaseRuntime,
     });
-    result = { exitCode: report.summary.failed > 0 ? 1 : 0, json: report };
+    result = {
+      exitCode: report.checks.some(({ status }) => status === 'failed') ? 1 : 0,
+      stdout: options.json
+        ? JSON.stringify(report, null, 2) + '\n'
+        : formatDoctorSummary(report, recipePath),
+    };
   }
 
   function list(kind: string | undefined): Promise<void> {
@@ -189,7 +197,9 @@ export async function runCommand(
   ): Promise<void> {
     if (id !== undefined && all)
       cmd.error('--all cannot be combined with an experiment ID');
-    const { manager } = await openRuntime();
+    const { manager } = await context.openRuntime(
+      program.opts<{ pluginDir: string[] }>().pluginDir,
+    );
     const { cleanupExperiment, cleanupWorkspace } = await import(
       './cleanup.js'
     );
@@ -205,7 +215,7 @@ export async function runCommand(
         : report.results.some(({ status }) => status === 'pending');
     result = {
       exitCode: context.signal.aborted ? 130 : incomplete ? 1 : 0,
-      json: report,
+      stdout: JSON.stringify(report, null, 2) + '\n',
     };
   }
 
@@ -226,7 +236,9 @@ export async function runCommand(
       throw new Error(
         'Dashboard requires a .rsi directory in the current working directory. Run it from your experiment workspace.',
       );
-    const runtime = await openRuntime();
+    const runtime = await context.openRuntime(
+      program.opts<{ pluginDir: string[] }>().pluginDir,
+    );
     const { createServer } = await import('../web/server.js');
     const server = await createServer(runtime);
     const address = await server.listen({ host: '127.0.0.1', port });
@@ -236,7 +248,6 @@ export async function runCommand(
     } finally {
       await server.close();
     }
-    result = { exitCode: 0 };
   }
 
   try {
@@ -245,12 +256,5 @@ export async function runCommand(
     if (commanderExit === undefined || error !== commanderExit) throw error;
     return { exitCode: commanderExit.exitCode === 0 ? 0 : 2 };
   }
-  if (!result)
-    throw new Error('Choose a subcommand; use --help for available commands');
-  if ('json' in result)
-    return {
-      exitCode: result.exitCode,
-      stdout: JSON.stringify(result.json, null, 2) + '\n',
-    };
   return result;
 }

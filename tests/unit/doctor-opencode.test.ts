@@ -1,7 +1,8 @@
+import { checkOpenCodeAgent } from '../../src/plugins/agent-opencode/doctor.js';
 import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRuntime } from '../../src/runtime/context.js';
@@ -47,6 +48,7 @@ test('OpenCode doctor composes native configuration and rejects V1 without claim
     ],
   );
   const cli = join(root, 'cli.cjs');
+  const calls = join(root, 'calls.jsonl');
   binding.config.executable = cli;
   for (const [version, body, failed] of [
     ['opencode v1.19.5', '[]', 'version'],
@@ -55,11 +57,21 @@ test('OpenCode doctor composes native configuration and rejects V1 without claim
   ]) {
     await writeFile(
       cli,
-      `const args=process.argv.slice(2);console.log(args.includes('--help')?'--standalone --format --agent --model --archived':args.includes('--version')?${JSON.stringify(version)}:${JSON.stringify(body)});`,
+      `const args=process.argv.slice(2);require('node:fs').appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n');console.log(args.includes('--help')?'--standalone --format --agent --model --archived':args.includes('--version')?${JSON.stringify(version)}:${JSON.stringify(body)});`,
     );
+    await writeFile(calls, '');
+    assert.ok(Array.isArray(checkOpenCodeAgent(context)));
+    assert.equal(await readFile(calls, 'utf8'), '');
     const report = await diagnose();
     assert.equal(report.checks.find((c) => c.id === failed)?.status, 'failed');
     assert(!JSON.stringify(report).includes('native-secret-invalid-json'));
-    assert.equal(report.checks.at(-1)?.status, 'unchecked');
+    assert.deepEqual(
+      report.checks.map((check) => check.status),
+      failed === 'version'
+        ? ['passed', 'failed', 'unchecked', 'unchecked']
+        : ['passed', 'passed', 'failed', 'unchecked'],
+    );
+    if (failed === 'version')
+      assert.ok(!(await readFile(calls, 'utf8')).includes('debug'));
   }
 });

@@ -193,18 +193,20 @@ try {
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {proposerContract,applicationContract} from 'arsi/contracts';
-import {runDoctorCheck} from 'arsi';
 export const customDefinition={
  id:'proposer.consumer-doctor',contract:proposerContract,
  configSchema:{type:'object',properties:{inputFile:{type:'string','x-rsi-path':'file'}},required:['inputFile']},
  async create(config, ctx){
-  ctx.event.on('rsi/doctor', async (context) => {
-   const input=await runDoctorCheck('read-input',async signal=>{
+  ctx.event.on('rsi/doctor', (context) => {
+   async function isInputReady(signal) {
     if(context.binding.pluginId!=='proposer.consumer-doctor')throw Error('Missing binding metadata');
     const value=await readFile(context.binding.config.inputFile,{encoding:'utf8',signal});
-    if(value!=='doctor-ready')throw Error('Input is not doctor-ready');
-   },{signal:context.signal});
-   return {checks:[input,{id:'remote',status:'unchecked',reason:'This fixture does not probe remote services.'}]};
+    return value==='doctor-ready';
+   }
+   return [
+    {id:'read-input',check:isInputReady,reason:'Input is not doctor-ready; correct inputFile or restore its contents.'},
+    {id:'remote',reason:'This fixture does not probe remote services.'}
+   ];
   });
   ctx.event.on('rsi/cleanup', ({experimentId,bindingId,dryRun}) => [
    {key:experimentId + '/' + bindingId,status:dryRun ? 'preview':'complete'},
@@ -233,10 +235,22 @@ export function register(registry){
     timeout: 30000,
     stdio: 'pipe',
   };
+  const summary = execFileSync(process.execPath, doctorArgs, doctorOptions);
+  assert.match(summary, /Doctor found no failures for consumer\.doctor/);
+  assert.match(summary, /0 failed/);
+  assert.match(summary, /Unchecked checks[\s\S]*custom\.remote/);
+  const doctorJsonArgs = [...doctorArgs, '--json'];
   const doctorReport = JSON.parse(
-    execFileSync(process.execPath, doctorArgs, doctorOptions),
+    execFileSync(process.execPath, doctorJsonArgs, doctorOptions),
   );
-  assert.equal(doctorReport.summary.failed, 0);
+  assert.deepEqual(Object.keys(doctorReport).sort(), ['checks', 'recipeId']);
+  assert.ok(doctorReport.checks.every(({ status }) => status !== 'failed'));
+  assert.equal(
+    doctorReport.checks.find(
+      (check) => check.id === 'custom.resource.inputFile',
+    )?.status,
+    'passed',
+  );
   assert.equal(
     doctorReport.checks.find((check) => check.id === 'custom.read-input')
       ?.status,
@@ -248,7 +262,7 @@ export function register(registry){
   );
   await writeFile(join(doctorExtension, 'input.txt'), 'broken');
   assert.throws(
-    () => execFileSync(process.execPath, doctorArgs, doctorOptions),
+    () => execFileSync(process.execPath, doctorJsonArgs, doctorOptions),
     (error) => {
       assert.equal(error.status, 1);
       const report = JSON.parse(String(error.stdout));
@@ -256,27 +270,46 @@ export function register(registry){
         report.checks.find((check) => check.id === 'custom.read-input')?.status,
         'failed',
       );
+      assert.equal(
+        report.checks.find((check) => check.id === 'custom.remote')?.status,
+        'unchecked',
+      );
       return true;
     },
   );
-  const staticReport = JSON.parse(
-    execFileSync(process.execPath, [...doctorArgs, '--static'], doctorOptions),
-  );
-  assert.equal(staticReport.summary.failed, 0);
-  assert.equal(
-    staticReport.checks.find(
-      (check) => check.id === 'custom.resource.inputFile',
-    )?.status,
-    'passed',
-  );
-  assert.equal(
-    staticReport.checks.find((check) => check.id === 'custom.plugin')?.status,
-    'unchecked',
+  const inputPath = join(doctorExtension, 'input.txt');
+  await rm(inputPath);
+  assert.throws(
+    () => execFileSync(process.execPath, doctorJsonArgs, doctorOptions),
+    (error) => {
+      assert.equal(error.status, 1);
+      const report = JSON.parse(String(error.stdout));
+      assert.deepEqual(Object.keys(report).sort(), ['checks', 'recipeId']);
+      const failed = report.checks.find(
+        (check) => check.id === 'custom.resource.inputFile',
+      );
+      assert.equal(failed?.status, 'failed');
+      assert.ok(failed.reason.includes(inputPath));
+      assert.match(failed.reason, /correct custom\.config\.inputFile/);
+      assert.equal(
+        report.checks.find((check) => check.id === 'custom.plugin')?.status,
+        'unchecked',
+      );
+      assert.deepEqual(Object.keys(failed).sort(), [
+        'binding',
+        'id',
+        'pluginId',
+        'reason',
+        'status',
+      ]);
+      return true;
+    },
   );
   console.log(
-    'Installed component doctor: registration, full checks and static mode passed.',
+    'Installed component doctor: registration, text and JSON diagnostics passed.',
   );
 
+  await writeFile(inputPath, 'doctor-ready');
   const cleanupWorkspace = join(temporary, 'cleanup-workspace');
   await mkdir(cleanupWorkspace);
   assert.throws(
@@ -892,14 +925,13 @@ export function checkExecution(context:Parameters<OperationDefinition['create']>
   await writeFile(
     join(consumer, 'doctor-consumer.ts'),
     `
-import {proposerContract,type RuntimeContext,type Operation,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorResult} from 'arsi/contracts';
-import {runDoctorCheck,type OperationDoctor as RootOperationDoctor,type DoctorResult as RootDoctorResult} from 'arsi';
+import {proposerContract,type RuntimeContext,type Operation,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorRule} from 'arsi/contracts';
+import {type OperationDoctor as RootOperationDoctor,type DoctorRule as RootDoctorRule} from 'arsi';
 type Config={inputFile:string};
-export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Config>):Promise<DoctorResult>=>{
+export const checkCustom:OperationDoctor<Config>=(context:DoctorContext<Config>):DoctorRule[]=>{
  const path:string=context.binding.config.inputFile;
- const input=await runDoctorCheck('input',async signal=>{signal.throwIfAborted();void path;},{signal:context.signal});
- const result:RootDoctorResult={checks:[input,{id:'remote',status:'unchecked',reason:'No remote probe.'}]};
- return result;
+ const step:RootDoctorRule={id:'input',check:signal=>{signal.throwIfAborted();return Boolean(path);},reason:'Correct inputFile.'};
+ return [step];
 };
 const rootDoctor:RootOperationDoctor<Config>=checkCustom;void rootDoctor;
 async function createCustom(_config:Config, ctx:RuntimeContext<Config>):Promise<Operation<ProposerInput,ProposerOutput>> {
@@ -946,6 +978,8 @@ export function register(registry: import('arsi').Registry): void {
     'definition-listeners': `import {definition} from './events-consumer.js'; const invalid:typeof definition={...definition,listeners:{}};void invalid;`,
     'definition-doctor': `import {doctorDefinition,checkCustom} from './doctor-consumer.js';const invalid:typeof doctorDefinition={...doctorDefinition,doctor:checkCustom};void invalid;`,
     'doctor-result': `services.event.on('rsi/doctor',()=>42);`,
+    'doctor-legacy-report': `services.event.on('rsi/doctor',()=>({checks:[]}));`,
+    'doctor-predicate-result': `services.event.on('rsi/doctor',()=>[{id:'input',check:()=>42,reason:'Correct input.'}]);`,
     'listener-context': `services.event.on('consumer/notice',(_event,context:string)=>{void context;});`,
     'serial-return': `services.event.on('rsi/before-experiment',()=>true);`,
     'admission-return': `services.event.on('rsi/before-call',async()=>({kind:'invalid'}));`,

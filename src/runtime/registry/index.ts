@@ -13,7 +13,7 @@ import {
   defineContract,
   type PluginContract,
 } from '../../contracts/contract.js';
-import { validate } from '../../shared/schema.js';
+import { parseConfig, validate } from '../../shared/schema.js';
 import { json, digest } from '../../shared/json.js';
 
 interface Registration {
@@ -96,11 +96,16 @@ export class Registry {
       config: JsonObject,
       services: RuntimeContext,
     ): Promise<Operation> => {
-      validate(definition.configSchema, config, 'plugin config');
+      json(config);
+      const configuration = parseConfig<C>(
+        definition.configSchema,
+        config,
+        'plugin config',
+      );
       const instantiate = async (
         runtime: RuntimeContext,
       ): Promise<Operation> => {
-        const operation = await definition.create(config as C, runtime);
+        const operation = await definition.create(configuration, runtime);
         return contract.id === agentContract.id
           ? managedAgentOperation(operation)
           : operation;
@@ -118,6 +123,7 @@ export class Registry {
         const operation = await create(config, services);
         return {
           async execute(input, context) {
+            json(input);
             validate(contract.input_schema, input, 'plugin input');
             const output = await operation.execute(input as I, context);
             json(output);

@@ -8,7 +8,6 @@ import type {
   ApplicationOutput,
   RuntimeContext,
   JsonObject,
-  JsonValue,
   Operation,
   OperationDefinition,
 } from '../../contracts/index.js';
@@ -17,10 +16,10 @@ import {
   readInstance,
 } from '../shared/file-application/files.js';
 import { safePath } from '../shared/file-application/target.js';
-import { digest, object, string, unknownKeys } from '../../shared/json.js';
+import { digest, object, string } from '../../shared/json.js';
 import { InferenceStartupError } from '../../shared/errors.js';
 import { createRemoteBackend } from './remote.js';
-import type { InferenceConfig } from './schema.js';
+import type { InferenceConfig, LocalInferenceConfig } from './schema.js';
 import { checkInferenceApplication } from './doctor.js';
 interface OwnedProcess {
   child: ChildProcess;
@@ -54,16 +53,12 @@ async function port(): Promise<number> {
   return address.port;
 }
 function positive(
-  value: JsonValue | undefined,
+  value: number | undefined,
   fallback: number,
   label: string,
 ): number {
   const result = value ?? fallback;
-  if (
-    typeof result !== 'number' ||
-    !Number.isSafeInteger(result) ||
-    result <= 0
-  )
+  if (!Number.isSafeInteger(result) || result <= 0)
     throw new Error(`${label}: expected positive integer`);
   return result;
 }
@@ -108,8 +103,6 @@ export const createApplicationInference: OperationDefinition<
 ): Promise<Operation<ApplicationInput, ApplicationOutput>> => {
   services.event?.on('rsi/doctor', checkInferenceApplication);
   if ('remote' in config) {
-    if ('start' in config && config.start !== undefined)
-      throw new Error('remote and start are mutually exclusive');
     const backend = await createRemoteBackend(config, services);
     const application = await createFileApplication(config, services, backend);
     const resumed = new Map<string, RuntimeContext>();
@@ -283,11 +276,11 @@ export const createApplicationInference: OperationDefinition<
       }
       leases.add(instanceId);
       const allocated = await port();
-      const expand = (value: JsonValue): string => {
-        if (typeof value === 'string') return value;
-        const token = object(value, 'argv token');
-        unknownKeys(token, ['resource', 'path'], 'argv token');
-        const name = string(token.resource);
+      const expand = (
+        token: LocalInferenceConfig['start']['argv'][number],
+      ): string => {
+        if (typeof token === 'string') return token;
+        const name = token.resource;
         let result: string;
         if (name === 'workspace') result = directory;
         else if (name === 'port') result = String(allocated);
@@ -296,8 +289,6 @@ export const createApplicationInference: OperationDefinition<
           ? result
           : join(result, safePath(token.path));
       };
-      if (!Array.isArray(start.argv) || !start.argv.length)
-        throw new Error('start.argv is required');
       const argv = start.argv.map(expand),
         command = string(argv[0]);
       const cwd =
@@ -329,9 +320,7 @@ export const createApplicationInference: OperationDefinition<
         commandDigest: digest(argv),
       });
       const origin = `http://127.0.0.1:${allocated}`,
-        path = typeof health.path === 'string' ? health.path : '/health';
-      if (!path.startsWith('/') || path.startsWith('//'))
-        throw new Error('healthcheck.path must be a local absolute path');
+        path = health.path ?? '/health';
       const deadline =
         health.timeoutMs === undefined
           ? undefined
@@ -373,15 +362,11 @@ export const createApplicationInference: OperationDefinition<
         }
         await delay(interval, undefined, { signal: context.signal });
       }
-      const basePath =
-        typeof endpoint.basePath === 'string' ? endpoint.basePath : '/v1';
-      if (!basePath.startsWith('/') || basePath.startsWith('//'))
-        throw new Error('endpoint.basePath must be a local absolute path');
       return {
         kind: 'inference-endpoint',
         instanceId,
-        baseUrl: origin + basePath,
-        model: string(endpoint.model),
+        baseUrl: origin + (endpoint.basePath ?? '/v1'),
+        model: endpoint.model,
         resources,
         credentialRef: credentials.apiKeyEnv ?? null,
       };

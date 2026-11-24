@@ -3,128 +3,118 @@ import { join } from 'node:path';
 import {
   parseFileTree,
   type DoctorContext,
-  type DoctorResult,
+  type DoctorRule,
 } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import { missingInputError } from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
 import { missingPath } from '../shared/doctor/checks.js';
 import { configSchema, type ParetoEvolutionConfig } from './schema.js';
 import { validateModules } from './service.js';
 
-export async function checkParetoEvolutionProposer(
+export function checkParetoEvolutionProposer(
   context: DoctorContext,
-): Promise<DoctorResult> {
+): DoctorRule[] {
+  context.signal.throwIfAborted();
   const config = parseConfig<ParetoEvolutionConfig>(
     configSchema,
     context.binding.config,
     `${context.binding.name}.config`,
   );
-  const options = { signal: context.signal };
-  const modules = await runDoctorCheck(
-    'modules',
-    async () => validateModules(config.modules),
-    options,
-  );
-  if (modules.status !== 'passed') {
-    return {
-      checks: [
-        modules,
-        {
-          id: 'baseline-modules',
-          status: 'unchecked',
-          reason: 'The module configuration is invalid.',
-        },
-      ],
-    };
-  }
   const baseline = context.recipe.application.config.baseline;
   const { artifactRef, directory } =
     baseline && typeof baseline === 'object' && !Array.isArray(baseline)
       ? baseline
       : {};
-  if (typeof artifactRef === 'string') {
-    const baselineModules = await runDoctorCheck(
-      'baseline-modules',
-      async (signal) => {
-        signal.throwIfAborted();
-        const tree = parseFileTree(
-          await context.runtime.artifacts.readJson(artifactRef),
-        );
-        for (const module of config.modules)
-          if (!tree.files.some((file) => file.path === module.path))
-            throw new Error(
-              `GEPA module is missing from baseline artifact: ${module.path}`,
-            );
-      },
-      options,
-    );
-    return { checks: [modules, baselineModules] };
+  function areModulesValid(signal: AbortSignal): boolean {
+    signal.throwIfAborted();
+    validateModules(config.modules);
+    return true;
   }
-  if (typeof directory !== 'string' || !directory) {
-    return {
-      checks: [
-        modules,
-        {
-          id: 'baseline-modules',
-          status: 'unchecked',
-          reason: 'The Application does not expose a local baseline directory.',
-        },
-      ],
-    };
+  async function areBaselineModulesAvailable(
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (typeof artifactRef === 'string')
+      await checkArtifactModules(context, config, artifactRef, signal);
+    else if (typeof directory === 'string' && directory)
+      await checkDirectoryModules(config, directory, signal);
+    return true;
   }
-  const missingResources: NonNullable<DoctorResult['missingResources']> = [];
-  let directoryMissing = false;
-  const baselineModules = await runDoctorCheck(
-    'baseline-modules',
-    async (signal) => {
-      try {
-        if (!(await lstat(directory)).isDirectory())
-          throw new Error(`Expected baseline directory: ${directory}`);
-      } catch (error) {
-        if (!missingPath(error)) throw error;
-        directoryMissing = true;
-        return;
-      }
-      for (const module of config.modules) {
-        signal.throwIfAborted();
-        const path = join(directory, module.path);
-        try {
-          if (!(await lstat(path)).isFile())
-            throw new Error(`GEPA module must be a regular file: ${path}`);
-          await readFile(path, { signal });
-        } catch (error) {
-          if (missingPath(error))
-            missingResources.push({
-              field: `config.modules.${module.id}.path`,
-              kind: 'file',
-              reference: path,
-              checksNotRun: [],
-            });
-          throw error;
-        }
-      }
+  const hasBaseline =
+    typeof artifactRef === 'string' ||
+    (typeof directory === 'string' && directory.length > 0);
+  return [
+    {
+      id: 'modules',
+      check: areModulesValid,
+      reason: 'Correct modules, including unique identities and safe paths.',
     },
-    options,
+    {
+      id: 'baseline-modules',
+      check: hasBaseline ? areBaselineModulesAvailable : undefined,
+      reason: hasBaseline
+        ? 'Restore the baseline module files or correct their configured paths.'
+        : 'The Application does not expose a local baseline directory or artifact.',
+    },
+  ];
+}
+
+async function checkArtifactModules(
+  context: DoctorContext,
+  config: ParetoEvolutionConfig,
+  artifactRef: string,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const tree = parseFileTree(
+    await context.runtime.artifacts.readJson(artifactRef),
   );
-  if (baselineModules.status === 'passed' && directoryMissing) {
-    return {
-      checks: [
-        modules,
-        {
-          id: 'baseline-modules',
-          status: 'unchecked',
-          reason: 'The baseline directory is unavailable.',
-        },
-      ],
-      missingResources: [
+  for (const module of config.modules) {
+    signal.throwIfAborted();
+    if (!tree.files.some((file) => file.path === module.path))
+      throw new Error(
+        `GEPA module is missing from baseline artifact: ${module.path}. Correct modules.${module.id}.path or application.config.baseline.artifactRef.`,
+      );
+  }
+}
+
+async function checkDirectoryModules(
+  config: ParetoEvolutionConfig,
+  directory: string,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    if (!(await lstat(directory)).isDirectory())
+      throw new Error(
+        `Expected baseline directory: ${directory}. Correct application.config.baseline.directory.`,
+      );
+  } catch (error) {
+    if (missingPath(error))
+      throw missingInputError(
         {
           field: 'application.config.baseline.directory',
           kind: 'directory',
           reference: directory,
-          checksNotRun: ['baseline-modules'],
         },
-      ],
-    };
+        error,
+      );
+    throw error;
   }
-  return { checks: [modules, baselineModules], missingResources };
+  for (const module of config.modules) {
+    signal.throwIfAborted();
+    const path = join(directory, module.path);
+    try {
+      if (!(await lstat(path)).isFile())
+        throw new Error(
+          `GEPA module must be a regular file: ${path}. Correct modules.${module.id}.path.`,
+        );
+      await readFile(path, { signal });
+    } catch (error) {
+      if (missingPath(error))
+        throw missingInputError(
+          { field: `modules.${module.id}.path`, kind: 'file', reference: path },
+          error,
+        );
+      throw error;
+    }
+  }
 }

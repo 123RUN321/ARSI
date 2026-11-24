@@ -15,6 +15,7 @@ async function run(
   options: {
     values?: Array<number | null>;
     maxRounds?: number;
+    maxRejectedProfiles?: number;
     maxNoImprovement?: number;
     maxConsecutiveNoChange?: number;
     noChangeRounds?: number[];
@@ -171,6 +172,9 @@ async function run(
     metricsEnabled: true,
     maxRounds: options.maxRounds ?? 10,
     maxNoImprovement: options.maxNoImprovement ?? 5,
+    ...(options.maxRejectedProfiles === undefined
+      ? {}
+      : { maxRejectedProfiles: options.maxRejectedProfiles }),
     ...(options.maxConsecutiveNoChange === undefined
       ? {}
       : { maxConsecutiveNoChange: options.maxConsecutiveNoChange }),
@@ -351,4 +355,41 @@ test('unavailable entry diagnostics finish without generating metric candidates'
     0,
   );
   assert.equal(calls.filter((c) => c.input.action === 'evaluate').length, 2);
+});
+
+test('near misses get bounded diagnostics while the next round keeps its incumbent', async () => {
+  const { output, calls } = await run({
+    values: [10.1, 10.2, 10.6, 9.85, 9.9],
+    maxRounds: 5,
+    maxNoImprovement: 6,
+  });
+  const profiles = calls.filter(({ input }) => input.action === 'profile');
+  assert.deepEqual(
+    profiles.map(({ input }) => input.candidateRef),
+    ['baseline', 'c1', 'c4'],
+  );
+  const summaries = calls.filter(
+    ({ binding, input }) =>
+      binding === 'summarizer' && input.phase === 'metrics',
+  );
+  assert.deepEqual(
+    summaries.map(({ input }) => input.candidateDiagnosticMeasurementRef),
+    ['p2', null, null, 'p3', null],
+  );
+  assert.equal(output.bestCandidateRef, 'baseline');
+  const next = calls.find(
+    ({ input }) => input.action === 'propose' && input.round === 2,
+  );
+  assert.equal(next?.input.diagnosticMeasurementRef, 'p1');
+  assert.equal(next?.input.historyRef, 'h1');
+
+  const control = await run({
+    values: [9.85],
+    maxRounds: 2,
+    maxRejectedProfiles: 0,
+  });
+  assert.equal(
+    control.calls.filter(({ input }) => input.action === 'profile').length,
+    1,
+  );
 });

@@ -1,15 +1,15 @@
 import type {
   DoctorContext,
-  DoctorResult,
+  DoctorRule,
   Operation,
 } from '../../contracts/index.js';
-import { checkFileApplication } from '../shared/file-application/doctor.js';
+import { fileApplicationDoctorRules } from '../shared/file-application/doctor.js';
 
-export async function checkAgentbundleApplication(
+export function checkAgentbundleApplication(
   context: DoctorContext,
   operation: Operation,
-): Promise<DoctorResult> {
-  return checkFileApplication(context, operation, {
+): DoctorRule[] {
+  return fileApplicationDoctorRules(context, operation, {
     verification: 'verify-bundle',
     capability: 'agentbundle',
     entryFile: 'bundle.yaml',

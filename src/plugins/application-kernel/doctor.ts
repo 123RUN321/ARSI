@@ -1,16 +1,16 @@
 import type {
   DoctorContext,
-  DoctorResult,
+  DoctorRule,
   Operation,
 } from '../../contracts/index.js';
-import { checkFileApplication } from '../shared/file-application/doctor.js';
+import { fileApplicationDoctorRules } from '../shared/file-application/doctor.js';
 import { kernelSourcePath } from './schema.js';
 
-export async function checkKernelApplication(
+export function checkKernelApplication(
   context: DoctorContext,
   operation: Operation,
-): Promise<DoctorResult> {
-  return checkFileApplication(context, operation, {
+): DoctorRule[] {
+  return fileApplicationDoctorRules(context, operation, {
     verification: 'verify-source',
     capability: 'kernel-source',
     entryFile: kernelSourcePath(context.binding.config.entryFile),

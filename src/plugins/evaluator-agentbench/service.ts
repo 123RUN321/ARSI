@@ -7,8 +7,7 @@ import type {
   Operation,
   RuntimeContext,
 } from '../../contracts/index.js';
-import { object, string, strings, unknownKeys } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
+import { object, string } from '../../shared/json.js';
 import { plain, redact } from '../shared/evaluator-adapter/data.js';
 import {
   sdkRunner,
@@ -16,7 +15,7 @@ import {
 } from '../shared/evaluator-adapter/sdk.js';
 import { evaluationStatus } from '../shared/evaluator-adapter/measurement.js';
 import { normalizeEvaluation } from './measurement.js';
-import { configSchema, type AgentbenchConfig } from './schema.js';
+import type { AgentbenchConfig } from './schema.js';
 import {
   parseEvaluatorConfig,
   type SdkEvaluatorConfig,
@@ -33,18 +32,12 @@ export async function createAgentbench(
   ctx.event?.on('rsi/cleanup', (request) =>
     cleanupEvaluatorBinding(request, 'agentbundle'),
   );
-  validate(configSchema, config, 'evaluator config');
   return {
     async execute(input, context): Promise<AgentbenchOutput> {
-      object(input);
-      unknownKeys(input, ['candidateRef', 'taskIds'], 'evaluator input');
-      string(input.candidateRef);
-      const taskIds = strings('taskIds' in input ? input.taskIds : undefined);
-      if (!taskIds.length || new Set(taskIds).size !== taskIds.length)
-        throw new Error('taskIds must be nonempty and unique');
+      const { candidateRef, taskIds } = input;
       context.signal.throwIfAborted();
       return context.withInstance(
-        string(input.candidateRef),
+        candidateRef,
         'agentbundle',
         async (execution) => {
           context.signal.throwIfAborted();

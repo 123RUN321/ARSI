@@ -6,9 +6,6 @@ export type AgentClaudeCodeConfig = {
   effort?: string;
   timeoutMs?: number;
 };
-export type ResolvedAgentClaudeCodeConfig = AgentClaudeCodeConfig & {
-  executable: string;
-};
 
 export const configSchema: JsonSchema = {
   type: 'object',

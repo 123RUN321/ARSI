@@ -31,7 +31,6 @@ test('an extension exports and registers its own doctor with effective config an
   });
   const contracts = new URL('../../src/contracts/index.ts', import.meta.url)
     .href;
-  const publicApi = new URL('../../src/index.ts', import.meta.url).href;
   const modulePath = join(extension, 'index.mjs');
   await writeFile(
     modulePath,
@@ -39,7 +38,6 @@ test('an extension exports and registers its own doctor with effective config an
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { proposerContract, applicationContract } from ${JSON.stringify(contracts)};
-import { runDoctorCheck } from ${JSON.stringify(publicApi)};
 export const calls = { doctor: 0, create: 0, execute: 0, dispose: 0 };
 export const customDefinition = {
   id: 'proposer.custom', contract: proposerContract,
@@ -49,15 +47,15 @@ export const customDefinition = {
   }, required: ['inputFile'], additionalProperties: false },
   async create(config, ctx) {
     calls.create++;
-    ctx.event.on('rsi/doctor', async (context) => {
+    ctx.event.on('rsi/doctor', (context) => {
       calls.doctor++;
       const details = { pluginId: context.binding.pluginId, label: context.binding.config.label, input: context.binding.config.inputFile, directory: context.directory };
-      const check = await runDoctorCheck('content', async signal => {
+      return [{ id: 'content', reason: 'Restore the ready input.', details, check: async signal => {
         await writeFile(join(context.directory, 'owned-marker'), 'owned');
         const content = await readFile(context.binding.config.inputFile, { encoding: 'utf8', signal });
         if (content !== 'ready') throw Error('Input must be ready: ' + process.env.DOCTOR_PUBLIC_FIXTURE_SECRET);
-      }, { signal: context.signal, details });
-      return { checks: [check] };
+        return true;
+      }}];
     });
     return { async execute(input) { calls.execute++; return {status:'no-change',candidateRef:input.parent,diffRef:null,rationale:'fixture'}; }, async dispose(){calls.dispose++;} };
   }
@@ -144,7 +142,10 @@ export function register(registry) {
     dispose: 1,
   });
   const report = await doctorRecipe(runtime, path);
-  assert.equal(report.summary.failed, 0, JSON.stringify(report));
+  assert.ok(
+    report.checks.every(({ status }) => status !== 'failed'),
+    JSON.stringify(report),
+  );
   const content = report.checks.find((check) => check.id === 'custom.content');
   assert.equal(content?.status, 'passed');
   assert.equal(content?.details?.pluginId, 'proposer.custom');

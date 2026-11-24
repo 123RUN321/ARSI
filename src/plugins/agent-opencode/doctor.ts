@@ -2,75 +2,86 @@ import { object } from '../../shared/json.js';
 import { launchEnvironment } from './session.js';
 import type {
   DoctorContext,
-  DoctorResult,
+  DoctorRule,
   JsonValue,
 } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
 import {
-  checkNativeAgent,
+  isNativeAgentCompatible,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
-export async function checkOpenCodeAgent(
+export function checkOpenCodeAgent(context: DoctorContext): DoctorRule[] {
+  const isExecutableCompatible = (signal: AbortSignal): Promise<boolean> =>
+    isNativeAgentCompatible(
+      context,
+      'opencode',
+      ['run', '--help'],
+      ['--standalone', '--format', '--model', '--archived'],
+      signal,
+    );
+  const isVersionSupported = (signal: AbortSignal): Promise<boolean> =>
+    isOpenCodeVersionSupported(context, signal);
+  const isConfigurationValid = (signal: AbortSignal): Promise<boolean> =>
+    isOpenCodeConfigurationValid(context, signal);
+
+  return [
+    {
+      id: 'executable',
+      check: isExecutableCompatible,
+      reason: `The CLI lacks required CLI options. Check ${context.binding.name}.config.executable and upgrade the native CLI.`,
+    },
+    {
+      id: 'version',
+      check: isVersionSupported,
+      reason:
+        'Install OpenCode V2 using the official @opencode/cli package and correct executable.',
+    },
+    {
+      id: 'configuration',
+      check: isConfigurationValid,
+      reason:
+        'OpenCode could not load its native configuration. Check executable, upgrade the native CLI and repair its configuration.',
+    },
+    {
+      id: 'model-access',
+      reason:
+        'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
+    },
+  ];
+}
+
+async function isOpenCodeVersionSupported(
   context: DoctorContext,
-): Promise<DoctorResult> {
-  const result = await checkNativeAgent(
+  signal: AbortSignal,
+): Promise<boolean> {
+  const version = await runNativeAgentCommand(
     context,
     'opencode',
-    ['run', '--help'],
-    ['--standalone', '--format', '--model', '--archived'],
+    ['--version'],
+    signal,
   );
-  if (result.checks[0].status !== 'passed') return result;
-  result.checks.splice(
-    1,
-    0,
-    await runDoctorCheck(
-      'version',
-      async (signal) => {
-        const version = await runNativeAgentCommand(
-          context,
-          'opencode',
-          ['--version'],
-          signal,
-        );
-        if (!/^opencode v2\.(\d+)\.(\d+)\s*$/.test(version.trim()))
-          throw new Error(
-            'Install OpenCode V2 using the official @opencode/cli package.',
-          );
-      },
-      { signal: context.signal },
-    ),
+  return /^opencode v2\.(\d+)\.(\d+)\s*$/.test(version.trim());
+}
+
+async function isOpenCodeConfigurationValid(
+  context: DoctorContext,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const stdout = await runNativeAgentCommand(
+    context,
+    'opencode',
+    ['debug', 'config', '--standalone'],
+    signal,
+    [0],
+    launchEnvironment(context.directory),
   );
-  if (result.checks[1].status !== 'passed') return result;
-  result.checks.splice(
-    2,
-    0,
-    await runDoctorCheck(
-      'configuration',
-      async (signal) => {
-        const stdout = await runNativeAgentCommand(
-          context,
-          'opencode',
-          ['debug', 'config', '--standalone'],
-          signal,
-          [0],
-          launchEnvironment(context.directory),
-        );
-        try {
-          const entries: JsonValue = JSON.parse(stdout);
-          if (
-            !Array.isArray(entries) ||
-            !entries.some(
-              (entry: JsonValue) => object(entry).info !== undefined,
-            )
-          )
-            throw new Error('missing native configuration');
-        } catch {
-          throw new Error('OpenCode could not load its native configuration.');
-        }
-      },
-      { signal: context.signal },
-    ),
-  );
-  return result;
+  try {
+    const entries: JsonValue = JSON.parse(stdout);
+    return (
+      Array.isArray(entries) &&
+      entries.some((entry: JsonValue) => object(entry).info !== undefined)
+    );
+  } catch {
+    return false;
+  }
 }

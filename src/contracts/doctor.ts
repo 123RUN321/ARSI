@@ -13,25 +13,26 @@ export interface DoctorCheck {
   details?: JsonObject;
 }
 
-export interface MissingResource {
-  binding: string;
-  pluginId: string;
-  field: string;
-  kind: string;
-  reference: string;
-  checksNotRun: string[];
+export interface DoctorResult {
+  checks: {
+    id: string;
+    status: 'passed' | 'failed' | 'unchecked';
+    reason?: string;
+    details?: JsonObject;
+  }[];
 }
 
-/** IDs and dependent check references are local to the component binding. */
-export interface DoctorResult {
-  checks: Omit<DoctorCheck, 'binding' | 'pluginId'>[];
-  missingResources?: Omit<MissingResource, 'binding' | 'pluginId'>[];
+export interface DoctorRule {
+  id: string;
+  check?: (signal: AbortSignal) => boolean | Promise<boolean>;
+  reason: string;
+  details?: JsonObject;
+  /** null delegates time limits to a native diagnostic workflow. */
+  timeoutMs?: number | null;
 }
 
 export interface DoctorReport {
   recipeId: string | null;
-  summary: { passed: number; failed: number; unchecked: number };
-  missingResources: MissingResource[];
   checks: DoctorCheck[];
 }
 
@@ -69,7 +70,7 @@ export interface DoctorContext<C extends JsonObject = JsonObject> {
   readonly signal: AbortSignal;
 }
 
-/** An asynchronous handler for the binding instance’s `rsi/doctor` event. */
+/** A handler for the binding instance’s `rsi/doctor` event. */
 export type OperationDoctor<C extends JsonObject = JsonObject> = (
   context: DoctorContext<C>,
-) => Promise<DoctorResult>;
+) => DoctorRule[] | Promise<DoctorRule[]>;

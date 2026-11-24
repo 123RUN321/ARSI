@@ -5,33 +5,23 @@ import type {
   OperationDefinition,
   Operation,
 } from '../../contracts/index.js';
-import { parseConfig } from '../../shared/schema.js';
 import { checkCodexAgent } from './doctor.js';
 
-import {
-  configSchema,
-  type AgentCodexConfig,
-  type ResolvedAgentCodexConfig,
-} from './schema.js';
+import type { AgentCodexConfig } from './schema.js';
 import { runSession } from './session.js';
 
 export const createAgentCodex: OperationDefinition<
   AgentInput,
   AgentOutput,
   AgentCodexConfig
->['create'] = async (rawConfig, ctx) => {
+>['create'] = async (config, ctx) => {
   ctx.event?.on('rsi/doctor', checkCodexAgent);
-  const config = parseConfig<ResolvedAgentCodexConfig>(
-    configSchema,
-    rawConfig,
-    'agent.codex config',
-  );
   const operation: Operation<AgentInput, AgentOutput> = {
     async execute(request, context) {
       if (request.role !== undefined)
         throw new Error('For Codex role delegation, use native spawn_agent');
       return runSession({
-        executable: config.executable,
+        executable: config.executable ?? 'codex',
         model: config.model,
         reasoningEffort: config.thinkingLevel,
         directory: request.cwd,

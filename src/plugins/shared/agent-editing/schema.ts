@@ -11,7 +11,11 @@ export type AgentEditingConfig = {
 export const agentConfigSchema = {
   type: 'object',
   properties: {
-    agentRef: { type: 'string', default: 'agent.default' },
+    agentRef: {
+      type: 'string',
+      default: 'agent.default',
+      'x-rsi-binding': 'contract.agent',
+    },
     prompt: { type: 'string', 'x-rsi-path': 'file' },
     guidance: { type: 'string', 'x-rsi-path': 'directory' },
     evidenceView: {

@@ -128,10 +128,48 @@ test('standalone creation fills configuration defaults and forwards disposal', a
     },
   });
   const context = new RuntimeContext();
-  const operation = await registry.get(worker.id).create({}, context);
+  const supplied: { suffix?: string } = {};
+  const operation = await registry.get(worker.id).create(supplied, context);
+  assert.deepEqual(supplied, {});
+  supplied.suffix = 'changed by caller';
   assert.equal(await operation.execute('input', context), 'worker:default');
   await operation.dispose();
   assert.equal(disposals, 1);
+});
+
+test('registration rejects non-JSON configuration and input before plugin effects', async (t) => {
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  const worker = definition('worker');
+  let effects = 0;
+  registry.registerOperation({
+    ...worker,
+    configSchema: { type: 'object' },
+    contract: defineContract({
+      id: 'contract.json-fixture',
+      input_schema: { type: 'object' },
+      output_schema: { type: 'null' },
+    }),
+    async create() {
+      effects++;
+      return {
+        async execute() {
+          effects++;
+          return null;
+        },
+        async dispose() {},
+      };
+    },
+  });
+  const context = new RuntimeContext();
+  const invalid = { entries: [Infinity] };
+  const registered = registry.get(worker.id);
+  await assert.rejects(registered.create(invalid, context), /finite JSON/);
+  assert.equal(effects, 0);
+  const operation = await registered.create({}, context);
+  t.after(() => operation.dispose());
+  await assert.rejects(operation.execute(invalid, context), /finite JSON/);
+  assert.equal(effects, 1);
 });
 
 test('standalone execution rejects invalid input before effects and invalid output after effects', async (t) => {

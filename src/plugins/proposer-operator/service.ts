@@ -6,16 +6,12 @@ import {
   type OperatorProposerOutput,
   type RuntimeContext,
 } from '../../contracts/index.js';
-import { applicationContract } from '../../contracts/plugin-types/application.js';
-import { operatorProposerContract } from '../../contracts/plugin-types/proposer-operator.js';
 import { string } from '../../shared/json.js';
-import { parseConfig, validate } from '../../shared/schema.js';
 import { literalPathPattern } from '../shared/file-application/target.js';
 import { applyEdits } from '../shared/agent-editing/index.js';
 import {
   operatorEditOutputSchema,
   type OperatorProposerConfig,
-  configSchema,
   type AnalysisReceipt,
 } from './schema.js';
 import {
@@ -56,11 +52,6 @@ async function commitOperatorEdits(
       editRef: workspace.ref,
       editConstraints,
     });
-    validate(
-      applicationContract.output_schema,
-      result,
-      'Operator candidate commit',
-    );
     if (result.action !== 'commit')
       throw new Error('Operator Application did not commit');
     const candidateRef = string(result.candidateRef);
@@ -152,24 +143,14 @@ export const createOperatorProposer: OperationDefinition<
   OperatorProposerInput,
   OperatorProposerOutput,
   OperatorProposerConfig
->['create'] = async (rawConfig, services) => {
+>['create'] = async (config, services) => {
   services.event?.on('rsi/doctor', checkOperatorProposer);
-  const config = parseConfig<OperatorProposerConfig>(
-    configSchema,
-    rawConfig,
-    'Operator Proposer config',
-  );
   const hardware =
     config.hardwareContextFile === undefined
       ? null
       : await readHardwareContext(config.hardwareContextFile);
   return {
     async execute(input, context) {
-      validate(
-        operatorProposerContract.input_schema,
-        input,
-        'Operator Proposer input',
-      );
       context.signal.throwIfAborted();
       const loaded = await loadOperatorResources(config);
       const receipt: AnalysisReceipt = {

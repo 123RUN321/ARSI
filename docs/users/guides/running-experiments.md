@@ -61,7 +61,7 @@ arsi doctor my-experiment/recipe.yaml
 arsi run my-experiment/recipe.yaml --id terminal-skills-01
 ```
 
-- `doctor` checks the Recipe, plugin configuration, contract compatibility, Policy compilation and declared Reflection resources, then dispatches `rsi/doctor` to bindings with valid local paths and a handler. Its single JSON report contains `recipeId`, `summary`, `checks` and `missingResources`.
+- `doctor` checks the Recipe, plugin configuration, contract compatibility, Policy compilation and declared Reflection resources, then dispatches `rsi/doctor` to bindings with valid local paths and a handler. It prints a readable summary by default. Add `--json` to get the report with `recipeId` and `checks`.
   - Statuses are `passed`, `failed` and `unchecked`.
   - For the diagnostic flow, report interpretation, built-in checks and custom-component integration, see the [doctor guide](doctor.md).
 

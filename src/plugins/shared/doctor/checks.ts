@@ -1,12 +1,7 @@
-import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
-import { agentContract } from '../../../contracts/plugin-types/agent.js';
-
-export function resolveAgent(context: DoctorContext, reference: string): void {
-  const binding = context.recipe.bindings[reference];
-  if (!binding)
-    throw new Error(`agentRef: Agent binding ${reference} is not declared`);
-  context.registry.assertContract(agentContract, binding.pluginId, reference);
-}
+import { constants } from 'node:fs';
+import { access, lstat } from 'node:fs/promises';
+import { missingInputError } from '../../../shared/doctor-check.js';
+import type { DoctorRule } from '../../../contracts/index.js';
 
 export function missingPath(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;
@@ -20,7 +15,49 @@ export function missingPath(error: unknown): string | undefined {
   return missingPath(error.cause);
 }
 
-/** Reaching this handler confirms the factory accepted the effective configuration. */
-export function checkOperationConfiguration(): DoctorResult {
-  return { checks: [{ id: 'configuration', status: 'passed' }] };
+export function configurationDoctorRules(): DoctorRule[] {
+  function isConfigurationValid(signal: AbortSignal): boolean {
+    signal.throwIfAborted();
+    return true;
+  }
+  return [
+    {
+      id: 'configuration',
+      check: isConfigurationValid,
+      reason: 'Correct the operation configuration.',
+    },
+  ];
+}
+
+export async function requireReadablePath(
+  path: string,
+  field: string,
+  kind: 'file' | 'directory',
+): Promise<void> {
+  try {
+    const stat = await lstat(path);
+    if (kind === 'directory' ? !stat.isDirectory() : !stat.isFile())
+      throw new Error(`Expected a regular ${kind}: ${path}`);
+    await access(path, constants.R_OK);
+  } catch (error) {
+    if (missingPath(error))
+      throw missingInputError({ field, kind, reference: path }, error);
+    throw new Error(
+      `Correct ${field} to point to a readable ${kind}: ${path}.`,
+      { cause: error },
+    );
+  }
+}
+
+export function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      !url.username &&
+      !url.password
+    );
+  } catch {
+    return false;
+  }
 }

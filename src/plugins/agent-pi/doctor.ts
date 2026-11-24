@@ -1,75 +1,53 @@
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
+import { isHttpUrl } from '../shared/doctor/checks.js';
 import { probeModelAccess, type ModelAccessResult } from './model-access.js';
 import { resolveModelConfig } from './session.js';
+import type { AgentPiConfig } from './schema.js';
 
-export async function checkPiAgent(
-  context: DoctorContext,
-): Promise<DoctorResult> {
-  const options = { signal: context.signal };
-  let resolved: ReturnType<typeof resolveModelConfig> | undefined;
-  const configured = await runDoctorCheck(
-    'model-config',
-    async (signal) => {
-      const config = context.binding.config;
-      signal.throwIfAborted();
-      resolved = resolveModelConfig(config);
-      let url: URL;
-      try {
-        url = new URL(resolved.base_url);
-      } catch {
-        throw new Error(
-          'agent.pi base_url must resolve to an HTTP(S) endpoint',
-        );
-      }
-      if (
-        !['http:', 'https:'].includes(url.protocol) ||
-        url.username ||
-        url.password
-      ) {
-        throw new Error(
-          'agent.pi base_url must resolve to a credential-free HTTP(S) endpoint',
-        );
-      }
-    },
-    options,
-  );
-  if (configured.status !== 'passed' || !resolved) {
-    return {
-      checks: [
-        configured,
-        {
-          id: 'model-access',
-          status: 'unchecked',
-          reason:
-            'Proposal model access was not checked because agent.pi model configuration is invalid.',
-        },
-      ],
-    };
-  }
-  const model = resolved;
+export function checkPiAgent(
+  context: DoctorContext<AgentPiConfig>,
+): DoctorRule[] {
+  context.signal.throwIfAborted();
+  let model: ReturnType<typeof resolveModelConfig>;
   let access: ModelAccessResult | undefined;
-  const checked = await runDoctorCheck(
-    'model-access',
-    async (signal) => {
-      access = await probeModelAccess(
-        {
-          side: 'Proposal',
-          model: model.model,
-          baseUrl: model.base_url,
-          apiKey: model.api_key,
-        },
-        signal,
-      );
+  function isModelConfigurationValid(signal: AbortSignal): boolean {
+    signal.throwIfAborted();
+    model = resolveModelConfig(context.binding.config);
+    return isHttpUrl(model.base_url);
+  }
+  async function isModelAccessible(signal: AbortSignal): Promise<boolean> {
+    access = await probeModelAccess(
+      {
+        side: 'Proposal',
+        model: model.model,
+        baseUrl: model.base_url,
+        apiKey: model.api_key,
+      },
+      signal,
+    );
+    return access.status === 'passed';
+  }
+  return [
+    {
+      id: 'model-config',
+      check: isModelConfigurationValid,
+      reason:
+        'Correct model, base_url or api_key and their environment variables; base_url must resolve to a credential-free HTTP(S) endpoint.',
     },
-    options,
-  );
-  return {
-    checks: [
-      configured,
-      checked.status === 'passed' && access
-        ? { id: checked.id, ...access }
-        : checked,
-    ],
-  };
+    {
+      id: 'model-access',
+      check: isModelAccessible,
+      get reason() {
+        return (
+          access?.reason ??
+          'Check the configured model service and access credentials.'
+        );
+      },
+      get details() {
+        return access
+          ? { ...access.details, observation: access.reason }
+          : undefined;
+      },
+    },
+  ];
 }

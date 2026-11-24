@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, lstat, readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type {
   Candidate,
   DoctorContext,
-  DoctorResult,
+  DoctorRule,
   Operation,
+  RuntimeContext,
 } from '../../../contracts/index.js';
-import { runDoctorCheck } from '../../../shared/doctor-check.js';
+import { missingInputError } from '../../../shared/doctor-check.js';
 import { object, string } from '../../../shared/json.js';
 import { parseConfig } from '../../../shared/schema.js';
+import { requireReadablePath } from '../doctor/checks.js';
 import {
   readInstance,
   readTarget,
@@ -21,153 +23,121 @@ function missing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
-type MissingInput = NonNullable<DoctorResult['missingResources']>[number];
-
-export async function requirePath(
-  missingResources: MissingInput[],
-  path: string,
-  field: string,
-  kind: 'file' | 'directory',
-  checksNotRun: string[] = [],
-): Promise<void> {
-  try {
-    const stat = await lstat(path);
-    if (kind === 'directory' ? !stat.isDirectory() : !stat.isFile())
-      throw new Error(`${field}: expected a readable ${kind}: ${path}`);
-    await access(path, constants.R_OK);
-  } catch (error) {
-    if (missing(error))
-      missingResources.push({
-        field,
-        kind,
-        reference: path,
-        checksNotRun,
-      });
-    throw error;
-  }
-}
-
-export async function checkBaselineDirectory(
+export async function readBaselineDirectory(
   context: DoctorContext,
-  dependents: string[],
-  entryFile?: string,
-): Promise<{
-  check: DoctorResult['checks'][number];
-  directory?: string;
-  missingResources: MissingInput[];
-}> {
-  const missingResources: MissingInput[] = [];
-  let baselineDirectory: string | undefined;
-  const check = await runDoctorCheck(
-    'baseline',
-    async (signal) => {
-      const config = parseConfig<FileApplicationConfig>(
-        context.binding.definition.configSchema,
-        context.binding.config,
-        `${context.binding.name}.config`,
-      );
-      if (typeof config.target.schema === 'string')
-        await requirePath(
-          missingResources,
-          config.target.schema,
-          'target.schema',
-          'file',
-          dependents,
-        );
-      const { target } = await readTarget(
-        config,
-        context.runtime.rootDirectory,
-      );
-      let directory: string;
-      if ('directory' in config.baseline) {
-        directory = resolve(
-          context.runtime.rootDirectory,
-          config.baseline.directory,
-        );
-        await requirePath(
-          missingResources,
-          directory,
-          'baseline.directory',
-          'directory',
-          dependents,
-        );
-      } else {
-        directory = join(context.directory, 'baseline-input');
-        try {
-          await context.runtime.artifacts.materialize(
-            config.baseline.artifactRef,
-            directory,
-          );
-        } catch (error) {
-          if (missing(error))
-            missingResources.push({
-              field: 'baseline.artifactRef',
-              kind: 'artifact',
-              reference: config.baseline.artifactRef,
-              checksNotRun: dependents,
-            });
-          throw error;
-        }
-      }
-      for (const entry of target.entries)
-        if (entry.kind === 'file')
-          await requirePath(
-            missingResources,
-            join(directory, entry.path),
-            `target.entries.${entry.path}`,
-            'file',
-            dependents,
-          );
-      if (entryFile)
-        await requirePath(
-          missingResources,
-          join(directory, entryFile),
-          `baseline.${entryFile}`,
-          'file',
-          dependents,
-        );
-      signal.throwIfAborted();
-      baselineDirectory = directory;
-    },
-    { signal: context.signal },
+  entryFile: string | undefined,
+  signal: AbortSignal,
+): Promise<string> {
+  const config = parseConfig<FileApplicationConfig>(
+    context.binding.definition.configSchema,
+    context.binding.config,
+    `${context.binding.name}.config`,
   );
-  return {
-    check,
-    directory: check.status === 'passed' ? baselineDirectory : undefined,
-    missingResources: [...missingResources],
-  };
+  const { target } = await readTarget(config, context.runtime.rootDirectory);
+  let directory: string;
+  if ('directory' in config.baseline) {
+    directory = resolve(
+      context.runtime.rootDirectory,
+      config.baseline.directory,
+    );
+  } else {
+    directory = join(context.directory, 'baseline-input');
+    try {
+      await context.runtime.artifacts.materialize(
+        config.baseline.artifactRef,
+        directory,
+      );
+    } catch (error) {
+      if (missing(error))
+        throw missingInputError(
+          {
+            field: 'baseline.artifactRef',
+            kind: 'artifact',
+            reference: config.baseline.artifactRef,
+          },
+          error,
+        );
+      throw error;
+    }
+  }
+  for (const entry of target.entries)
+    if (entry.kind === 'file')
+      await requireReadablePath(
+        join(directory, entry.path),
+        `target.entries.${entry.path}`,
+        'file',
+      );
+  if (entryFile)
+    await requireReadablePath(
+      join(directory, entryFile),
+      `baseline.${entryFile}`,
+      'file',
+    );
+  signal.throwIfAborted();
+  return directory;
 }
 
-export async function checkFileApplication(
+export function fileApplicationDoctorRules(
   context: DoctorContext,
   application: Operation,
   {
     verification,
     capability,
     entryFile,
-  }: {
-    verification: string;
-    capability: string;
-    entryFile: string;
-  },
-): Promise<DoctorResult> {
-  const baseline = await checkBaselineDirectory(
-    context,
-    [verification, 'acquire-instance'],
-    entryFile,
-  );
-  const checks = [baseline.check];
-  const result = { checks, missingResources: baseline.missingResources };
-  if (!baseline.directory) {
-    const reason = 'Baseline or Target prerequisites failed.';
-    checks.push(
-      { id: verification, status: 'unchecked', reason },
-      { id: 'acquire-instance', status: 'unchecked', reason },
-    );
-    return result;
+  }: { verification: string; capability: string; entryFile: string },
+): DoctorRule[] {
+  const runtime = createApplicationProbeRuntime(context);
+  let candidateRef: string;
+
+  async function isBaselineAvailable(signal: AbortSignal): Promise<boolean> {
+    await readBaselineDirectory(context, entryFile, signal);
+    return true;
   }
+
+  async function verifyInitialization(signal: AbortSignal): Promise<boolean> {
+    candidateRef = await initializeApplication(
+      application,
+      runtime.extend({ signal }),
+    );
+    return true;
+  }
+
+  async function verifyInstance(signal: AbortSignal): Promise<boolean> {
+    await verifyApplicationInstance(
+      application,
+      runtime.extend({ signal }),
+      candidateRef,
+      capability,
+      entryFile,
+    );
+    return true;
+  }
+
+  return [
+    {
+      id: 'baseline',
+      check: isBaselineAvailable,
+      reason:
+        'Restore the baseline input files or correct the Target and baseline configuration.',
+    },
+    {
+      id: verification,
+      check: verifyInitialization,
+      reason:
+        'Correct the baseline contents so the Application can initialize a candidate.',
+    },
+    {
+      id: 'acquire-instance',
+      check: verifyInstance,
+      reason:
+        'Check Application instance contents and reconcile resources whose release failed.',
+    },
+  ];
+}
+
+function createApplicationProbeRuntime(context: DoctorContext): RuntimeContext {
   const candidates = new Map<string, Candidate>();
-  const runtime = context.runtime.extend({
+  return context.runtime.extend({
     experimentId: `doctor-${randomUUID()}`,
     async recordCandidate(
       artifactRef: string,
@@ -188,84 +158,64 @@ export async function checkFileApplication(
       return candidate;
     },
   });
-  let candidateRef: string | undefined;
-  const verified = await runDoctorCheck(
-    verification,
-    async (signal) => {
-      const scope = runtime.extend({ signal });
-      const result = object(
-        await application.execute({ action: 'initialize' }, scope),
-      );
-      if (result.action !== 'initialize')
-        throw new Error('Application returned no initialization result');
-      candidateRef = string(result.initialCandidateRef, 'initialCandidateRef');
-    },
-    { signal: context.signal },
+}
+
+async function initializeApplication(
+  application: Operation,
+  runtime: RuntimeContext,
+): Promise<string> {
+  const result = object(
+    await application.execute({ action: 'initialize' }, runtime),
   );
-  checks.push(verified);
+  if (result.action !== 'initialize')
+    throw new Error(
+      'Application returned no initialization result. Check the Application implementation.',
+    );
+  return string(result.initialCandidateRef, 'initialCandidateRef');
+}
+
+async function verifyApplicationInstance(
+  application: Operation,
+  runtime: RuntimeContext,
+  candidateRef: string,
+  capability: string,
+  entryFile: string,
+): Promise<void> {
   const instanceId = `doctor-instance-${randomUUID()}`;
   let acquired = false;
-  if (verified.status !== 'passed' || !candidateRef) {
-    checks.push({
-      id: 'acquire-instance',
-      status: 'unchecked',
-      reason: 'Application initialization did not complete.',
-    });
-  } else {
-    const initialCandidateRef = candidateRef;
-    checks.push(
-      await runDoctorCheck(
-        'acquire-instance',
-        async (signal) => {
-          const scope = runtime.extend({ signal });
-          try {
-            const result = object(
-              await application.execute(
-                {
-                  action: 'acquire',
-                  candidateRef: initialCandidateRef,
-                  instanceId,
-                  capability,
-                },
-                scope,
-              ),
-            );
-            acquired = true;
-            const execution = object(result.execution, 'execution');
-            const directory = string(
-              execution.directory,
-              'execution.directory',
-            );
-            await access(directory, constants.R_OK);
-            await readFile(join(directory, entryFile), {
-              encoding: 'utf8',
-              signal,
-            });
-            signal.throwIfAborted();
-          } finally {
-            if (acquired) {
-              await application.execute(
-                { action: 'release', instanceId },
-                runtime.extend({ signal: runtime.cleanup }),
-              );
-            }
-          }
-        },
-        { signal: context.signal },
-      ),
-    );
-  }
-  checks.push(
-    await runDoctorCheck(
-      'cleanup',
-      async () => {
-        const instance = await readInstance(runtime, instanceId);
-        if ((acquired || instance) && instance?.status !== 'released')
-          throw new Error('Application instance release was not confirmed');
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(async () => {
+    const instance = await readInstance(runtime, instanceId);
+    if ((acquired || instance) && instance?.status !== 'released')
+      throw new Error(
+        'Application instance release was not confirmed. Reconcile Application resources before retrying.',
+      );
+  });
+  cleanup.defer(async () => {
+    if (acquired)
+      await application.execute(
+        { action: 'release', instanceId },
+        runtime.extend({ signal: runtime.cleanup }),
+      );
+  });
+  const result = object(
+    await application.execute(
+      {
+        action: 'acquire',
+        candidateRef,
+        instanceId,
+        capability,
       },
-      { signal: runtime.cleanup },
+      runtime,
     ),
   );
-  context.signal.throwIfAborted();
-  return result;
+  acquired = true;
+  const execution = object(result.execution, 'execution');
+  const directory = string(execution.directory, 'execution.directory');
+  await access(directory, constants.R_OK);
+  await readFile(join(directory, entryFile), {
+    encoding: 'utf8',
+    signal: runtime.signal,
+  });
+  runtime.signal.throwIfAborted();
 }

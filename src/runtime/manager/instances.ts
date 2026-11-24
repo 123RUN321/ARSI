@@ -68,7 +68,7 @@ export class Instances {
     try {
       const operation = await this.registry.createManagedOperation(
         binding.plugin,
-        structuredClone(binding.config),
+        binding.config,
         this.context(bindingId).extend({ event: scope.event }),
       );
       const instance: Instance = { operation, scope, uses };
@@ -266,7 +266,7 @@ export async function withBindingInstance<
       try {
         return await registry.createManagedOperation(
           binding.plugin,
-          structuredClone(binding.config),
+          binding.config,
           ctx,
         );
       } catch (cause) {

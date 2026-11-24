@@ -1,3 +1,4 @@
+import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
@@ -8,6 +9,9 @@ import {
   type GymPluginConfig,
 } from '../../src/plugins/evaluator-gym/schema.js';
 import { createGymOperation } from '../../src/plugins/evaluator-gym/service.js';
+import { Registry } from '../../src/runtime/registry/index.js';
+import { gymDoctor } from '../../src/plugins/evaluator-gym/evaluate/doctor.js';
+import { gymPromotionDoctor } from '../../src/plugins/evaluator-gym/promotion/doctor.js';
 
 const evaluateConfig: GymPluginConfig = {
   mode: 'evaluate',
@@ -81,4 +85,51 @@ test('gym plugin configuration requires an explicit mode', () => {
   );
   assert.equal(gymDefinition.id, 'evaluator.gym');
   assert.equal(gymDefinition.contract.id, 'contract.gym');
+});
+
+test('gym doctor identifies the field to fix when the service URL is invalid', async (t) => {
+  const registry = new Registry();
+  registry.registerOperation(gymDefinition);
+  t.after(() => registry.dispose());
+  const definition = registry.get(gymDefinition.id);
+  for (const config of [evaluateConfig, promoteConfig]) {
+    const binding = {
+      name: 'gym',
+      pluginId: definition.id,
+      definition,
+      config: { ...config, baseUrl: 'invalid-url' },
+    };
+    const context = {
+      binding,
+      recipe: { application: binding, bindings: {}, policyConfig: {} },
+      registry,
+      runtime: new RuntimeContext(),
+      directory: process.cwd(),
+      signal: new AbortController().signal,
+    };
+    const report = await diagnoseBinding(registry, context);
+    assert.equal(report.checks[0].status, 'failed');
+    assert.match(report.checks[0].reason ?? '', /baseUrl.*valid URL/);
+    assert.equal(report.checks.length, 2);
+    assert.equal(report.checks[1].status, 'unchecked');
+    assert.match(report.checks[1].reason ?? '', /configuration failed/);
+    const configured = await diagnoseBinding(registry, {
+      ...context,
+      binding: { ...binding, config },
+    });
+    assert.deepEqual(
+      configured.checks.map(({ status }) => status),
+      ['passed', 'unchecked'],
+    );
+    assert.match(configured.checks[1].reason ?? '', /does not contact Gym/);
+    const controller = new AbortController();
+    controller.abort(new Error('stop synchronous doctor'));
+    const cancelled = { ...context, signal: controller.signal };
+    assert.throws(() => {
+      if (config.mode === 'evaluate')
+        gymDoctor({ ...cancelled, binding: { ...binding, config } });
+      else
+        gymPromotionDoctor({ ...cancelled, binding: { ...binding, config } });
+    }, /stop synchronous doctor/);
+  }
 });

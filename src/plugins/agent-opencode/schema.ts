@@ -5,9 +5,6 @@ export type AgentOpenCodeConfig = {
   model?: string;
   timeoutMs?: number;
 };
-export type ResolvedAgentOpenCodeConfig = AgentOpenCodeConfig & {
-  executable: string;
-};
 
 export const configSchema: JsonSchema = {
   type: 'object',

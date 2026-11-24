@@ -1,17 +1,38 @@
 import type { DoctorResult, JsonObject } from '../contracts/index.js';
 import { errorText } from './errors.js';
 
-/** Run one probe with its own deadline. The action must release its work on cancellation. */
-export async function runDoctorCheck(
+export function missingInputReason(
+  field: string,
+  kind: string,
+  reference: string,
+): string {
+  return `Missing ${kind} ${reference}. Fix: Restore the ${kind} or correct ${field}.`;
+}
+
+export function missingInputError(
+  {
+    field,
+    kind,
+    reference,
+  }: { field: string; kind: string; reference: string },
+  cause: unknown,
+): Error {
+  return new Error(missingInputReason(field, kind, reference), { cause });
+}
+
+interface DoctorCheckOptions {
+  signal: AbortSignal;
+  timeoutMs?: number;
+  reason?: string;
+  details?: JsonObject;
+}
+
+/** The action must release its work on cancellation. */
+export async function runDoctorProbe<T>(
   id: string,
-  action: (signal: AbortSignal) => Promise<void>,
-  options: {
-    signal: AbortSignal;
-    timeoutMs?: number;
-    reason?: string;
-    details?: JsonObject;
-  },
-): Promise<DoctorResult['checks'][number]> {
+  action: (signal: AbortSignal) => T | Promise<T>,
+  options: DoctorCheckOptions,
+): Promise<{ check: DoctorResult['checks'][number]; value?: T }> {
   const { signal, timeoutMs = 60000, reason, details } = options;
   signal.throwIfAborted();
   const controller = new AbortController();
@@ -32,7 +53,7 @@ export async function runDoctorCheck(
   });
   const check = { id, ...(details ? { details } : {}) };
   try {
-    await Promise.race([
+    const value = await Promise.race([
       job,
       new Promise<never>((_done, reject) => {
         abort = () => reject(bounded.reason);
@@ -41,7 +62,10 @@ export async function runDoctorCheck(
       }),
     ]);
     bounded.throwIfAborted();
-    return { ...check, status: 'passed', ...(reason ? { reason } : {}) };
+    return {
+      check: { ...check, status: 'passed', ...(reason ? { reason } : {}) },
+      value,
+    };
   } catch (error) {
     let cleanup = '';
     if (bounded.aborted) {
@@ -68,11 +92,13 @@ export async function runDoctorCheck(
     }
     signal.throwIfAborted();
     return {
-      ...check,
-      status: 'failed',
-      reason: reason
-        ? `${reason}${cleanup}`
-        : `${errorText(error)}${cleanup} Plugin availability is unknown unless established by another check.`,
+      check: {
+        ...check,
+        status: 'failed',
+        reason: reason
+          ? `${reason}${cleanup}`
+          : `${errorText(error)}${cleanup} Plugin availability is unknown unless established by another check.`,
+      },
     };
   } finally {
     clearTimeout(timer);

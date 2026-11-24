@@ -6,9 +6,7 @@ import type {
   ProposerInput,
   ProposerOutput,
 } from '../../contracts/index.js';
-import { applicationContract } from '../../contracts/plugin-types/index.js';
-import { json, object, string } from '../../shared/json.js';
-import { validate } from '../../shared/schema.js';
+import { object, string } from '../../shared/json.js';
 import {
   applyEdits,
   editEvidenceRefs,
@@ -31,8 +29,7 @@ export const createProposerAgent: OperationDefinition<
   services.event?.on('rsi/doctor', checkProposerAgent);
   return {
     async execute(input, context) {
-      json(input);
-      const parent = await context.readCandidate(string(input.parent));
+      const parent = await context.readCandidate(input.parent);
       const metadata = await context.applicationMetadata();
       // Runtime authorizes and sanitizes execution files before business projection.
       // Preserve the configured training-summary behavior for other Proposer users.
@@ -155,11 +152,6 @@ export const createProposerAgent: OperationDefinition<
               ? { editConstraints: input.editConstraints }
               : {}),
           });
-          validate(
-            applicationContract.output_schema,
-            committed,
-            'Application commit output',
-          );
           if (committed.action !== 'commit')
             throw new Error('Application did not return a commit result');
           const candidateRef = string(committed.candidateRef);

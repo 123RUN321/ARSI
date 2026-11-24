@@ -37,6 +37,9 @@ export type RemoteInferenceConfig = InferenceCommonConfig & {
 };
 export type InferenceConfig = LocalInferenceConfig | RemoteInferenceConfig;
 
+const absoluteUrlPath = { type: 'string', pattern: '^/(?!/)' };
+const withoutQueryOrFragment = { pattern: '^[^?#]*$' };
+
 export const configSchema: JsonSchema = {
   type: 'object',
   properties: {
@@ -44,7 +47,7 @@ export const configSchema: JsonSchema = {
     remote: {
       type: 'object',
       properties: {
-        script: { type: 'string', minLength: 1, 'x-rsi-path': 'file' },
+        script: { type: 'string', minLength: 1, 'x-rsi-path': 'local-file' },
         executable: { type: 'string', minLength: 1 },
         parametersFile: { type: 'string', minLength: 1 },
         timeoutMs: { type: 'integer', minimum: 1 },
@@ -102,7 +105,7 @@ export const configSchema: JsonSchema = {
     healthcheck: {
       type: 'object',
       properties: {
-        path: { type: 'string' },
+        path: absoluteUrlPath,
         intervalMs: { type: 'integer', minimum: 1 },
         timeoutMs: { type: 'integer', minimum: 1 },
       },
@@ -112,7 +115,7 @@ export const configSchema: JsonSchema = {
       type: 'object',
       properties: {
         origin: { type: 'string', minLength: 1 },
-        basePath: { type: 'string' },
+        basePath: absoluteUrlPath,
         model: { type: 'string', minLength: 1 },
       },
       required: ['model'],
@@ -142,7 +145,13 @@ export const configSchema: JsonSchema = {
     {
       required: ['remote'],
       not: { required: ['start'] },
-      properties: { endpoint: { required: ['origin'] } },
+      properties: {
+        healthcheck: { properties: { path: withoutQueryOrFragment } },
+        endpoint: {
+          required: ['origin'],
+          properties: { basePath: withoutQueryOrFragment },
+        },
+      },
     },
   ],
   additionalProperties: false,

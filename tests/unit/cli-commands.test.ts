@@ -155,7 +155,10 @@ test('CLI prints command-specific and nested help to stdout', () => {
     assert.match(result.stdout, /Usage: arsi/);
     if (args.length === 0) assert.match(result.stdout, /Run facts are saved/);
     if (args.includes('run')) assert.match(result.stdout, /--resume/);
-    if (args.includes('doctor')) assert.match(result.stdout, /--static/);
+    if (args.includes('doctor')) {
+      assert.doesNotMatch(result.stdout, /--static/);
+      assert.match(result.stdout, /--json/);
+    }
     if (args.includes('cleanup')) {
       assert.match(result.stdout, /--dry-run/);
       assert.match(result.stdout, /--all/);
@@ -173,10 +176,13 @@ test('CLI reports invalid input and focused help to stderr before runtime initia
     [['cleanup', 'id', 'other'], /too many arguments/, ' cleanup'],
     [['run', 'r', '--resume'], /requires --id/, ' run'],
     [['run', 'r', '--id', 'run', '--retry'], /unknown option/, ' run'],
+    [['doctor', 'r', '--static'], /unknown option '--static'/, ' doctor'],
     [['show', 'id', 'extra'], /too many arguments/, ' show'],
     [['catalog', '--bad'], /unknown option/, ' catalog'],
     [['list', 'bad'], /allowed choices/i, ' list'],
     [['reflection', 'apply'], /missing required argument/, ' reflection apply'],
+    [['reflection'], /Usage: arsi reflection/, ' reflection'],
+    [['--plugin-dir', 'missing-extension'], /Usage: arsi/],
     [['dashboard', '--port', '0'], /port must be 1\.\.65535/, ' dashboard'],
     [['dashboard', '--port', '65536'], /port must be 1\.\.65535/, ' dashboard'],
     [['--plugin-dir'], /argument missing/],

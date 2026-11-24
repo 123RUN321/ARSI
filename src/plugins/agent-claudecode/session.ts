@@ -7,12 +7,12 @@ import type {
 import type { AgentInput, JsonObject } from '../../contracts/index.js';
 import { AgentOutputError } from '../../contracts/runtime/errors.js';
 import { object } from '../../shared/json.js';
-import type { ResolvedAgentClaudeCodeConfig } from './schema.js';
+import type { AgentClaudeCodeConfig } from './schema.js';
 import { runNativeJsonProcess as runClaudeProcess } from '../shared/native-agent/json-process.js';
 
 /** Native CLI owns model access, tools, structured-output generation and retries. */
 export async function runSession(options: {
-  config: ResolvedAgentClaudeCodeConfig;
+  config: AgentClaudeCodeConfig;
   directory: string;
   request: AgentInput;
   signal: AbortSignal;
@@ -46,7 +46,7 @@ export async function runSession(options: {
       'Read CLAUDE.md and the project instructions. Use native Skills and Agent delegation when appropriate. Return proposed changes through the requested result Schema; leave task input files unchanged. Return only the requested structured result.',
   });
   await runClaudeProcess(
-    config.executable,
+    config.executable ?? 'claude',
     args,
     prompt,
     (line) => {

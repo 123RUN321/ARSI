@@ -12,14 +12,12 @@ import {
   kernelBundleDigest,
   parseKernelExecution,
 } from '../application-kernel/schema.js';
-import {
-  operatorbenchContract,
-  type OperatorbenchInput,
-  type OperatorbenchOutput,
+import type {
+  OperatorbenchInput,
+  OperatorbenchOutput,
 } from '../../contracts/plugin-types/operatorbench.js';
 import { digest, object, string } from '../../shared/json.js';
 import { compareFilePaths } from '../../shared/paths.js';
-import { parseConfig, validate } from '../../shared/schema.js';
 import { sourceIdentity } from '../shared/evaluator-adapter/identity.js';
 import { archiveItemExecution } from '../shared/evaluator-adapter/measurement.js';
 import { prepareOperatorCase } from './kernel-input.js';
@@ -41,26 +39,18 @@ import { plain } from '../shared/evaluator-adapter/data.js';
 import { adaptSdkResult, type SdkOperatorResult } from './result.js';
 import { profileConditions, readProfileAssessment } from './conditions.js';
 import { recordSdkMeasurement } from './measurement.js';
-import {
-  operatorbenchConfigSchema,
-  type OperatorbenchConfig,
-} from './schema.js';
+import type { OperatorbenchConfig } from './schema.js';
 import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
 import { operatorbenchDoctor } from './doctor.js';
 
 export async function createOperatorbench(
-  rawConfig: unknown,
+  config: OperatorbenchConfig,
   ctx: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<OperatorbenchInput, OperatorbenchOutput>> {
   ctx.event?.on('rsi/doctor', operatorbenchDoctor);
   ctx.event?.on('rsi/cleanup', (request) =>
     cleanupEvaluatorBinding(request, 'kernel'),
-  );
-  const config = parseConfig<OperatorbenchConfig>(
-    operatorbenchConfigSchema,
-    rawConfig,
-    'operatorbench config',
   );
   const taskDirectory = config.task.directory;
   const { cases, taskDigest } = await loadOperatorTask(taskDirectory);
@@ -81,11 +71,6 @@ export async function createOperatorbench(
   const sdkBuildDigest = await sdkBuildIdentity();
   return {
     async execute(input, context): Promise<OperatorbenchOutput> {
-      validate(
-        operatorbenchContract.input_schema,
-        input,
-        'operatorbench input',
-      );
       if (input.caseIds.length !== 1)
         throw new Error('M1 SDK supports exactly one case per call');
       const selected = cases.find((c) => c.id === input.caseIds[0]);
