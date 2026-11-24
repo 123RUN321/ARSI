@@ -89,8 +89,6 @@ async function inspectCodexExecutable(
     context.runtime.rootDirectory,
   );
   const launch = { executable, args: command.args };
-  let supportsDoctor = false;
-  let supportsNetworkOnly = false;
   try {
     const help = await runCommand(executable, [...command.args, '--help'], {
       signal,
@@ -98,22 +96,24 @@ async function inspectCodexExecutable(
     });
     // Older CLIs can interpret an unknown subcommand as a prompt.
     if (!/^\s{2,}doctor\s+\S/m.test(help.stdout))
-      return { ...launch, supportsDoctor, supportsNetworkOnly };
+      return { ...launch, supportsDoctor: false, supportsNetworkOnly: false };
     const doctorHelp = await runCommand(
       executable,
       [...command.args, 'doctor', '--help'],
       { signal, cwd: context.runtime.rootDirectory },
     );
-    supportsDoctor = /(?:^|\s)--json(?:\s|$)/m.test(doctorHelp.stdout);
-    supportsNetworkOnly = /(?:^|\s)--network-only(?:\s|$)/m.test(
-      doctorHelp.stdout,
-    );
+    return {
+      ...launch,
+      supportsDoctor: /(?:^|\s)--json(?:\s|$)/m.test(doctorHelp.stdout),
+      supportsNetworkOnly: /(?:^|\s)--network-only(?:\s|$)/m.test(
+        doctorHelp.stdout,
+      ),
+    };
   } catch {
     throw new Error(
       'The proposal-side Codex executable could not provide CLI help; check agent.codex.executable and the Codex installation.',
     );
   }
-  return { ...launch, supportsDoctor, supportsNetworkOnly };
 }
 
 async function runCodexDiagnostics(

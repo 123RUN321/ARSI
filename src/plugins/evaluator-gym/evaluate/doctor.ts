@@ -6,6 +6,7 @@ import type { GymConfig } from './schema.js';
 import { resolveGymConfig } from './service.js';
 
 export function gymDoctor(context: DoctorContext<GymConfig>): DoctorResult {
+  context.signal.throwIfAborted();
   let config: GymConfig;
   try {
     config = resolveGymConfig(context.binding.config);

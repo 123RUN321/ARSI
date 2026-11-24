@@ -87,10 +87,14 @@ async function checkClaudeAuthentication(
   try {
     loggedIn = object(JSON.parse(stdout)).loggedIn;
   } catch {
-    throw new Error('Claude Code returned invalid authentication status.');
+    throw new Error(
+      'Claude Code returned invalid authentication status. Check agent.claudecode executable and upgrade the native CLI.',
+    );
   }
   if (typeof loggedIn !== 'boolean')
-    throw new Error('Claude Code returned unsupported authentication status.');
+    throw new Error(
+      'Claude Code returned unsupported authentication status. Check agent.claudecode executable and upgrade the native CLI.',
+    );
   if (!loggedIn)
     throw new Error(
       'Claude Code has no active authentication; configure authentication in the native CLI.',

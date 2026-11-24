@@ -5,7 +5,7 @@ import type {
 } from '../../contracts/index.js';
 import { checkFileApplication } from '../shared/file-application/doctor.js';
 
-export async function checkAgentbundleApplication(
+export function checkAgentbundleApplication(
   context: DoctorContext,
   operation: Operation,
 ): Promise<DoctorResult> {

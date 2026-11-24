@@ -14,6 +14,7 @@ import { loadOperatorResources, readHardwareContext } from './resources.js';
 export async function checkOperatorProposer(
   context: DoctorContext,
 ): Promise<DoctorResult> {
+  context.signal.throwIfAborted();
   const config = parseConfig<OperatorProposerConfig>(
     context.binding.definition.configSchema,
     context.binding.config,

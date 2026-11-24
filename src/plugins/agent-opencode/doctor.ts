@@ -92,6 +92,8 @@ async function checkOpenCodeConfiguration(
     )
       throw new Error('missing native configuration');
   } catch {
-    throw new Error('OpenCode could not load its native configuration.');
+    throw new Error(
+      'OpenCode could not load its native configuration. Check agent.opencode executable, upgrade the native CLI and repair its configuration.',
+    );
   }
 }

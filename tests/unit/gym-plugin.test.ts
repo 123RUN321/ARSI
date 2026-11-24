@@ -10,6 +10,8 @@ import {
 } from '../../src/plugins/evaluator-gym/schema.js';
 import { createGymOperation } from '../../src/plugins/evaluator-gym/service.js';
 import { Registry } from '../../src/runtime/registry/index.js';
+import { gymDoctor } from '../../src/plugins/evaluator-gym/evaluate/doctor.js';
+import { gymPromotionDoctor } from '../../src/plugins/evaluator-gym/promotion/doctor.js';
 
 const evaluateConfig: GymPluginConfig = {
   mode: 'evaluate',
@@ -97,16 +99,26 @@ test('gym doctor identifies the field to fix when the service URL is invalid', a
       definition,
       config: { ...config, baseUrl: 'invalid-url' },
     };
-    const report = await diagnoseBinding(registry, {
+    const context = {
       binding,
       recipe: { application: binding, bindings: {}, policyConfig: {} },
       registry,
       runtime: new RuntimeContext(),
       directory: process.cwd(),
       signal: new AbortController().signal,
-    });
+    };
+    const report = await diagnoseBinding(registry, context);
     assert.equal(report.checks[0].status, 'failed');
     assert.match(report.checks[0].reason ?? '', /baseUrl.*valid URL/);
     assert.equal(report.checks.length, 1);
+    const controller = new AbortController();
+    controller.abort(new Error('stop synchronous doctor'));
+    const cancelled = { ...context, signal: controller.signal };
+    assert.throws(() => {
+      if (config.mode === 'evaluate')
+        gymDoctor({ ...cancelled, binding: { ...binding, config } });
+      else
+        gymPromotionDoctor({ ...cancelled, binding: { ...binding, config } });
+    }, /stop synchronous doctor/);
   }
 });

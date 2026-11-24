@@ -59,7 +59,7 @@ export async function runNativeAgentCommand(
     return stdout;
   } catch {
     throw new Error(
-      `${context.binding.pluginId} native preflight failed; check the CLI installation, profile and credentials.`,
+      `${context.binding.pluginId} native preflight failed; check ${context.binding.name}.config.executable, the CLI installation, profile and credentials.`,
     );
   }
 }

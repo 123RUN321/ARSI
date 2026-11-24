@@ -1,4 +1,3 @@
-import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   DoctorContext,
@@ -6,8 +5,7 @@ import type {
   JsonValue,
   OperationDoctor,
 } from '../../contracts/index.js';
-import { failed, missingInputReason } from '../../shared/doctor-check.js';
-import { missingPath } from '../shared/doctor/checks.js';
+import { failed } from '../../shared/doctor-check.js';
 import { plain } from '../shared/evaluator-adapter/data.js';
 import type { SdkEvaluatorConfig } from '../shared/evaluator-adapter/configuration.js';
 import { checkSdkDoctor } from '../shared/evaluator-adapter/doctor.js';
@@ -23,28 +21,13 @@ export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
       if (
         failure.details?.sdkName === 'AgentBundle path' &&
         typeof baseline.directory === 'string'
-      ) {
-        try {
-          await access(baseline.directory);
-        } catch (error) {
-          if (missingPath(error))
-            return failed(
-              failure.id,
-              [
-                failure.reason,
-                missingInputReason(
-                  'application.config.baseline.directory',
-                  'directory',
-                  baseline.directory,
-                ),
-              ]
-                .filter(Boolean)
-                .join(' '),
-              failure.details,
-            );
-        }
-      }
-      return { checks: sdk.checks };
+      )
+        return failed(
+          failure.id,
+          `${failure.reason} Fix: Restore a readable AgentBundle at ${baseline.directory} or correct application.config.baseline.directory.`,
+          failure.details,
+        );
+      return sdk;
     }
     const baseline = plain(context.recipe.application.config.baseline);
     const instanceScope: DoctorResult['checks'] =

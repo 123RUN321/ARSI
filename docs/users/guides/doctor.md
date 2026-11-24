@@ -29,10 +29,10 @@ flowchart TD
     F -- No --> G["Record recipe.validate failure"]
     F -- Yes --> H["Prepare a temporary Runtime<br/>Visit the Application, bindings and Reflection"]
     H --> I["Check declared paths and binding references"]
-    I --> J{"Declared local paths valid?"}
+    I --> J{"Declared paths and references valid?"}
     J -- Yes --> K["Create the binding and call its optional rsi/doctor"]
     K --> Q["Record results, missing handler or failure"]
-    J -- No --> L["Mark the plugin check unchecked"]
+    J -- No --> L["Report the first failure<br/>Stop subsequent checks for this binding"]
     Q --> M["Add binding metadata and collect results"]
     L --> M
     M --> N{"More components?"}
@@ -48,14 +48,14 @@ flowchart TD
    - Probes use the configuration produced by merging Policy defaults and Recipe overrides.
    - A loading error produces a failed diagnostic and stops component probes.
 3. **Check declared prerequisites.** For the Application, each effective binding and the configured Reflection implementation, doctor checks local files and directories marked with `x-rsi-path` for existence, type and readability. It checks that fields marked with `x-rsi-binding` name Recipe bindings that implement the declared contracts.
-4. **Run component checks.** If a declared local path fails validation, doctor reports that failure and continues with the next binding. For bindings with valid paths, doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`.
+4. **Run component checks.** If a declared path or binding reference fails validation, doctor reports that failure and continues with the next binding. When these prerequisites pass, doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`.
 5. **Clean up and report.** RSI checks use isolated temporary storage, propagate cancellation, release the instances and processes they create, and remove temporary files. Checks can read existing artifacts as inputs. RSI keeps its captures and writes in the temporary Runtime.
 
 ### Reading the summary and JSON report
 
 Each binding stops at its first failed prerequisite or plugin check. Other bindings continue. The summary states that the failed plugin’s subsequent checks were not completed; counts reflect only emitted checks.
 
-By default, `doctor` writes a readable summary to stdout. It gives the check counts, explains failures and unchecked checks, and reports available fixes. For a missing file, it shows the path, the configuration field to update, and any blocked checks.
+By default, `doctor` writes a readable summary to stdout. It gives the check counts, explains failures and unchecked checks, and reports available fixes. For a missing file, it shows the path and the configuration field to update. A failed binding also carries a reminder to rerun its unfinished checks after fixing the error.
 
 For scripts or full probe evidence, request the JSON report.
 
@@ -65,20 +65,20 @@ arsi doctor my-experiment/recipe.yaml --json
 
 The report contains the following fields, including when configuration loading or registration fails.
 
-| Field      | Meaning                                                                                   |
-| ---------- | ----------------------------------------------------------------------------------------- |
-| `recipeId` | Loaded Recipe ID, or `null` if loading did not succeed.                                    |
+| Field      | Meaning                                                                                 |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `recipeId` | Loaded Recipe ID, or `null` if loading did not succeed.                                 |
 | `checks`   | Individual results with `id` and `status`. A check may also include scope and evidence. |
 
 Use `checks` to count results by status or find failures. Optional fields include `binding`, `pluginId`, `reason` and `details`. Read `reason` for the error, available fixes or a limitation of the diagnostic scope.
 
-Component check IDs start with the binding name. In a full check, a binding named `agent` using Pi produces `agent.model-config` and `agent.model-access`. A different binding name changes the prefix.
+Component check IDs start with the binding name. A binding named `agent` using Pi returns `agent.model-config` for invalid model settings, or `agent.model-access` after probing the model service. A different binding name changes the prefix.
 
-| Status      | Interpretation                                                                                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `passed`    | This check established the fact described by its ID and explanation.                                                                                          |
-| `failed`    | The check found an error or could not complete a required probe, for example rejected credentials or a request timeout. Read its explanation before retrying. |
-| `unchecked` | The check could not establish a conclusion, for example because an earlier prerequisite failed or the selected execution path has no supported diagnostic.    |
+| Status      | Interpretation                                                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passed`    | This check established the fact described by its ID and explanation.                                                                                           |
+| `failed`    | The check found an error or could not complete a required probe, for example rejected credentials or a request timeout. Read its explanation before retrying.  |
+| `unchecked` | The check could not establish a conclusion, for example because a native tool does not support the diagnostic or an endpoint is created only during execution. |
 
 Review unchecked results even when the exit code is zero. Exit codes apply to both output formats. A complete summary or report may be unavailable after interruption or a command usage error.
 
@@ -100,9 +100,9 @@ The following built-in implementations provide a `rsi/doctor` handler. Doctor ch
 | `application.inference`   | 1. Check the target definition and baseline inputs.<br>2. Check the local launch command, working directory and resources, or the remote controller interpreter, script and parameter file.<br>3. Validate the credential environment variables and launch settings. |
 | `agent.pi`                | 1. Validate the model, service address, credentials and token limits.<br>2. Connect to the model service from the RSI process and confirm that its model list contains the selected model.                                                                           |
 | `agent.codex`             | 1. Check that the Codex command is available and supports native diagnostics.<br>2. Run native diagnostics in an isolated project using the configured model and reasoning level, then read the results.                                                             |
-| `agent.claudecode` | Check CLI options and native JSON authentication status. Text-only installation diagnostics remain `unchecked`; run `claude doctor` manually. Model access is not verified. |
-| `agent.dsh` | Check CLI options and compose the headless configuration to detect composition errors. This may refresh native caches; dynamic model routes, stored credentials and model access are not verified. |
-| `agent.opencode` | Check the V2 CLI version, required options, and composition of native configuration with the RSI read-only Agent. Uses a private instance and may refresh native caches. |
+| `agent.claudecode`        | Check CLI options and native JSON authentication status. Text-only installation diagnostics remain `unchecked`; run `claude doctor` manually. Model access is not verified.                                                                                          |
+| `agent.dsh`               | Check CLI options and compose the headless configuration to detect composition errors. This may refresh native caches; dynamic model routes, stored credentials and model access are not verified.                                                                   |
+| `agent.opencode`          | Check the V2 CLI version, required options, and composition of native configuration with the RSI read-only Agent. Uses a private instance and may refresh native caches.                                                                                             |
 
 For `application.inference`, Recipe loading checks that `healthcheck.path` and `endpoint.basePath` begin with a single `/`. Remote mode requires paths without query strings or fragments. These rules apply to both `doctor` and `run` before launch.
 
@@ -147,11 +147,11 @@ Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/co
 - Each temporary instance owns its handler. The `doctor` command supplies each binding’s effective configuration.
 - When a component has no `rsi/doctor` subscription, the framework still runs the common checks and marks the component-specific `plugin` check as `unchecked`.
 
-| Type                 | Purpose                                                                                                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | A handler for `rsi/doctor` that returns `DoctorResult` or `Promise<DoctorResult>`. |
-| `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                            |
-| `DoctorResult`       | The component's results in `checks`. For failures, use `reason` to identify the cause and what to fix. For skipped checks, explain the failed prerequisite in `reason`. The framework prefixes check IDs with the binding name. |
+| Type                 | Purpose                                                                                                                                                                                                                                                                       |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OperationDoctor<C>` | A handler for `rsi/doctor` that returns `DoctorResult` or `Promise<DoctorResult>`.                                                                                                                                                                                            |
+| `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                                                                          |
+| `DoctorResult`       | The component's results in `checks`. Return `failed` immediately at the first error, identifying the cause, configuration field and fix in `reason`. Use `unchecked` to describe a real limit of diagnostic coverage. The framework prefixes check IDs with the binding name. |
 
 The framework checks binding references before dispatching the handler. An invalid reference stops that binding.
 
@@ -173,7 +173,10 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
         encoding: 'utf8',
         signal,
       });
-      if (!text.trim()) throw new Error('inputFile must contain text.');
+      if (!text.trim())
+        throw new Error(
+          'inputFile is empty; add the required text or correct inputFile.',
+        );
     },
     { signal: context.signal },
   );
@@ -183,7 +186,8 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 };
 ```
 
-- In the example above, `runDoctorCheck` is an optional helper that sets a deadline for one probe and returns a check result.
+- `failed` and `passed` are ordinary result constructors exported from `arsi`. Keep simple conditions synchronous and return immediately on failure; await file, process and network operations. Use `unchecked` for unsupported diagnostics.
+- In the example above, `runDoctorCheck` sets a deadline, propagates cancellation and converts a probe error into a check result. Resource cleanup must still run on failure or cancellation.
 
 In `service.ts`, type the factory parameter as `ctx: RuntimeContext<CustomConfig>`. Import `RuntimeContext` from `arsi/contracts` and subscribe to `checkCustom` from `./doctor.js` inside the factory. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.
 
@@ -201,15 +205,15 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 
 Doctor checks bindings sequentially. The command's total duration depends on the checks and cleanup. RSI checks and Evaluator SDK probes have separate timers.
 
-| Operation or check ID                          | Limit                                                                  | Scope                                                                                                                                  |
-| ---------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Common `runDoctorCheck` checks                 | 60 seconds per check by default                                        | Local paths, configuration and Application verification/acquisition have separate timers; operations within one check share its limit. |
-| `agent.codex` `executable` and `doctor`        | 60 seconds each                                                        | CLI help and native doctor help share the `executable` timer; native JSON diagnostics are separate.                                    |
-| `agent.claudecode` / `agent.dsh` / `agent.opencode` | 60 seconds per check | CLI compatibility, Claude authentication and DSH/OpenCode configuration. |
-| Pi `model-access` HTTP request                 | 10 seconds per request                                                 | Covers the HTTP request and complete response body within the outer 60-second check.                                                   |
-| Optuna `python-dependencies`                   | 60 seconds outside; configured `python.timeoutMs` also applies         | A shorter worker timeout can finish earlier; a longer value cannot extend the enclosing RSI check.                                     |
-| Evaluator SDK connectivity and download probes | Per probe, managed by the SDK                                          | The pinned SDK allows 5 seconds for executable and Ray TCP/TLS checks, and 180 seconds for each download network probe.                |
-| Evaluator SDK Ray download diagnostics         | 3000 seconds for the node process and 3100 seconds for the coordinator | The node process timer covers probes on that node. The coordinator timer covers result collection.                                     |
+| Operation or check ID                               | Limit                                                                  | Scope                                                                                                                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Common `runDoctorCheck` checks                      | 60 seconds per check by default                                        | Local paths, SDK configuration preparation and Application verification/acquisition have separate timers; operations within one check share its limit. |
+| `agent.codex` `executable` and `doctor`             | 60 seconds each                                                        | CLI help and native doctor help share the `executable` timer; native JSON diagnostics are separate.                                                    |
+| `agent.claudecode` / `agent.dsh` / `agent.opencode` | 60 seconds per check                                                   | CLI compatibility, Claude authentication and DSH/OpenCode configuration.                                                                               |
+| Pi `model-access` HTTP request                      | 10 seconds per request                                                 | Covers the HTTP request and complete response body within the outer 60-second check.                                                                   |
+| Optuna `python-dependencies`                        | 60 seconds outside; configured `python.timeoutMs` also applies         | A shorter worker timeout can finish earlier; a longer value cannot extend the enclosing RSI check.                                                     |
+| Evaluator SDK connectivity and download probes      | Per probe, managed by the SDK                                          | The pinned SDK allows 5 seconds for executable and Ray TCP/TLS checks, and 180 seconds for each download network probe.                                |
+| Evaluator SDK Ray download diagnostics              | 3000 seconds for the node process and 3100 seconds for the coordinator | The node process timer covers probes on that node. The coordinator timer covers result collection.                                                     |
 
 Nested limits expire at the first deadline. For Pi, the request's 10 seconds are part of its 60-second check, not an extra allowance. The CLI has no doctor-specific timeout option, and these limits do not come from Recipe experiment budgets. Pi/Codex/Claude Code/DSH `config.timeoutMs` applies to real Agent execution; see [Configure Recipes, Targets and components](configuration.md).
 

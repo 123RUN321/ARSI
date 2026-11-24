@@ -58,15 +58,19 @@ async function checkDshProfile(
   // Keep native expressions inert, and never include dump values or parser errors in diagnostics.
   const document = parseDocument(stdout, { logLevel: 'silent' });
   if (document.errors.length)
-    throw new Error('DSH returned invalid headless configuration.');
+    throw new Error(
+      'DSH returned invalid headless configuration. Check agent.dsh executable and repair the native headless profile.',
+    );
   let value: unknown;
   try {
     value = document.toJS();
   } catch {
-    throw new Error('DSH returned unsupported headless configuration.');
+    throw new Error(
+      'DSH returned unsupported headless configuration. Check agent.dsh executable and repair the native headless profile.',
+    );
   }
   if (!Array.isArray(value) || value.length === 0)
     throw new Error(
-      'DSH returned an empty or unsupported headless configuration.',
+      'DSH returned an empty or unsupported headless configuration. Check agent.dsh executable and repair the native headless profile.',
     );
 }

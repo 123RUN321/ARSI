@@ -9,6 +9,7 @@ import type { AgentPiConfig } from './schema.js';
 export async function checkPiAgent(
   context: DoctorContext<AgentPiConfig>,
 ): Promise<DoctorResult> {
+  context.signal.throwIfAborted();
   const config = context.binding.config;
   let model: ReturnType<typeof resolveModelConfig>;
   try {

@@ -29,7 +29,7 @@ flowchart TD
     F -- 否 --> G["记录 recipe.validate 失败"]
     F -- 是 --> H["准备隔离临时 Runtime<br/>遍历 Application、绑定和 Reflection"]
     H --> I["检查已声明的路径和绑定引用"]
-    I --> J{"声明的本地路径均有效？"}
+    I --> J{"声明的路径和绑定引用均有效？"}
     J -- 是 --> K["创建绑定实例，调用其可选的 rsi/doctor"]
     K --> Q["汇总结果、未订阅或初始化失败"]
     J -- 否 --> L["报告首个失败<br/>停止该绑定的后续检查"]
@@ -48,14 +48,14 @@ flowchart TD
    - 探测使用合并 Policy 默认配置与 Recipe 覆盖后的配置。
    - 加载失败时输出失败诊断，不再执行组件探测。
 3. **检查已声明的前提。** 对 Application、每个生效绑定及已配置的 Reflection 实现，检查 Schema 中用 `x-rsi-path` 标记的本地文件或目录是否存在、类型是否正确、是否可读，并检查用 `x-rsi-binding` 标记的字段是否指向实现了指定契约的 Recipe 绑定。
-4. **执行组件检查。** 若声明的本地路径检查失败，doctor 报告该失败，然后继续检查下一个绑定。路径检查通过时，doctor 会创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。
+4. **执行组件检查。** 若声明的路径或绑定引用检查失败，doctor 报告该失败，然后继续检查下一个绑定。上述前提通过时，doctor 会创建临时实例，等待其可选的 `rsi/doctor` 回调和 `dispose()`。初始化失败会记录该绑定的错误，其他绑定继续检查。实例未订阅时，该绑定的 `plugin` 检查记为 `unchecked`。
 5. **清理并输出。** RSI 检查使用隔离临时存储，传递取消信号，释放自己创建的实例与进程，并删除临时文件。原有 artifacts 可作为输入读取，RSI 产生的捕获与写入留在临时 Runtime 内。
 
 ### 阅读摘要和 JSON 报告
 
 每个绑定遇到首个前提或插件检查错误后立即返回，其他绑定继续检查。摘要会说明失败插件的后续检查未完成，数量只统计实际输出的检查项。
 
-`doctor` 默认向 stdout 输出可读摘要。摘要给出各状态的数量，解释失败项和未检查项，并显示已有的修复建议。遇到缺失文件时，摘要会指出路径、需要修改的配置字段，以及受阻的检查。
+`doctor` 默认向 stdout 输出可读摘要。摘要给出各状态的数量，解释失败项和未检查项，并显示已有的修复建议。遇到缺失文件时，摘要会指出路径和需要修改的配置字段。失败的绑定还会提示：修复后需要重新执行尚未完成的检查。
 
 脚本或需要完整探测证据时，可以请求 JSON 报告。
 
@@ -65,20 +65,20 @@ arsi doctor my-experiment/recipe.yaml --json
 
 报告包含以下字段，配置加载或注册失败时也会输出。
 
-| 字段       | 含义                                                     |
-| ---------- | -------------------------------------------------------- |
-| `recipeId` | 已加载的 Recipe ID。未能成功加载时为 `null`。            |
+| 字段       | 含义                                                    |
+| ---------- | ------------------------------------------------------- |
+| `recipeId` | 已加载的 Recipe ID。未能成功加载时为 `null`。           |
 | `checks`   | 每项结果包含 `id` 和 `status`，也可附上检查范围和证据。 |
 
 从 `checks` 筛选失败项或按状态计数。可选字段包括 `binding`、`pluginId`、`reason` 和 `details`。通过 `reason` 查看失败原因、未检查的原因和可用的修复建议。
 
-组件检查 ID 以绑定名开头。完整检查时，名为 `agent` 的 Pi 绑定会产生 `agent.model-config` 和 `agent.model-access`。更换绑定名后，前缀也随之变化。
+组件检查 ID 以绑定名开头。名为 `agent` 的 Pi 绑定在模型配置无效时返回 `agent.model-config`，否则在探测模型服务后返回 `agent.model-access`。更换绑定名后，前缀也随之变化。
 
 | 状态        | 如何理解                                                                           |
 | ----------- | ---------------------------------------------------------------------------------- |
 | `passed`    | 该项检查已证实其 ID 和说明所描述的事实。                                           |
 | `failed`    | 发现错误，或必须执行的探测未能完成，例如密钥被拒绝或请求超时。应先阅读原因再重试。 |
-| `unchecked` | 无法建立结论，例如前提检查失败，或所选执行路径没有相应诊断。                       |
+| `unchecked` | 无法建立结论，例如原生工具不支持该项诊断，或端点只有执行时才会创建。               |
 
 即使退出码为零，也需要阅读未检查项。两种输出格式使用相同的退出码。中断和命令用法错误时可能没有完整摘要或报告。
 
@@ -100,9 +100,9 @@ arsi doctor my-experiment/recipe.yaml --json
 | `application.inference`   | 1. 检查目标定义和基线输入。<br>2. 检查本地启动命令、工作目录和资源，或远程控制脚本的解释器、脚本及参数文件。<br>3. 检查凭据所需的环境变量和启动配置是否合法。 |
 | `agent.pi`                | 1. 校验模型、服务地址、密钥和 token 限制的配置。<br>2. 从 RSI 进程连接模型服务，确认模型列表包含所选模型。                                                    |
 | `agent.codex`             | 1. 检查 Codex 命令是否可用、是否支持原生诊断。<br>2. 按所配模型和思考等级，在隔离项目中运行原生诊断并读取结果。                                               |
-| `agent.claudecode` | 检查 CLI 参数和原生 JSON 认证状态。安装诊断仅有文本输出，标为 `unchecked`，可自行运行 `claude doctor`；不验证模型访问。 |
-| `agent.dsh` | 检查 CLI 参数，并展开 headless 配置以发现配置组合错误。可能刷新原生缓存；不验证动态模型路由、存储凭据或模型访问。 |
-| `agent.opencode` | 检查 V2 CLI 版本、必要参数，以及原生配置能否与 RSI 只读 Agent 组合。使用独立实例，可能刷新原生缓存。 |
+| `agent.claudecode`        | 检查 CLI 参数和原生 JSON 认证状态。安装诊断仅有文本输出，标为 `unchecked`，可自行运行 `claude doctor`；不验证模型访问。                                       |
+| `agent.dsh`               | 检查 CLI 参数，并展开 headless 配置以发现配置组合错误。可能刷新原生缓存；不验证动态模型路由、存储凭据或模型访问。                                             |
+| `agent.opencode`          | 检查 V2 CLI 版本、必要参数，以及原生配置能否与 RSI 只读 Agent 组合。使用独立实例，可能刷新原生缓存。                                                          |
 
 对于 `application.inference`，加载 Recipe 时会检查 `healthcheck.path` 和 `endpoint.basePath` 是否以单个 `/` 开头。远程模式要求路径省略查询字符串和片段。`doctor` 和 `run` 都在启动服务前检查这些规则。
 
@@ -147,11 +147,11 @@ SDK 在一次调用内完成自己的诊断流程。RSI 校验返回的报告，
 - 处理器由临时插件实例持有。`doctor` 命令为每个绑定传入其生效配置。
 - 组件未订阅 `rsi/doctor` 时，框架仍执行通用检查，并将组件专用的 `plugin` 项标为 `unchecked`。
 
-| 类型                   | 用途                                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| `OperationDoctor<C>` | `rsi/doctor` 处理器，返回 `DoctorResult` 或 `Promise<DoctorResult>`。 |
-| `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。 |
-| `DoctorResult`       | 组件通过 `checks` 返回检查结果。失败时，在 `reason` 中说明原因和修复方法。跳过检查时，在 `reason` 中说明哪个前提失败。框架为检查 ID 添加绑定名前缀。      |
+| 类型                 | 用途                                                                                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OperationDoctor<C>` | `rsi/doctor` 处理器，返回 `DoctorResult` 或 `Promise<DoctorResult>`。                                                                                                            |
+| `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。                                                |
+| `DoctorResult`       | 组件通过 `checks` 返回检查结果。遇到首个错误立即返回 `failed`，在 `reason` 中说明原因、配置字段和修复方法。用 `unchecked` 表达实际诊断范围的限制。框架为检查 ID 添加绑定名前缀。 |
 
 框架在调用处理器前检查绑定引用。引用无效时，该绑定立即停止检查。
 
@@ -173,7 +173,10 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
         encoding: 'utf8',
         signal,
       });
-      if (!text.trim()) throw new Error('inputFile must contain text.');
+      if (!text.trim())
+        throw new Error(
+          'inputFile is empty; add the required text or correct inputFile.',
+        );
     },
     { signal: context.signal },
   );
@@ -183,7 +186,8 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 };
 ```
 
-- 上面示例的`runDoctorCheck` 是可选工具，为单项探测设置时限并返回检查结果。
+- `failed` 和 `passed` 是从 `arsi` 导出的普通结果构造函数。简单条件保持同步，失败立即返回；文件、进程和网络操作显式使用 `await`。不支持的诊断使用 `unchecked`。
+- 上例中的 `runDoctorCheck` 设置截止时间、传递取消信号，并将探测错误转换为检查结果。资源清理仍须在失败或取消后执行。
 
 在 `service.ts` 中导入 `checkCustom`，从 `arsi/contracts` 导入 `RuntimeContext` 类型，将工厂参数标注为 `ctx: RuntimeContext<CustomConfig>`，再在工厂内订阅。扩展入口照常调用 `registry.registerOperation(customDefinition)`。
 
@@ -201,15 +205,15 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 
 doctor 按顺序检查各个绑定。命令总耗时取决于各项检查与清理。RSI 检查和 Evaluator SDK 探针各自计时。
 
-| 操作或检查 ID                           | 时限                                               | 计时范围                                                                         |
-| --------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 通用 `runDoctorCheck` 检查              | 默认每项 60 秒                                     | 本地路径、配置、Application 验证与获取各自计时，同一项内的多个操作共用时限。     |
-| `agent.codex` 的 `executable`、`doctor` | 各 60 秒                                           | CLI 帮助与原生 doctor 帮助共用 `executable` 时限，原生 JSON 诊断另算一项。       |
-| `agent.claudecode` / `agent.dsh` / `agent.opencode` | 每项 60 秒 | CLI 兼容性、Claude 认证及 DSH/OpenCode 配置。 |
-| Pi 的 `model-access` HTTP 请求          | 每次请求 10 秒                                     | 包含 HTTP 请求和完整响应正文读取，位于外层 60 秒检查内。                         |
-| Optuna 的 `python-dependencies`         | 外层 60 秒，同时受已配置的 `python.timeoutMs` 约束 | 更短的 worker 时限可提前结束，更长的值不能延长外层 RSI 检查。                    |
-| Evaluator SDK 的连通性与下载探针        | 按 SDK 单项计时                                    | 当前固定 SDK 给可执行程序检查与 Ray TCP/TLS 检查 5 秒，每项下载网络探针 180 秒。 |
-| Evaluator SDK 的 Ray 下载诊断           | 节点进程 3000 秒，协调端等待 3100 秒               | 节点进程的计时覆盖该节点的探测，协调端计时覆盖结果收集。                         |
+| 操作或检查 ID                                       | 时限                                               | 计时范围                                                                             |
+| --------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 通用 `runDoctorCheck` 检查                          | 默认每项 60 秒                                     | 本地路径、SDK 配置准备、Application 验证与获取各自计时，同一项内的多个操作共用时限。 |
+| `agent.codex` 的 `executable`、`doctor`             | 各 60 秒                                           | CLI 帮助与原生 doctor 帮助共用 `executable` 时限，原生 JSON 诊断另算一项。           |
+| `agent.claudecode` / `agent.dsh` / `agent.opencode` | 每项 60 秒                                         | CLI 兼容性、Claude 认证及 DSH/OpenCode 配置。                                        |
+| Pi 的 `model-access` HTTP 请求                      | 每次请求 10 秒                                     | 包含 HTTP 请求和完整响应正文读取，位于外层 60 秒检查内。                             |
+| Optuna 的 `python-dependencies`                     | 外层 60 秒，同时受已配置的 `python.timeoutMs` 约束 | 更短的 worker 时限可提前结束，更长的值不能延长外层 RSI 检查。                        |
+| Evaluator SDK 的连通性与下载探针                    | 按 SDK 单项计时                                    | 当前固定 SDK 给可执行程序检查与 Ray TCP/TLS 检查 5 秒，每项下载网络探针 180 秒。     |
+| Evaluator SDK 的 Ray 下载诊断                       | 节点进程 3000 秒，协调端等待 3100 秒               | 节点进程的计时覆盖该节点的探测，协调端计时覆盖结果收集。                             |
 
 嵌套时限以先到期者为准。Pi 请求自己的 10 秒包含在外层 60 秒中，不能额外相加。CLI 没有 doctor 专用的超时参数，这些时限也不取自 Recipe 的实验预算。Pi/Codex/Claude Code/DSH 的 `config.timeoutMs` 用于真实 Agent 执行，参见[配置 Recipe、Target 与组件](configuration_zh.md)。
 

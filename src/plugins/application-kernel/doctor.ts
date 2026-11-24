@@ -6,7 +6,7 @@ import type {
 import { checkFileApplication } from '../shared/file-application/doctor.js';
 import { kernelSourcePath } from './schema.js';
 
-export async function checkKernelApplication(
+export function checkKernelApplication(
   context: DoctorContext,
   operation: Operation,
 ): Promise<DoctorResult> {

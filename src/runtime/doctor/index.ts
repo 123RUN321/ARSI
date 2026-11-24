@@ -107,7 +107,7 @@ async function checkBinding(
     reportBuilder.addBindingCheck(binding, check);
     if (check.status === 'failed') return;
   }
-  for await (const check of checkDeclaredBindings(context)) {
+  for (const check of checkDeclaredBindings(context)) {
     reportBuilder.addBindingCheck(binding, check);
     if (check.status === 'failed') return;
   }

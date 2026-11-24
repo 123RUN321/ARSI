@@ -20,6 +20,7 @@ import { validateModules } from './service.js';
 export async function checkParetoEvolutionProposer(
   context: DoctorContext,
 ): Promise<DoctorResult> {
+  context.signal.throwIfAborted();
   const config = parseConfig<ParetoEvolutionConfig>(
     configSchema,
     context.binding.config,

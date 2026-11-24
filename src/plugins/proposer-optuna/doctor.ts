@@ -12,6 +12,7 @@ export async function checkOptunaDependencies(
   context: DoctorContext,
   worker: OptunaWorker = runOptunaWorker,
 ): Promise<DoctorResult> {
+  context.signal.throwIfAborted();
   const config = parseOptunaConfig(context.binding.config);
   const dependencies = await runDoctorCheck(
     'python-dependencies',

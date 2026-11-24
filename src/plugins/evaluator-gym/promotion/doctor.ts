@@ -8,6 +8,7 @@ import { resolvePromotionConfig } from './service.js';
 export function gymPromotionDoctor(
   context: DoctorContext<GymPromotionConfig>,
 ): DoctorResult {
+  context.signal.throwIfAborted();
   let config: GymPromotionConfig;
   try {
     config = resolvePromotionConfig(context.binding.config);

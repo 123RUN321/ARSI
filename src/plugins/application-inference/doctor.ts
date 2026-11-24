@@ -9,12 +9,10 @@ import {
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
 import { object, string } from '../../shared/json.js';
+import { requireReadablePath } from '../shared/doctor/checks.js';
 import { executablePath } from '../shared/doctor/executable.js';
 import { runCommand } from '../shared/doctor/process.js';
-import {
-  checkBaselineDirectory,
-  requirePath,
-} from '../shared/file-application/doctor.js';
+import { checkBaselineDirectory } from '../shared/file-application/doctor.js';
 import { safePath } from '../shared/file-application/target.js';
 import type {
   InferenceConfig,
@@ -85,7 +83,7 @@ async function checkRemoteParameters(
     baseline,
     safePath(remote.parametersFile ?? 'tuning.json'),
   );
-  await requirePath(parameters, 'remote.parametersFile', 'file');
+  await requireReadablePath(parameters, 'remote.parametersFile', 'file');
   object(
     JSON.parse(await readFile(parameters, { encoding: 'utf8', signal })),
     'remote parameters',
@@ -117,7 +115,7 @@ async function checkLocalLaunch(
   const argv = start.argv.map(expand);
   const cwd =
     start.cwd === undefined ? baseline : join(baseline, safePath(start.cwd));
-  await requirePath(cwd, 'start.cwd', 'directory');
+  await requireReadablePath(cwd, 'start.cwd', 'directory');
   await executablePath(string(argv[0], 'start.argv[0]'), cwd);
   for (const [index, argument] of start.argv.entries()) {
     if (typeof argument === 'string' || argument.resource === 'port') continue;

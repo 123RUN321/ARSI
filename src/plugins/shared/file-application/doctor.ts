@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, lstat, readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type {
   Candidate,
@@ -18,6 +18,7 @@ import {
 } from '../../../shared/doctor-check.js';
 import { object, string } from '../../../shared/json.js';
 import { parseConfig } from '../../../shared/schema.js';
+import { requireReadablePath } from '../doctor/checks.js';
 import {
   readInstance,
   readTarget,
@@ -26,23 +27,6 @@ import {
 
 function missing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
-}
-
-export async function requirePath(
-  path: string,
-  field: string,
-  kind: 'file' | 'directory',
-): Promise<void> {
-  try {
-    const stat = await lstat(path);
-    if (kind === 'directory' ? !stat.isDirectory() : !stat.isFile())
-      throw new Error(`${field}: expected a readable ${kind}: ${path}`);
-    await access(path, constants.R_OK);
-  } catch (error) {
-    if (missing(error))
-      throw missingInputError({ field, kind, reference: path }, error);
-    throw error;
-  }
 }
 
 export async function checkBaselineDirectory(
@@ -99,13 +83,13 @@ async function readBaselineDirectory(
   }
   for (const entry of target.entries)
     if (entry.kind === 'file')
-      await requirePath(
+      await requireReadablePath(
         join(directory, entry.path),
         `target.entries.${entry.path}`,
         'file',
       );
   if (entryFile)
-    await requirePath(
+    await requireReadablePath(
       join(directory, entryFile),
       `baseline.${entryFile}`,
       'file',

@@ -193,7 +193,7 @@ try {
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {proposerContract,applicationContract} from 'arsi/contracts';
-import {runDoctorCheck} from 'arsi';
+import {failed,passed,runDoctorCheck} from 'arsi';
 export const customDefinition={
  id:'proposer.consumer-doctor',contract:proposerContract,
  configSchema:{type:'object',properties:{inputFile:{type:'string','x-rsi-path':'file'}},required:['inputFile']},
@@ -204,7 +204,8 @@ export const customDefinition={
     const value=await readFile(context.binding.config.inputFile,{encoding:'utf8',signal});
     if(value!=='doctor-ready')throw Error('Input is not doctor-ready');
    },{signal:context.signal});
-   return {checks:[input,{id:'remote',status:'unchecked',reason:'This fixture does not probe remote services.'}]};
+   if(input.status==='failed')return failed(input.id,input.reason);
+   return {checks:[...passed('read-input').checks,{id:'remote',status:'unchecked',reason:'This fixture does not probe remote services.'}]};
   });
   ctx.event.on('rsi/cleanup', ({experimentId,bindingId,dryRun}) => [
    {key:experimentId + '/' + bindingId,status:dryRun ? 'preview':'complete'},
@@ -268,6 +269,7 @@ export function register(registry){
         report.checks.find((check) => check.id === 'custom.read-input')?.status,
         'failed',
       );
+      assert.ok(!report.checks.some((check) => check.id === 'custom.remote'));
       return true;
     },
   );
