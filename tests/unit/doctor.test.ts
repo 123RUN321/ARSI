@@ -26,8 +26,34 @@ import type {
   OperationDoctor,
 } from '../../src/contracts/index.js';
 import { runCommand } from '../../src/plugins/shared/doctor/process.js';
-import { runDoctorCheck } from '../../src/shared/doctor-check.js';
+import {
+  runDoctorCheck,
+  runDoctorProbe,
+} from '../../src/shared/doctor-check.js';
 import { object } from '../../src/shared/json.js';
+
+test('doctor probes return data only after successful completion and keep reports free of probe data', async () => {
+  const options = { signal: new AbortController().signal };
+  const probe = await runDoctorProbe(
+    'input',
+    async () => ({ content: 'fixture' }),
+    options,
+  );
+  assert.equal(probe.check.status, 'passed');
+  assert.deepEqual(probe.value, { content: 'fixture' });
+  const failed = await runDoctorProbe(
+    'input',
+    async () => {
+      throw new Error('missing input');
+    },
+    options,
+  );
+  assert.equal(failed.check.status, 'failed');
+  assert.equal(failed.value, undefined);
+  assert.match(failed.check.reason ?? '', /missing input/);
+  const check = await runDoctorCheck('input', async () => {}, options);
+  assert.deepEqual(check, { id: 'input', status: 'passed' });
+});
 
 async function fixture(): Promise<{
   runtime: Runtime;

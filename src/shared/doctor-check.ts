@@ -20,17 +20,28 @@ export function missingInputError(
   return new Error(missingInputReason(field, kind, reference), { cause });
 }
 
-/** Run one probe with its own deadline. The action must release its work on cancellation. */
+interface DoctorCheckOptions {
+  signal: AbortSignal;
+  timeoutMs?: number;
+  reason?: string;
+  details?: JsonObject;
+}
+
 export async function runDoctorCheck(
   id: string,
   action: (signal: AbortSignal) => Promise<void>,
-  options: {
-    signal: AbortSignal;
-    timeoutMs?: number;
-    reason?: string;
-    details?: JsonObject;
-  },
+  options: DoctorCheckOptions,
 ): Promise<DoctorResult['checks'][number]> {
+  const { check } = await runDoctorProbe(id, action, options);
+  return check;
+}
+
+/** The action must release its work on cancellation. */
+export async function runDoctorProbe<T>(
+  id: string,
+  action: (signal: AbortSignal) => Promise<T>,
+  options: DoctorCheckOptions,
+): Promise<{ check: DoctorResult['checks'][number]; value?: T }> {
   const { signal, timeoutMs = 60000, reason, details } = options;
   signal.throwIfAborted();
   const controller = new AbortController();
@@ -51,7 +62,7 @@ export async function runDoctorCheck(
   });
   const check = { id, ...(details ? { details } : {}) };
   try {
-    await Promise.race([
+    const value = await Promise.race([
       job,
       new Promise<never>((_done, reject) => {
         abort = () => reject(bounded.reason);
@@ -60,7 +71,10 @@ export async function runDoctorCheck(
       }),
     ]);
     bounded.throwIfAborted();
-    return { ...check, status: 'passed', ...(reason ? { reason } : {}) };
+    return {
+      check: { ...check, status: 'passed', ...(reason ? { reason } : {}) },
+      value,
+    };
   } catch (error) {
     let cleanup = '';
     if (bounded.aborted) {
@@ -87,11 +101,13 @@ export async function runDoctorCheck(
     }
     signal.throwIfAborted();
     return {
-      ...check,
-      status: 'failed',
-      reason: reason
-        ? `${reason}${cleanup}`
-        : `${errorText(error)}${cleanup} Plugin availability is unknown unless established by another check.`,
+      check: {
+        ...check,
+        status: 'failed',
+        reason: reason
+          ? `${reason}${cleanup}`
+          : `${errorText(error)}${cleanup} Plugin availability is unknown unless established by another check.`,
+      },
     };
   } finally {
     clearTimeout(timer);

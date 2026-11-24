@@ -5,13 +5,13 @@ import { nativeAgentCommand } from '../native-agent/executable.js';
 import { runCommand } from './process.js';
 
 /** Check CLI compatibility without submitting a task or exposing native output. */
-export async function checkNativeAgent(
+export async function checkNativeAgentExecutable(
   context: DoctorContext,
   command: string,
   helpArgs: string[],
   requiredFlags: string[],
-): Promise<DoctorResult> {
-  const available = await runDoctorCheck(
+): Promise<DoctorResult['checks'][number]> {
+  return runDoctorCheck(
     'executable',
     async (signal) => {
       const stdout = await runNativeAgentCommand(
@@ -31,17 +31,6 @@ export async function checkNativeAgent(
     },
     { signal: context.signal },
   );
-  return {
-    checks: [
-      available,
-      {
-        id: 'model-access',
-        status: 'unchecked',
-        reason:
-          'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
-      },
-    ],
-  };
 }
 
 /** Run another native preflight command with the same executable resolution. */

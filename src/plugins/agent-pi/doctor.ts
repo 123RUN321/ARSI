@@ -1,6 +1,6 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
-import { probeModelAccess, type ModelAccessResult } from './model-access.js';
+import { runDoctorProbe } from '../../shared/doctor-check.js';
+import { probeModelAccess } from './model-access.js';
 import { resolveModelConfig } from './session.js';
 import type { AgentPiConfig } from './schema.js';
 
@@ -8,37 +8,16 @@ export async function checkPiAgent(
   context: DoctorContext<AgentPiConfig>,
 ): Promise<DoctorResult> {
   const options = { signal: context.signal };
-  let resolved: ReturnType<typeof resolveModelConfig> | undefined;
-  const configured = await runDoctorCheck(
+  const configuration = await runDoctorProbe(
     'model-config',
-    async (signal) => {
-      const config = context.binding.config;
-      signal.throwIfAborted();
-      resolved = resolveModelConfig(config);
-      let url: URL;
-      try {
-        url = new URL(resolved.base_url);
-      } catch {
-        throw new Error(
-          'agent.pi base_url must resolve to an HTTP(S) endpoint',
-        );
-      }
-      if (
-        !['http:', 'https:'].includes(url.protocol) ||
-        url.username ||
-        url.password
-      ) {
-        throw new Error(
-          'agent.pi base_url must resolve to a credential-free HTTP(S) endpoint',
-        );
-      }
-    },
+    async (signal) => resolveCheckedModel(context.binding.config, signal),
     options,
   );
-  if (configured.status !== 'passed' || !resolved) {
+  const model = configuration.value;
+  if (!model) {
     return {
       checks: [
-        configured,
+        configuration.check,
         {
           id: 'model-access',
           status: 'unchecked',
@@ -48,12 +27,10 @@ export async function checkPiAgent(
       ],
     };
   }
-  const model = resolved;
-  let access: ModelAccessResult | undefined;
-  const checked = await runDoctorCheck(
+  const access = await runDoctorProbe(
     'model-access',
-    async (signal) => {
-      access = await probeModelAccess(
+    (signal) =>
+      probeModelAccess(
         {
           side: 'Proposal',
           model: model.model,
@@ -61,16 +38,37 @@ export async function checkPiAgent(
           apiKey: model.api_key,
         },
         signal,
-      );
-    },
+      ),
     options,
   );
   return {
     checks: [
-      configured,
-      checked.status === 'passed' && access
-        ? { id: checked.id, ...access }
-        : checked,
+      configuration.check,
+      access.value ? { id: access.check.id, ...access.value } : access.check,
     ],
   };
+}
+
+function resolveCheckedModel(
+  config: AgentPiConfig,
+  signal: AbortSignal,
+): ReturnType<typeof resolveModelConfig> {
+  signal.throwIfAborted();
+  const resolved = resolveModelConfig(config);
+  let url: URL;
+  try {
+    url = new URL(resolved.base_url);
+  } catch {
+    throw new Error('agent.pi base_url must resolve to an HTTP(S) endpoint');
+  }
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    url.username ||
+    url.password
+  ) {
+    throw new Error(
+      'agent.pi base_url must resolve to a credential-free HTTP(S) endpoint',
+    );
+  }
+  return resolved;
 }
