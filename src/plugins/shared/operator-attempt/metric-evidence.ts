@@ -115,7 +115,6 @@ function observedDistributions(
   };
 }
 
-/** Keep the original metric paths for the rows sent to the Agent. */
 export function projectMetricProfile(profile: JsonObject): JsonObject {
   return {
     status: profile.status ?? null,

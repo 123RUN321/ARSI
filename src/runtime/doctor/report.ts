@@ -62,7 +62,6 @@ function qualifyBindingCheck(
   };
 }
 
-/** Validate and redact checks before adding them to the report. */
 export class DoctorReportBuilder {
   private readonly checksById = new Map<string, DoctorCheck>();
   private readonly redactText: (message: string) => string;
@@ -86,7 +85,6 @@ export class DoctorReportBuilder {
 
   addBindingResult(binding: DoctorBinding, bindingResult: DoctorResult): void {
     validate(doctorResultSchema, bindingResult, 'Doctor result');
-    // Validate the whole callback result before recording any of its checks.
     const batchIds = new Set<string>();
     const validatedChecks: DoctorCheck[] = [];
     for (const localCheck of bindingResult.checks) {

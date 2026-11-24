@@ -7,7 +7,6 @@ const rootKey = 'urn:rsi:config-fields';
 const escapePointer = (key: string): string =>
   key.replaceAll('~', '~0').replaceAll('/', '~1');
 
-/** Visit string values and their applicable Schema declarations. */
 export function visitConfigStrings(
   schema: JsonSchema,
   value: JsonValue,

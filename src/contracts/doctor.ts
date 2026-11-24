@@ -13,7 +13,6 @@ export interface DoctorCheck {
   details?: JsonObject;
 }
 
-/** Check IDs are local to the component binding. */
 export interface DoctorResult {
   checks: Omit<DoctorCheck, 'binding' | 'pluginId'>[];
 }

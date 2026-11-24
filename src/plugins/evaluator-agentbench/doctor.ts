@@ -79,7 +79,6 @@ export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
         check.details?.sdkName === 'AgentBundle path',
     );
     if (bundleCheck && typeof directory === 'string') {
-      // Confirm absence without interpreting the SDK's human-readable detail.
       await access(directory).catch((error: unknown) => {
         if (missingPath(error)) {
           bundleCheck.reason = [

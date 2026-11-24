@@ -21,6 +21,5 @@ export interface OperationDefinition<
   implementationDigest?: string;
   contract: PluginContract;
   configSchema: JsonSchema;
-  /** Registry validates the configuration and applies defaults on a copy before calling this factory. */
   create(config: C, context: RuntimeContext<C>): Promise<Operation<I, O>>;
 }

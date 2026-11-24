@@ -42,7 +42,6 @@ export async function doctorRecipe(
   return reportBuilder.build();
 }
 
-/** Owns the probe Runtime for the binding phase. */
 async function checkBindings(
   sourceRuntime: Runtime,
   recipe: Recipe,
