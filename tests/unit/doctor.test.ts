@@ -519,11 +519,10 @@ test('doctor gates the inference factory on its script and probes the executable
       ?.status,
     'failed',
   );
-  assert.match(
-    executable.checks.find(
+  assert.ok(
+    !executable.checks.some(
       ({ id }) => id === 'application.launch-prerequisites',
-    )?.reason ?? '',
-    /remote-executable.*remote\.executable/,
+    ),
   );
   verifyReport(executable);
   verifyReport(report);
@@ -658,10 +657,7 @@ test('agent editor doctor uses declared path failures and still checks skill con
       failedId === 'editing-inputs' ? 'passed' : undefined,
     );
     if (failedId === 'editing-inputs') {
-      assert.match(
-        checks.get('editor.prepare-project')?.reason ?? '',
-        /Editing inputs could not be loaded/,
-      );
+      assert.equal(checks.get('editor.prepare-project'), undefined);
       assert.ok(
         checks
           .get(blocker)

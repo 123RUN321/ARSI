@@ -3,6 +3,8 @@ import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import {
+  failed,
+  passed,
   missingInputError,
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
@@ -24,17 +26,13 @@ export async function checkInferenceApplication(
   context: DoctorContext<InferenceConfig>,
 ): Promise<DoctorResult> {
   const baseline = await checkBaselineDirectory(context);
-  const checks = [baseline.check];
   const directory = baseline.directory;
-  if (!directory) {
-    checks.push({
-      id: 'launch-prerequisites',
-      status: 'unchecked',
-      reason:
-        'The baseline check failed. Correct the baseline or Target before checking the launch configuration.',
-    });
-    return { checks };
-  }
+  if (!directory)
+    return failed(
+      baseline.check.id,
+      baseline.check.reason,
+      baseline.check.details,
+    );
 
   const config = context.binding.config;
   const options = { signal: context.signal };
@@ -44,16 +42,8 @@ export async function checkInferenceApplication(
       (signal) => checkRemoteInterpreter(config.remote, signal),
       options,
     );
-    checks.push(interpreter);
-    if (interpreter.status === 'failed') {
-      checks.push({
-        id: 'launch-prerequisites',
-        status: 'unchecked',
-        reason:
-          'The remote-executable check failed. Install the interpreter or update remote.executable.',
-      });
-      return { checks };
-    }
+    if (interpreter.status === 'failed')
+      return failed(interpreter.id, interpreter.reason, interpreter.details);
   }
 
   const launch = await runDoctorCheck(
@@ -62,12 +52,19 @@ export async function checkInferenceApplication(
       if ('remote' in config)
         await checkRemoteParameters(config.remote, directory, signal);
       else await checkLocalLaunch(config, directory);
-      checkCredentials(config.credentials);
       signal.throwIfAborted();
     },
     options,
   );
-  return { checks: [...checks, launch] };
+  if (launch.status === 'failed')
+    return failed(launch.id, launch.reason, launch.details);
+  const apiKeyEnv = config.credentials?.apiKeyEnv;
+  if (apiKeyEnv !== undefined && !process.env[apiKeyEnv]?.trim())
+    return failed(
+      'credentials',
+      `credentials.apiKeyEnv references missing or empty environment variable ${apiKeyEnv}. Set that variable before running the experiment.`,
+    );
+  return passed('launch-prerequisites');
 }
 
 async function checkRemoteInterpreter(
@@ -136,12 +133,4 @@ async function checkLocalLaunch(
       throw error;
     }
   }
-}
-
-function checkCredentials(credentials: InferenceConfig['credentials']): void {
-  const name = credentials?.apiKeyEnv;
-  if (name !== undefined && !process.env[name]?.trim())
-    throw new Error(
-      `credentials.apiKeyEnv references missing or empty environment variable ${name}`,
-    );
 }

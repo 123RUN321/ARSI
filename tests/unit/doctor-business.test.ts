@@ -113,7 +113,7 @@ for (const id of [
     const workingResult = await runDoctor(working);
     assert.deepEqual(
       workingResult.checks.map((check) => check.status),
-      ['passed', 'passed'],
+      ['passed'],
     );
     const projects = await readdir(join(f.root, 'probe/agent-projects'));
     const instructions = await readFile(
@@ -131,6 +131,10 @@ for (const id of [
       prompt: join(f.root, 'missing.md'),
     });
     const brokenResult = await runDoctor(broken);
+    assert.deepEqual(
+      await readdir(join(f.root, 'probe/agent-projects')),
+      projects,
+    );
     assert.equal(
       brokenResult.checks.find((check) => check.id === 'editing-inputs')
         ?.status,
@@ -139,17 +143,12 @@ for (const id of [
     assert.equal(
       brokenResult.checks.find((check) => check.id === 'prepare-project')
         ?.status,
-      'unchecked',
+      undefined,
     );
     assert.ok(
       brokenResult.checks
         .find(({ id }) => id === 'editing-inputs')
         ?.reason?.includes(join(f.root, 'missing.md')),
-    );
-    assert.match(
-      brokenResult.checks.find(({ id }) => id === 'prepare-project')?.reason ??
-        '',
-      /Editing inputs could not be loaded/,
     );
   });
 }

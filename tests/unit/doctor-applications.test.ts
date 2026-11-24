@@ -144,12 +144,7 @@ test('doctor verifies a configured kernel entry with an editable helper and repo
   const working = await run('application.kernel', settings);
   assert.deepEqual(
     working.checks.map(({ id, status }) => ({ id, status })),
-    [
-      { id: 'baseline', status: 'passed' },
-      { id: 'verify-source', status: 'passed' },
-      { id: 'acquire-instance', status: 'passed' },
-      { id: 'cleanup', status: 'passed' },
-    ],
+    [{ id: 'acquire-instance', status: 'passed' }],
   );
   assert.deepEqual(await readdir(runtime.workspaces.directory), []);
   assert.deepEqual(await runtime.facts.list('experiments'), []);
@@ -162,7 +157,7 @@ test('doctor verifies a configured kernel entry with an editable helper and repo
   );
   assert.equal(
     broken.checks.find((check) => check.id === 'acquire-instance')?.status,
-    'unchecked',
+    undefined,
   );
   assert.match(
     broken.checks.find(({ id }) => id === 'baseline')?.reason ?? '',
@@ -203,14 +198,8 @@ test('doctor verifies bundle lifecycle and links missing Target input to checks 
   );
   assert.equal(
     absent.checks.find((check) => check.id === 'verify-bundle')?.status,
-    'unchecked',
+    undefined,
   );
-  for (const id of ['verify-bundle', 'acquire-instance']) {
-    assert.match(
-      absent.checks.find((check) => check.id === id)?.reason ?? '',
-      /The baseline check failed/,
-    );
-  }
   assert.ok(
     absent.checks
       .find(({ id }) => id === 'baseline')
@@ -605,14 +594,36 @@ test('doctor releases an application lease after its probe deadline while the co
     /timed out/i,
   );
   assert.equal(controller.signal.aborted, false);
-  assert.equal(
-    result.checks.find((check) => check.id === 'cleanup')?.status,
-    'passed',
-  );
+  assert.equal(result.checks.length, 1);
   assert.deepEqual(await readdir(runtime.workspaces.directory), []);
   assert.ok(
     (await runtime.facts.list('instances')).every(
       (instance) => instance.status === 'released',
     ),
   );
+});
+
+test('doctor retains release failure and unconfirmed cleanup in its first failed instance check', async (t) => {
+  const { config, runtime, run } = await fixture(t);
+  const release = runtime.workspaces.release.bind(runtime.workspaces);
+  let calls = 0;
+  t.mock.method(runtime.workspaces, 'release', async (ref: string) => {
+    if (++calls === 2) throw new Error('release-probe-fixture');
+    await release(ref);
+  });
+  const result = await run('application.kernel', {
+    ...config,
+    entryFile: 'input.py',
+  });
+  assert.equal(result.checks.length, 1);
+  assert.equal(result.checks[0].id, 'acquire-instance');
+  assert.equal(result.checks[0].status, 'failed');
+  assert.match(result.checks[0].reason ?? '', /release-probe-fixture/);
+  assert.match(result.checks[0].reason ?? '', /release was not confirmed/);
+  assert.ok(
+    (await runtime.facts.list('instances')).every(
+      (instance) => instance.status === 'released',
+    ),
+  );
+  assert.deepEqual(await readdir(runtime.workspaces.directory), []);
 });

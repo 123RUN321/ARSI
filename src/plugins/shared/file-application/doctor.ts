@@ -7,8 +7,11 @@ import type {
   DoctorContext,
   DoctorResult,
   Operation,
+  RuntimeContext,
 } from '../../../contracts/index.js';
 import {
+  failed,
+  passed,
   missingInputError,
   runDoctorCheck,
   runDoctorProbe,
@@ -118,34 +121,53 @@ export async function checkFileApplication(
     verification,
     capability,
     entryFile,
-  }: {
-    verification: string;
-    capability: string;
-    entryFile: string;
-  },
+  }: { verification: string; capability: string; entryFile: string },
 ): Promise<DoctorResult> {
   const baseline = await checkBaselineDirectory(context, entryFile);
-  const checks = [baseline.check];
-  const result = { checks };
-  if (!baseline.directory) {
-    const reason =
-      'The baseline check failed. Correct the baseline or Target before rerunning this check.';
-    checks.push(
-      {
-        id: verification,
-        status: 'unchecked',
-        reason,
-      },
-      {
-        id: 'acquire-instance',
-        status: 'unchecked',
-        reason,
-      },
+  if (baseline.check.status === 'failed')
+    return failed(
+      baseline.check.id,
+      baseline.check.reason,
+      baseline.check.details,
     );
-    return result;
-  }
+
+  const runtime = createApplicationProbeRuntime(context);
+  const initialization = await runDoctorProbe(
+    verification,
+    (signal) => initializeApplication(application, runtime.extend({ signal })),
+    { signal: context.signal },
+  );
+  const candidateRef = initialization.value;
+  if (!candidateRef)
+    return failed(
+      initialization.check.id,
+      initialization.check.reason,
+      initialization.check.details,
+    );
+
+  const instance = await runDoctorCheck(
+    'acquire-instance',
+    (signal) =>
+      verifyApplicationInstance(
+        application,
+        runtime.extend({ signal }),
+        candidateRef,
+        capability,
+        entryFile,
+      ),
+    { signal: context.signal },
+  );
+  if (instance.status === 'failed')
+    return failed(instance.id, instance.reason, instance.details);
+  return passed(
+    'acquire-instance',
+    'Baseline, initialization, instance contents and resource release were verified.',
+  );
+}
+
+function createApplicationProbeRuntime(context: DoctorContext): RuntimeContext {
   const candidates = new Map<string, Candidate>();
-  const runtime = context.runtime.extend({
+  return context.runtime.extend({
     experimentId: `doctor-${randomUUID()}`,
     async recordCandidate(
       artifactRef: string,
@@ -166,84 +188,64 @@ export async function checkFileApplication(
       return candidate;
     },
   });
-  const initialization = await runDoctorProbe(
-    verification,
-    async (signal) => {
-      const scope = runtime.extend({ signal });
-      const result = object(
-        await application.execute({ action: 'initialize' }, scope),
-      );
-      if (result.action !== 'initialize')
-        throw new Error('Application returned no initialization result');
-      return string(result.initialCandidateRef, 'initialCandidateRef');
-    },
-    { signal: context.signal },
+}
+
+async function initializeApplication(
+  application: Operation,
+  runtime: RuntimeContext,
+): Promise<string> {
+  const result = object(
+    await application.execute({ action: 'initialize' }, runtime),
   );
-  checks.push(initialization.check);
-  const candidateRef = initialization.value;
+  if (result.action !== 'initialize')
+    throw new Error(
+      'Application returned no initialization result. Check the Application implementation.',
+    );
+  return string(result.initialCandidateRef, 'initialCandidateRef');
+}
+
+async function verifyApplicationInstance(
+  application: Operation,
+  runtime: RuntimeContext,
+  candidateRef: string,
+  capability: string,
+  entryFile: string,
+): Promise<void> {
   const instanceId = `doctor-instance-${randomUUID()}`;
   let acquired = false;
-  if (!candidateRef) {
-    checks.push({
-      id: 'acquire-instance',
-      status: 'unchecked',
-      reason: 'Application initialization did not complete.',
-    });
-  } else {
-    const initialCandidateRef = candidateRef;
-    checks.push(
-      await runDoctorCheck(
-        'acquire-instance',
-        async (signal) => {
-          const scope = runtime.extend({ signal });
-          try {
-            const result = object(
-              await application.execute(
-                {
-                  action: 'acquire',
-                  candidateRef: initialCandidateRef,
-                  instanceId,
-                  capability,
-                },
-                scope,
-              ),
-            );
-            acquired = true;
-            const execution = object(result.execution, 'execution');
-            const directory = string(
-              execution.directory,
-              'execution.directory',
-            );
-            await access(directory, constants.R_OK);
-            await readFile(join(directory, entryFile), {
-              encoding: 'utf8',
-              signal,
-            });
-            signal.throwIfAborted();
-          } finally {
-            if (acquired) {
-              await application.execute(
-                { action: 'release', instanceId },
-                runtime.extend({ signal: runtime.cleanup }),
-              );
-            }
-          }
-        },
-        { signal: context.signal },
-      ),
-    );
-  }
-  checks.push(
-    await runDoctorCheck(
-      'cleanup',
-      async () => {
-        const instance = await readInstance(runtime, instanceId);
-        if ((acquired || instance) && instance?.status !== 'released')
-          throw new Error('Application instance release was not confirmed');
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(async () => {
+    const instance = await readInstance(runtime, instanceId);
+    if ((acquired || instance) && instance?.status !== 'released')
+      throw new Error(
+        'Application instance release was not confirmed. Reconcile Application resources before retrying.',
+      );
+  });
+  cleanup.defer(async () => {
+    if (acquired)
+      await application.execute(
+        { action: 'release', instanceId },
+        runtime.extend({ signal: runtime.cleanup }),
+      );
+  });
+  const result = object(
+    await application.execute(
+      {
+        action: 'acquire',
+        candidateRef,
+        instanceId,
+        capability,
       },
-      { signal: runtime.cleanup },
+      runtime,
     ),
   );
-  context.signal.throwIfAborted();
-  return result;
+  acquired = true;
+  const execution = object(result.execution, 'execution');
+  const directory = string(execution.directory, 'execution.directory');
+  await access(directory, constants.R_OK);
+  await readFile(join(directory, entryFile), {
+    encoding: 'utf8',
+    signal: runtime.signal,
+  });
+  runtime.signal.throwIfAborted();
 }

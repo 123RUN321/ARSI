@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
 import {
+  failed,
+  passed,
   missingInputError,
   runDoctorCheck,
   runDoctorProbe,
@@ -33,19 +35,8 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
     options,
   );
   const prompt = inputs.value;
-  if (prompt === undefined) {
-    return {
-      checks: [
-        inputs.check,
-        {
-          id: 'prepare-project',
-          status: 'unchecked',
-          reason:
-            'Editing inputs could not be loaded; project preparation did not run.',
-        },
-      ],
-    };
-  }
+  if (prompt === undefined)
+    return failed(inputs.check.id, inputs.check.reason, inputs.check.details);
   const prepared = await runDoctorCheck(
     'prepare-project',
     async (signal) => {
@@ -61,7 +52,9 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
     },
     options,
   );
-  return { checks: [inputs.check, prepared] };
+  if (prepared.status === 'failed')
+    return failed(prepared.id, prepared.reason, prepared.details);
+  return passed('prepare-project');
 }
 
 async function readEditingInputs(
