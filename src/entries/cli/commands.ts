@@ -26,7 +26,7 @@ export async function runCommand(
   argv: string[],
   context: CommandContext,
 ): Promise<CommandResult> {
-  let result: CommandResult | undefined;
+  let result: CommandResult = { exitCode: 0 };
   let commanderExit: CommanderError | undefined;
   const program = new Command('arsi')
     .description('Make everything rsi-able')
@@ -248,7 +248,6 @@ export async function runCommand(
     } finally {
       await server.close();
     }
-    result = { exitCode: 0 };
   }
 
   try {
@@ -257,7 +256,5 @@ export async function runCommand(
     if (commanderExit === undefined || error !== commanderExit) throw error;
     return { exitCode: commanderExit.exitCode === 0 ? 0 : 2 };
   }
-  if (!result)
-    throw new Error('Choose a subcommand; use --help for available commands');
   return result;
 }

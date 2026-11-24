@@ -181,6 +181,8 @@ test('CLI reports invalid input and focused help to stderr before runtime initia
     [['catalog', '--bad'], /unknown option/, ' catalog'],
     [['list', 'bad'], /allowed choices/i, ' list'],
     [['reflection', 'apply'], /missing required argument/, ' reflection apply'],
+    [['reflection'], /Usage: arsi reflection/, ' reflection'],
+    [['--plugin-dir', 'missing-extension'], /Usage: arsi/],
     [['dashboard', '--port', '0'], /port must be 1\.\.65535/, ' dashboard'],
     [['dashboard', '--port', '65536'], /port must be 1\.\.65535/, ' dashboard'],
     [['--plugin-dir'], /argument missing/],
