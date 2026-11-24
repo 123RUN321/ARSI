@@ -53,9 +53,9 @@ flowchart TD
 
 ### 阅读摘要和 JSON 报告
 
-插件返回有序检查定义数组，声明时不执行检查。框架逐项执行，首项失败后停止该绑定，保留此前通过项，并将后续已声明项标为 `unchecked`；其他绑定继续检查。数量按报告中的实际输出项统计，包括未执行项。声明前提失败时不会创建插件实例，组件专用诊断整体标为 `unchecked`。
+每个绑定在首次失败后停止后续检查，后续项记为 `unchecked`；此前结果保留，其他绑定继续检查。数量按全部输出项统计。声明前提失败时不会创建插件实例，组件诊断记为 `unchecked`。
 
-`doctor` 默认向 stdout 输出可读摘要。摘要给出各状态的数量，解释失败项和未检查项，并显示已有的修复建议。遇到缺失文件时，摘要会指出路径和需要修改的配置字段。失败的绑定还会提示：修复后需要重新执行尚未完成的检查。
+`doctor` 默认向 stdout 输出可读摘要，包含检查数量、失败项、未检查项和可用的修复建议。
 
 脚本或需要完整探测证据时，可以请求 JSON 报告。
 
@@ -108,24 +108,25 @@ arsi doctor my-experiment/recipe.yaml --json
 
 ### Proposer、Memory、Reflection 与 Selector
 
-| 实现                        | 实际检查                                                                                                                                       |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `proposer.agent`            | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取提示词、指导、Skill 和角色提示词。<br>3. 准备隔离编辑项目，确认这些输入可以正确装配。             |
-| `proposer.operator`         | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取算子任务及用例，核对任务与用例标识。<br>3. 读取阶段提示词、外部知识、检索所需资源及可选硬件说明。 |
-| `proposer.grid`             | 1. 检查待调参数的路径和搜索轴名称。<br>2. 检查网格规模，并确认组件可以创建和释放。                                                             |
-| `proposer.optuna`           | 1. 校验采样器、搜索空间和约束处理配置。<br>2. 运行 Python 依赖检查，确认依赖版本符合要求。                                                     |
-| `proposer.pareto-evolution` | 1. 检查提示词模块定义是否合法。<br>2. 检查各模块文件是否存在于本地基线或文件树制品中。                                                         |
-| `memory.agent`              | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取提示词、指导、Skill 和角色提示词。<br>3. 在隔离项目中装配编辑环境。                               |
-| `reflection.agent`          | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取提示词、指导、Skill 和内置评审角色提示词。<br>3. 在隔离项目中装配编辑环境。                       |
-| `selector.metric`           | 1. 校验指标选择配置。<br>2. 检查候选资格条件和约束上下界，并确认组件可以创建和释放。                                                           |
-| `selector.artifact`         | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取选择提示词、指导、Skill 和角色提示词。<br>3. 准备隔离的选择项目。                                 |
-| `selector.inference`        | 1. 校验推理选择配置。<br>2. 检查约束上下界，并确认组件可以创建和释放。                                                                         |
+| 实现                        | 实际检查                                                                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `proposer.agent`            | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取提示词、指导、Skill 和角色提示词。<br>3. 准备隔离编辑项目，确认这些输入可以正确装配。                      |
+| `proposer.operator`         | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取算子任务及用例，核对任务与用例标识。<br>3. 读取阶段提示词、外部知识、检索所需资源及可选硬件说明。          |
+| `proposer.grid`             | 1. 检查参数路径、搜索轴名称和网格规模。<br>2. 读取 Application 基线中 `config.path` 指向的文件，确认内容为 JSON 对象。                                  |
+| `proposer.optuna`           | 1. 校验采样器、搜索空间和约束处理配置。<br>2. 读取 Application 基线中 `config.path` 指向的文件，确认内容为 JSON 对象。<br>3. 检查 Python 依赖及其版本。 |
+| `proposer.pareto-evolution` | 1. 检查提示词模块定义是否合法。<br>2. 检查各模块文件是否存在于本地基线或文件树制品中。                                                                  |
+| `summarizer.operator`       | 检查 `promptFile` 是否可读且包含非空白文本。                                                                                                            |
+| `memory.agent`              | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取提示词、指导、Skill 和角色提示词。<br>3. 在隔离项目中装配编辑环境。                                        |
+| `reflection.agent`          | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取提示词、指导、Skill 和内置评审角色提示词。<br>3. 在隔离项目中装配编辑环境。                                |
+| `selector.metric`           | 1. 校验指标选择配置。<br>2. 检查候选资格条件和约束上下界，并确认组件可以创建和释放。                                                                    |
+| `selector.artifact`         | 1. 检查所选 Agent 的绑定和兼容性。<br>2. 读取选择提示词、指导、Skill 和角色提示词。<br>3. 准备隔离的选择项目。                                          |
+| `selector.inference`        | 1. 校验推理选择配置。<br>2. 检查约束上下界，并确认组件可以创建和释放。                                                                                  |
 
 ### Evaluator
 
 三个 Evaluator 都通过各自的配置适配器调用已安装的 Evaluator SDK doctor。配置与输出路径位于隔离的临时目录。
 
-SDK 在一次调用内完成自己的诊断流程，RSI 将其作为 `sdk-doctor` 检查项执行并校验协议。原生前提失败时该项失败，完整原生检查与网络证据保留在 `details` 中，后续 RSI 项标为 `unchecked`。`sdk.coverage` 和 `sdk.network` 分别表达前提覆盖范围及网络结论；这不会逐项中止 SDK 内部探测。
+通过 `sdk-doctor.details` 查看原生检查与网络证据。`sdk.coverage` 和 `sdk.network` 分别报告前提覆盖范围和网络就绪情况。
 
 | 实现                       | 实际检查                                                                                        |
 | -------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -142,8 +143,6 @@ SDK 在一次调用内完成自己的诊断流程，RSI 将其作为 `sdk-doctor
 
 ### 编写诊断事件处理器
 
-现有返回 `{ checks: [...] }` 的处理器需要迁移为定义数组。插件处理器不再调用 `failed`、`passed` 或 `runDoctorCheck`，这些导出已删除。CLI JSON 报告仍为 `{ recipeId, checks }`。
-
 从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorRule`。
 
 - 处理器由临时插件实例持有。`doctor` 命令为每个绑定传入其生效配置。
@@ -151,12 +150,9 @@ SDK 在一次调用内完成自己的诊断流程，RSI 将其作为 `sdk-doctor
 
 | 类型                 | 用途                                                                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | 返回 `DoctorRule[]`；只有声明本身需要 I/O 时才返回定义数组的 Promise。                                                      |
+| `OperationDoctor<C>` | 返回 `DoctorRule[]` 或 `Promise<DoctorRule[]>`。                                                                            |
 | `DoctorContext<C>`   | 生效配置、隔离 Runtime、临时目录及命令取消信号。                                                                            |
 | `DoctorRule`         | 包含 `id`、惰性布尔判断 `check(signal)` 和失败原因/修复提示 `reason`。不支持的诊断省略 `check`，可通过 `details` 保存证据。 |
-| `DoctorResult`       | 框架执行后通过 `checks` 汇总的结果，由框架生成，插件处理器不返回它。                                                        |
-
-框架在调用处理器前检查绑定引用。引用无效时，该绑定立即停止检查。
 
 - `C` 是组件配置类型。本例在 `schema.ts` 中导出 `type CustomConfig = { inputFile: string }`，那么 `context.binding.config.inputFile` 就会被推导为 `string`。
 
@@ -191,7 +187,7 @@ export function doctor(context: DoctorContext<CustomConfig>): DoctorRule[] {
 }
 ```
 
-处理器主体定义判断函数，最后返回有序定义数组。纯判断保持同步，实际 I/O 才使用 `async`。框架为每项 `check` 传入受时限约束的信号；I/O 应使用这个信号，避免闭包引用命令级信号而绕过时限。返回 false 时使用定义的 `reason`，异常或超时还会附上诊断信息。失败或取消后仍须清理资源。可选 `timeoutMs` 覆盖默认单项时限；内置原生 SDK 流程使用 `null` 保留其自身计时器。
+I/O 应使用每项检查收到的信号，失败或取消后仍须释放资源。返回 false 时使用定义的 `reason`，异常或超时会附上诊断信息。可选 `timeoutMs` 覆盖默认单项时限，`null` 表示由原生流程管理时限。
 
 在 `service.ts` 中导入 `doctor`，从 `arsi/contracts` 导入 `RuntimeContext` 类型，将工厂参数标注为 `ctx: RuntimeContext<CustomConfig>`，再在工厂内订阅。扩展入口照常调用 `registry.registerOperation(customDefinition)`。
 

@@ -10,7 +10,7 @@ import type {
 import { commitParameters } from '../shared/parameter-editing/index.js';
 import { safePath } from '../shared/file-application/target.js';
 import type { GridProposerConfig } from './schema.js';
-import { configurationDoctorRules } from '../shared/doctor/checks.js';
+import { gridDoctorRules } from './doctor.js';
 
 type Axis = { name: string; size: number; values: JsonValue[] };
 
@@ -47,7 +47,7 @@ export const createGridProposer: OperationDefinition<
   GridProposerOutput,
   GridProposerConfig
 >['create'] = async (config, ctx) => {
-  ctx.event?.on('rsi/doctor', configurationDoctorRules);
+  ctx.event?.on('rsi/doctor', gridDoctorRules);
   const path = safePath(config.path);
   if (path.includes(':'))
     throw new Error('path must not contain a drive or alternate data stream');

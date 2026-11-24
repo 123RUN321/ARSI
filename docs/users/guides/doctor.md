@@ -53,9 +53,9 @@ flowchart TD
 
 ### Reading the summary and JSON report
 
-Plugins return ordered check definitions without executing them. The framework runs each check, retains earlier successes, and marks all remaining declared checks `unchecked` after the first failure. Other bindings continue. Counts include every emitted result, including unexecuted checks. A failed declared prerequisite prevents instance creation; plugin diagnostics are then marked `unchecked` as a whole.
+Within each binding, the first failure stops subsequent checks, which appear as `unchecked`; earlier results are retained and other bindings continue. Counts include all emitted checks. A failed declared prerequisite prevents instance creation and leaves plugin diagnostics `unchecked`.
 
-By default, `doctor` writes a readable summary to stdout. It gives the check counts, explains failures and unchecked checks, and reports available fixes. For a missing file, it shows the path and the configuration field to update. A failed binding also carries a reminder to rerun its unfinished checks after fixing the error.
+By default, `doctor` writes a readable summary to stdout with check counts, failures, unchecked checks and available fixes.
 
 For scripts or full probe evidence, request the JSON report.
 
@@ -112,9 +112,10 @@ For `application.inference`, Recipe loading checks that `healthcheck.path` and `
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `proposer.agent`            | 1. Check the selected Agent binding and compatibility.<br>2. Read prompts, guidance, skills and role prompts.<br>3. Prepare an isolated editing project and confirm that these inputs can be assembled.                         |
 | `proposer.operator`         | 1. Check the selected Agent binding and compatibility.<br>2. Read the operator task and cases, and validate their identifiers.<br>3. Read stage prompts, external knowledge, retrieval resources and optional hardware context. |
-| `proposer.grid`             | 1. Check the parameter path and search-axis names.<br>2. Validate the grid size and confirm that the component can be created and disposed.                                                                                     |
-| `proposer.optuna`           | 1. Validate the sampler, search space and constraint-handling settings.<br>2. Run the Python dependency check and verify the required dependency versions.                                                                      |
+| `proposer.grid`             | 1. Check the parameter path, search-axis names and grid size.<br>2. Read the Application baseline file at `config.path` and require a JSON object.                                                                              |
+| `proposer.optuna`           | 1. Validate the sampler, search space and constraint-handling settings.<br>2. Read the Application baseline file at `config.path` and require a JSON object.<br>3. Check Python dependencies and their versions.                |
 | `proposer.pareto-evolution` | 1. Validate the prompt-module definitions.<br>2. Check that each module file exists in the local baseline or file-tree artifact.                                                                                                |
+| `summarizer.operator`       | Check that `promptFile` is readable and contains non-whitespace text.                                                                                                                                                           |
 | `memory.agent`              | 1. Check the selected Agent binding and compatibility.<br>2. Read prompts, guidance, skills and role prompts.<br>3. Assemble the editing environment in an isolated project.                                                    |
 | `reflection.agent`          | 1. Check the selected Agent binding and compatibility.<br>2. Read prompts, guidance, skills and the built-in reviewer prompt.<br>3. Assemble the editing environment in an isolated project.                                    |
 | `selector.metric`           | 1. Validate the metric-selection settings.<br>2. Check candidate eligibility conditions and constraint bounds, and confirm that the component can be created and disposed.                                                      |
@@ -125,7 +126,7 @@ For `application.inference`, Recipe loading checks that `healthcheck.path` and `
 
 All three Evaluators use their configuration adapters to call the installed Evaluator SDK doctor. Configuration and output paths stay in the isolated temporary directory.
 
-The SDK runs its own diagnostic workflow in one call, represented by `sdk-doctor`. RSI validates the protocol, fails that step on a native prerequisite failure, and keeps the complete native checks and network evidence in `details`. Later RSI steps become `unchecked`. `sdk.coverage` and `sdk.network` express prerequisite coverage and network readiness separately. This does not stop individual probes inside the SDK call.
+Read `sdk-doctor.details` for native checks and network evidence. `sdk.coverage` and `sdk.network` report prerequisite coverage and network readiness.
 
 | Implementation             | Checks performed                                                                                                                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -142,8 +143,6 @@ Subscribe to `rsi/doctor` in the component’s `create(config, ctx)`. See [Write
 
 ### Write the diagnostic handler
 
-Existing handlers returning `{ checks: [...] }` must migrate to definition arrays. Plugin handlers no longer call `failed`, `passed` or `runDoctorCheck`; these exports have been removed. The CLI JSON report remains `{ recipeId, checks }`.
-
 Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorRule` from `arsi/contracts` or `arsi`.
 
 - Each temporary instance owns its handler. The `doctor` command supplies each binding’s effective configuration.
@@ -151,12 +150,9 @@ Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorRule` from `arsi/cont
 
 | Type                 | Purpose                                                                                                                                         |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | Returns `DoctorRule[]`, or a Promise of definitions when declaration itself requires I/O.                                                       |
+| `OperationDoctor<C>` | Returns `DoctorRule[]` or `Promise<DoctorRule[]>`.                                                                                              |
 | `DoctorContext<C>`   | Effective configuration, isolated Runtime, temporary directory and command cancellation.                                                        |
 | `DoctorRule`         | `id`, a lazy boolean `check(signal)`, and failure/fix `reason`. Omit `check` for unsupported diagnosis. Optional `details` stores observations. |
-| `DoctorResult`       | The framework's executed results in `checks`; it is not returned by a plugin handler.                                                           |
-
-The framework checks binding references before dispatching the handler. An invalid reference stops that binding.
 
 - `C` is the component configuration type. Here `schema.ts` exports `type CustomConfig = { inputFile: string }`, so TypeScript infers `context.binding.config.inputFile` as `string`.
 
@@ -191,7 +187,7 @@ export function doctor(context: DoctorContext<CustomConfig>): DoctorRule[] {
 }
 ```
 
-The handler body defines the predicates and returns their ordered definitions. Keep pure predicates synchronous; only actual I/O uses `async`. The framework passes a bounded signal to each `check`; forward it to I/O instead of closing over the command signal. A false result uses the definition's `reason`; a thrown error or timeout adds diagnostic context. Resource cleanup must still run after failure or cancellation. Optional `timeoutMs` overrides the default per-step limit; built-in native SDK workflows use `null` to retain their own timers.
+Forward each check's supplied signal to I/O and release resources after failure or cancellation. A false result uses the definition's `reason`; an error or timeout adds diagnostic context. Optional `timeoutMs` overrides the default check limit; `null` delegates time limits to the native workflow.
 
 In `service.ts`, type the factory parameter as `ctx: RuntimeContext<CustomConfig>`. Import `RuntimeContext` from `arsi/contracts` and subscribe to `doctor` from `./doctor.js` inside the factory. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.
 

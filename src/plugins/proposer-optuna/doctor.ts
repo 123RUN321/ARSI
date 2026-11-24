@@ -1,5 +1,6 @@
 import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
+import { parameterFileDoctorRules } from '../shared/parameter-editing/doctor.js';
 import { parseOptunaConfig } from './schema.js';
 import {
   runOptunaWorker,
@@ -7,7 +8,7 @@ import {
   type OptunaWorker,
 } from './worker.js';
 
-export function checkOptunaDependencies(
+export function optunaDoctorRules(
   context: DoctorContext,
   worker: OptunaWorker = runOptunaWorker,
 ): DoctorRule[] {
@@ -31,6 +32,7 @@ export function checkOptunaDependencies(
     return true;
   }
   return [
+    ...parameterFileDoctorRules(context),
     {
       id: 'python-dependencies',
       check: arePythonDependenciesAvailable,

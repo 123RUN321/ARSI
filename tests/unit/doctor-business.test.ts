@@ -32,7 +32,7 @@ function runDoctor(context: Probe): Promise<DoctorResult> {
 }
 
 async function runOptunaDoctor(
-  context: Probe,
+  context: DoctorContext,
   worker: OptunaWorker,
 ): Promise<DoctorResult> {
   const registry = new Registry();
@@ -67,6 +67,7 @@ async function fixture(t: TestContext): Promise<{
   const prompt = join(root, 'prompt.md');
   await writeFile(prompt, 'Use the supplied evidence.');
   await writeFile(join(baseline, 'module.md'), 'Original prompt.');
+  await writeFile(join(baseline, 'params.json'), '{"size":1}\n');
   const policy = new Policy(
     {
       schemaVersion: 'rsi.policy/v1',
@@ -224,7 +225,10 @@ test('proposer.grid constructs a valid grid and rejects repeated axes', async (t
     searchSpace: [axis],
   });
   const workingResult = await runDoctor(working);
-  assert.equal(workingResult.checks[0]!.status, 'passed');
+  assert.deepEqual(
+    workingResult.checks.map(({ status }) => status),
+    ['passed', 'passed'],
+  );
   const broken = f.probe('proposer.grid', {
     path: 'params.json',
     searchSpace: [axis, axis],
@@ -333,19 +337,243 @@ test('proposer.optuna requests only the dependency check and rejects wrong depen
       };
     },
   );
-  assert.equal(workingResult.checks[0]!.status, 'passed');
+  assert.deepEqual(
+    workingResult.checks.map(({ status }) => status),
+    ['passed', 'passed'],
+  );
   const incompatible = f.probe('proposer.optuna', config);
   const incompatibleResult = await runOptunaDoctor(incompatible, async () => ({
     environment: { python: '3.13.1', optuna: '4.4.0', numpy: '2.2.6' },
   }));
-  assert.equal(incompatibleResult.checks[0]!.status, 'failed');
+  assert.equal(
+    incompatibleResult.checks.find(({ id }) => id === 'python-dependencies')!
+      .status,
+    'failed',
+  );
   const missing = f.probe('proposer.optuna', {
     ...config,
     python: { executable: join(f.root, 'missing-python') },
   });
   const missingResult = await runDoctor(missing);
-  assert.equal(missingResult.checks[0]!.status, 'failed');
-  assert.match(missingResult.checks[0]!.reason!, /ENOENT/);
+  assert.equal(
+    missingResult.checks.find(({ id }) => id === 'python-dependencies')!.status,
+    'failed',
+  );
+  assert.match(
+    missingResult.checks.find(({ id }) => id === 'python-dependencies')!
+      .reason!,
+    /ENOENT/,
+  );
+});
+
+test('parameter doctors reject unreadable or invalid baseline JSON before Optuna probes Python', async (t) => {
+  const f = await fixture(t);
+  const file = join(f.root, 'baseline/params.json');
+  let calls = 0;
+  const worker: OptunaWorker = async () => {
+    calls++;
+    return {
+      environment: { python: '3.13.1', optuna: '4.5.0', numpy: '2.2.6' },
+    };
+  };
+  for (const content of [undefined, '{broken', '[]', 'null', '42']) {
+    if (content === undefined) await rm(file);
+    else await writeFile(file, content);
+    for (const id of ['proposer.grid', 'proposer.optuna']) {
+      const context = f.probe(
+        id,
+        id === 'proposer.grid'
+          ? {
+              path: 'params.json',
+              searchSpace: [{ name: 'size', values: [1, 2] }],
+            }
+          : {
+              path: 'params.json',
+              sampler: { type: 'random' },
+              searchSpace: [
+                { name: 'size', distribution: 'categorical', values: [1, 2] },
+              ],
+            },
+      );
+      const report =
+        id === 'proposer.optuna'
+          ? await runOptunaDoctor(context, worker)
+          : await runDoctor(context);
+      const parameterFile = report.checks.find(
+        ({ id }) => id === 'parameter-file',
+      );
+      assert.equal(parameterFile?.status, 'failed', JSON.stringify(report));
+      assert.match(
+        parameterFile.reason ?? '',
+        /restore.*JSON object.*params.json.*probe.config.path/i,
+      );
+      if (id === 'proposer.optuna')
+        assert.equal(
+          report.checks.find(({ id }) => id === 'python-dependencies')?.status,
+          'unchecked',
+        );
+      assert.equal(calls, 0);
+      assert.deepEqual(await context.runtime.facts.list('candidates'), []);
+    }
+  }
+});
+
+test('parameter doctors inspect relative and artifact baselines and leave unknown baselines unchecked', async (t) => {
+  const f = await fixture(t);
+  for (const id of ['proposer.grid', 'proposer.optuna']) {
+    const source = f.probe(
+      id,
+      id === 'proposer.grid'
+        ? {
+            path: 'params.json',
+            searchSpace: [{ name: 'size', values: [1, 2] }],
+          }
+        : {
+            path: 'params.json',
+            sampler: { type: 'random' },
+            searchSpace: [
+              { name: 'size', distribution: 'categorical', values: [1, 2] },
+            ],
+          },
+    );
+    const artifactRef = await source.runtime.artifacts.capture(
+      join(f.root, 'baseline'),
+    );
+    const baselines: (JsonObject | undefined)[] = [
+      { directory: 'baseline' },
+      { artifactRef },
+      undefined,
+    ];
+    for (const baseline of baselines) {
+      const context: DoctorContext = {
+        ...source,
+        recipe: {
+          ...source.recipe,
+          application: {
+            ...source.recipe.application,
+            config: baseline ? { baseline } : {},
+          },
+        },
+      };
+      const report =
+        id === 'proposer.optuna'
+          ? await runOptunaDoctor(context, async () => ({
+              environment: {
+                python: '3.13.1',
+                optuna: '4.5.0',
+                numpy: '2.2.6',
+              },
+            }))
+          : await diagnoseBinding(source.registry, context);
+      assert.equal(
+        report.checks.find(({ id }) => id === 'parameter-file')?.status,
+        baseline ? 'passed' : 'unchecked',
+        JSON.stringify(report),
+      );
+      if (baseline && 'artifactRef' in baseline)
+        assert.deepEqual(
+          (await readdir(context.directory)).filter((name) =>
+            name.startsWith('parameter-baseline-'),
+          ),
+          [],
+        );
+      assert.deepEqual(
+        await readFile(join(f.root, 'baseline/params.json'), 'utf8'),
+        '{"size":1}\n',
+      );
+    }
+  }
+});
+
+test('parameter artifact checks clean up failed and cancelled materializations before Python or fact writes', async (t) => {
+  const f = await fixture(t);
+  const source = f.probe('proposer.optuna', {
+    path: 'params.json',
+    sampler: { type: 'random' },
+    searchSpace: [
+      { name: 'size', distribution: 'categorical', values: [1, 2] },
+    ],
+  });
+  const file = join(f.root, 'baseline/params.json');
+  const materialize = source.runtime.artifacts.materialize.bind(
+    source.runtime.artifacts,
+  );
+  let workerCalls = 0;
+  const worker: OptunaWorker = async () => {
+    workerCalls++;
+    return {
+      environment: { python: '3.13.1', optuna: '4.5.0', numpy: '2.2.6' },
+    };
+  };
+  for (const outcome of [
+    'invalid',
+    'missing',
+    'cancel-during',
+    'cancel-after',
+  ]) {
+    if (outcome === 'missing') await rm(file);
+    else await writeFile(file, outcome === 'invalid' ? '{broken' : '{}');
+    const artifactRef = await source.runtime.artifacts.capture(
+      join(f.root, 'baseline'),
+    );
+    const controller = new AbortController();
+    let materializations = 0;
+    const intercepted = t.mock.method(
+      source.runtime.artifacts,
+      'materialize',
+      async (ref: string, directory: string) => {
+        materializations++;
+        if (outcome === 'cancel-during')
+          controller.abort(new Error('Interrupted parameter materialization'));
+        await materialize(ref, directory);
+        if (outcome === 'cancel-after')
+          controller.abort(new Error('Interrupted parameter materialization'));
+      },
+    );
+    const context: DoctorContext = {
+      ...source,
+      signal: controller.signal,
+      runtime: source.runtime.extend({ signal: controller.signal }),
+      recipe: {
+        ...source.recipe,
+        application: {
+          ...source.recipe.application,
+          config: { baseline: { artifactRef } },
+        },
+      },
+    };
+    try {
+      const diagnostic = runOptunaDoctor(context, worker);
+      if (outcome.startsWith('cancel-')) {
+        await assert.rejects(
+          diagnostic,
+          /Interrupted parameter materialization/,
+        );
+      } else {
+        const report = await diagnostic;
+        assert.equal(
+          report.checks.find(({ id }) => id === 'parameter-file')?.status,
+          'failed',
+        );
+        assert.equal(
+          report.checks.find(({ id }) => id === 'python-dependencies')?.status,
+          'unchecked',
+        );
+      }
+      assert.equal(materializations, 1);
+      assert.equal(workerCalls, 0);
+      assert.deepEqual(
+        (await readdir(context.directory)).filter((name) =>
+          name.startsWith('parameter-baseline-'),
+        ),
+        [],
+      );
+      for (const kind of ['experiments', 'candidates', 'measurements'])
+        assert.deepEqual(await source.runtime.facts.list(kind), []);
+    } finally {
+      intercepted.mock.restore();
+    }
+  }
 });
 
 test('proposer.operator loads task, stage prompts and knowledge without retrieval or inference', async (t) => {

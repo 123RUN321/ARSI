@@ -37,6 +37,7 @@ import {
   type OperatorSummary,
 } from '../shared/operator-attempt/schema.js';
 import type { OperatorSummarizerConfig } from './schema.js';
+import { operatorSummarizerDoctorRules } from './doctor.js';
 import {
   candidateMetricFeedback,
   projectMetricProfile,
@@ -145,16 +146,25 @@ async function storeSummary(
   return { action: 'summarize', summaryRef, historyRef };
 }
 
+export async function readSummaryPrompt(
+  path: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const prompt = await readFile(path, { encoding: 'utf8', signal });
+  if (!prompt.trim())
+    throw new Error('Operator summary promptFile must not be empty');
+  return prompt;
+}
+
 export const createOperatorSummarizer: OperationDefinition<
   OperatorSummarizerInput,
   OperatorSummarizerOutput,
   OperatorSummarizerConfig
->['create'] = async (config) => {
-  const prompt = await readFile(config.promptFile, 'utf8');
-  if (!prompt.trim())
-    throw new Error('Operator summary promptFile must not be empty');
+>['create'] = async (config, services) => {
+  services.event?.on('rsi/doctor', operatorSummarizerDoctorRules);
 
   async function explain(
+    prompt: string,
     input: OperatorSummarizerInput,
     parentRef: string,
     baselineMeasurementRef: string,
@@ -227,6 +237,7 @@ export const createOperatorSummarizer: OperationDefinition<
   return {
     async execute(input, context) {
       context.signal.throwIfAborted();
+      const prompt = await readSummaryPrompt(config.promptFile, context.signal);
       if (input.phase === 'static') {
         validateActions(input, input.entryCandidateRef);
         const analysis = await readAnalysis(input.analysisRef, null, context);
@@ -250,6 +261,7 @@ export const createOperatorSummarizer: OperationDefinition<
           ),
         );
         const content = await explain(
+          prompt,
           input,
           input.entryCandidateRef,
           baselineMeasurementRef,
@@ -330,6 +342,7 @@ export const createOperatorSummarizer: OperationDefinition<
           ? null
           : candidateMetricFeedback(diagnostic, candidateProfile);
       const content = await explain(
+        prompt,
         input,
         parent.ref,
         input.incumbentMeasurementRef,
