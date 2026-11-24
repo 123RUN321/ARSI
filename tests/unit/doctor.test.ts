@@ -20,6 +20,7 @@ import { applicationContract } from '../../src/contracts/plugin-types/applicatio
 import type { JsonObject } from '../../src/contracts/json.js';
 import { doctorRecipe } from '../../src/runtime/doctor/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
+import { waitForProcessExit } from '../helpers/process-exit.js';
 import type {
   DoctorReport,
   OperationDoctor,
@@ -1035,7 +1036,7 @@ test('an aborted process probe closes its descendant process', async () => {
     assert.ok(descendant > 0, 'probe spawned its owned descendant');
     controller.abort(new Error('process-tree-test-abort'));
     assert.match(String(await outcome), /process-tree-test-abort/);
-    assert.throws(() => process.kill(descendant, 0), /ESRCH/);
+    await waitForProcessExit(descendant);
   } finally {
     controller.abort(new Error('test cleanup'));
     await outcome;

@@ -39,6 +39,11 @@ or combine unrelated tiling, math and launch changes in a single hypothesis.
 Use actual supplied hardware information; do not manufacture core counts or
 buffer capacities from a reference example.
 
+Prefer one simple change before trying broader rewrites. For transpose/copy,
+test contiguous subtiles with the same index mapping and full tail coverage
+before changing the grid topology. For broadcast pointwise kernels, preserve
+load/store order when input and output may alias.
+
 Keep an attribution anchor: when changing source-level math, preserve indexing,
 tiling and launch configuration unless the diagnosed transformation requires a
 specific coordinated change. For pass merge, preserve effective precision at

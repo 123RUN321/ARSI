@@ -34,8 +34,18 @@ Ground conclusions in this attempt's source changes and actual feedback. When
 correctness failed, identify the likely violated invariant, such as effective
 precision across a store/load, an index equation, a removed consumer, or a loop
 trip count. Do not assert a root cause unsupported by the available evidence.
-When several changes were made, name the most likely mechanism without blaming
-unrelated techniques. Missing profiler metrics stay unknown.
+Treat a reported UB overflow, unsupported API, or duplicate launch argument as a
+correctness or compatibility issue. Account for first-call coverage and aliasing
+when the supplied checks expose a stateful shortcut.
+
+Assess the diagnosis and the fix separately. A plausible bottleneck can survive
+an unsuccessful fix. Judge performance by the formal latency and use matched
+profile data to explain the result. A better counter alone does not establish a
+faster kernel. Missing counters remain unknown, and an all-zero capture cannot
+establish pipeline improvement or fallback. For kernels below 0.1 ms, treat a
+single search timing as provisional and suggest a paired same-device repeat
+when the result depends on a small difference. Name any concurrent edits that
+prevent isolating the effect.
 
 Make avoid/try patterns operational. Avoid only a concrete transformation shown
 harmful or already ineffective by this attempt. Suggest one source transformation

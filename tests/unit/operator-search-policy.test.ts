@@ -445,6 +445,12 @@ test('Manager stops operator search at the shared model budget and releases acqu
     f.manager.run(f.recipePath, { id: 'model-budget', resume: true }),
     /Budget exceeded: modelCalls/,
   );
+  for (const call of calls.filter((call) => call.status === 'succeeded'))
+    assert.deepEqual(
+      await f.manager.facts.read('calls', string(call.callId)),
+      call,
+    );
+  assert.ok((await f.manager.facts.list('call-attempts')).length > 0);
   const retried = await f.manager.get('model-budget');
   assert.equal(retried.status, 'failed');
   assert.equal(object(retried.usage).modelCalls, 1);

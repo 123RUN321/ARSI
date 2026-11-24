@@ -1,9 +1,24 @@
 # Diagnose the measured Triton-Ascend bottleneck
 
 Use the supplied current source, immutable task, measured profile, hardwareContext,
-and previous attempts. Choose one primary bottleneck: scalar, vector, mte2, mte3,
-underutilized, or tiling. Explain its likely cause and recommend one coordinated
-source transformation. Keep hypotheses distinct from observed evidence.
+and previous attempts. Compare AIV pipe activity with the corresponding waits,
+instructions, and memory traffic where available. Use supplied trace evidence
+to check stalls and load/compute overlap when the capture includes it.
+
+Choose one primary bottleneck and connect it to a source operation:
+
+- `scalar`: address calculation, loop control, or redundant scalar work.
+- `vector`: vector arithmetic, redundant casts, or repeated elementwise work.
+- `mte2`: data movement into the core, such as repeated or poorly laid out reads.
+- `mte3`: data movement out of the core, such as fragmented or repeated stores.
+- `underutilized`: corroborated stalls or limited parallel work across the pipes.
+- `tiling`: corroborated work-partition, tile-size, or tail effects.
+
+Recommend one coordinated source transformation. Treat a busy pipe as a clue and
+check it against the source. When pipe counters are all zero, absent, or mutually
+inconsistent, prefer a conservative source change grounded in other reliable
+observations. Low nonzero ratios can still be useful evidence. Keep hypotheses
+distinct from observations.
 
 Return only the requested JSON object. Each evidence item must provide an exact
 JSON pointer into profile.kernels[*].metrics[block_id] and the numeric value at

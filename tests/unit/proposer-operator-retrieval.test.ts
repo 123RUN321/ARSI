@@ -22,6 +22,7 @@ import {
 import type { EmbeddingConfig } from '../../src/plugins/proposer-operator/schema.js';
 import type { StaticIssue } from '../../src/plugins/shared/operator-attempt/schema.js';
 
+import { waitForProcessExit } from '../helpers/process-exit.js';
 import { prepareKnowledgeFixture } from '../fixtures/operator-proposer/setup.js';
 
 const processGroupSkip =
@@ -322,7 +323,7 @@ setInterval(() => {}, 1000);
   const pid = processEvidence.pid;
   assert.equal(typeof pid, 'number');
   if (typeof pid !== 'number') throw new Error('Missing retrieval process PID');
-  assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  await waitForProcessExit(pid);
 });
 
 test('worker failure, malformed identity and explicitly excessive logs never become retrieval misses', async (t) => {
@@ -420,7 +421,7 @@ test('timeout and cancellation close the worker before retrieval rejects', async
       ),
     );
     assert.equal(evidence.cleanup, 'confirmed');
-    assert.throws(() => process.kill(evidence.pid, 0), /ESRCH/);
+    await waitForProcessExit(evidence.pid);
   }
 });
 
