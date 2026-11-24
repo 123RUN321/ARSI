@@ -1,33 +1,36 @@
 import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
-import { runDoctorCheck } from '../../../shared/doctor-check.js';
+import { failed, passed } from '../../../shared/doctor-check.js';
+import { errorText } from '../../../shared/errors.js';
+import { isHttpUrl } from '../../shared/doctor/checks.js';
 import type { GymPromotionConfig } from './schema.js';
 import { resolvePromotionConfig } from './service.js';
 
-export async function gymPromotionDoctor(
+export function gymPromotionDoctor(
   context: DoctorContext<GymPromotionConfig>,
-): Promise<DoctorResult> {
-  const configuration = await runDoctorCheck(
-    'configuration',
-    async (signal) => {
-      signal.throwIfAborted();
-      const config = resolvePromotionConfig(context.binding.config);
-      if (!URL.canParse(config.baseUrl))
-        throw new Error(
-          'Set baseUrl to a valid URL or correct the environment variable it references.',
-        );
-    },
-    { signal: context.signal },
-  );
+): DoctorResult {
+  let config: GymPromotionConfig;
+  try {
+    config = resolvePromotionConfig(context.binding.config);
+  } catch (error) {
+    context.signal.throwIfAborted();
+    return failed(
+      'configuration',
+      `Correct baseUrl and its environment variable. ${errorText(error)}`,
+    );
+  }
+  if (!isHttpUrl(config.baseUrl))
+    return failed(
+      'configuration',
+      'Set baseUrl to a valid URL using HTTP(S) without embedded credentials, or correct the environment variable it references.',
+    );
   return {
     checks: [
-      configuration,
+      ...passed('configuration').checks,
       {
         id: 'holdout-service',
         status: 'unchecked',
         reason:
-          configuration.status === 'failed'
-            ? 'Gym configuration failed validation. Correct baseUrl before using Gym.'
-            : 'Doctor does not contact Gym or execute holdout; the configured profile must register the requested benchmark and adapter before release.',
+          'Doctor does not contact Gym or execute holdout; the configured profile must register the requested benchmark and adapter before release.',
       },
     ],
   };

@@ -1,5 +1,5 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import { failed, passed, runDoctorCheck } from '../../shared/doctor-check.js';
 import { object } from '../../shared/json.js';
 import {
   checkNativeAgentExecutable,
@@ -28,19 +28,25 @@ export async function checkClaudeCodeAgent(
       '--strict-mcp-config',
     ],
   );
+  if (executable.status === 'failed')
+    return failed(executable.id, executable.reason, executable.details);
+  const authentication = await runDoctorCheck(
+    'authentication',
+    (signal) => checkClaudeAuthentication(context, signal),
+    { signal: context.signal },
+  );
+  if (authentication.status === 'failed')
+    return failed(
+      authentication.id,
+      authentication.reason,
+      authentication.details,
+    );
   const modelAccess: DoctorResult['checks'][number] = {
     id: 'model-access',
     status: 'unchecked',
     reason:
       'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
   };
-  if (executable.status !== 'passed')
-    return { checks: [executable, modelAccess] };
-  const authentication = await runDoctorCheck(
-    'authentication',
-    (signal) => checkClaudeAuthentication(context, signal),
-    { signal: context.signal },
-  );
   return {
     checks: [
       executable,
@@ -50,7 +56,7 @@ export async function checkClaudeCodeAgent(
         reason:
           'Claude Code doctor exposes text diagnostics without a machine-readable health report; run claude doctor for installation details.',
       },
-      authentication,
+      ...passed('authentication').checks,
       modelAccess,
     ],
   };

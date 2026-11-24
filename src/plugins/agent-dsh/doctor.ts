@@ -1,6 +1,6 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import { parseDocument } from 'yaml';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import { failed, passed, runDoctorCheck } from '../../shared/doctor-check.js';
 import {
   checkNativeAgentExecutable,
   runNativeAgentCommand,
@@ -15,23 +15,25 @@ export async function checkDshAgent(
     ['--profile', 'headless', '--help'],
     ['--json', '--permission-mode', '--approval-policy'],
   );
+  if (executable.status === 'failed')
+    return failed(executable.id, executable.reason, executable.details);
+  const profile = await runDoctorCheck(
+    'profile-config',
+    (signal) => checkDshProfile(context, signal),
+    { signal: context.signal },
+  );
+  if (profile.status === 'failed')
+    return failed(profile.id, profile.reason, profile.details);
   const modelAccess: DoctorResult['checks'][number] = {
     id: 'model-access',
     status: 'unchecked',
     reason:
       'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
   };
-  if (executable.status !== 'passed')
-    return { checks: [executable, modelAccess] };
-  const profile = await runDoctorCheck(
-    'profile-config',
-    (signal) => checkDshProfile(context, signal),
-    { signal: context.signal },
-  );
   return {
     checks: [
       executable,
-      profile,
+      ...passed('profile-config').checks,
       {
         id: 'doctor',
         status: 'unchecked',

@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { runDoctorProbe } from '../../shared/doctor-check.js';
+import { failed, passed, runDoctorProbe } from '../../shared/doctor-check.js';
 import { object, string } from '../../shared/json.js';
 import { projectMarker } from '../shared/agent-editing/project.js';
 import { executablePath } from '../shared/doctor/executable.js';
@@ -25,19 +25,12 @@ export async function checkCodexAgent(
     options,
   );
   const command = executable.value;
-  if (!command) {
-    return {
-      checks: [
-        executable.check,
-        {
-          id: 'model-access',
-          status: 'unchecked',
-          reason:
-            'Proposal-side model access was not checked because the Codex executable is unavailable.',
-        },
-      ],
-    };
-  }
+  if (!command)
+    return failed(
+      executable.check.id,
+      executable.check.reason,
+      executable.check.details,
+    );
   if (!command.supportsDoctor) {
     return {
       checks: [
@@ -62,18 +55,16 @@ export async function checkCodexAgent(
     (signal) => runCodexDiagnostics(context, command, signal),
     options,
   );
+  if (!diagnosis.value)
+    return failed(diagnosis.check.id, diagnosis.check.reason, {
+      modelList: 'unchecked',
+      providerReachability: 'unchecked',
+    });
   return {
     checks: [
       executable.check,
-      {
-        ...diagnosis.check,
-        ...(diagnosis.value ?? {
-          details: {
-            modelList: 'unchecked',
-            providerReachability: 'unchecked',
-          },
-        }),
-      },
+      ...passed('doctor', diagnosis.value.reason, diagnosis.value.details)
+        .checks,
       {
         id: 'model-access',
         status: 'unchecked',

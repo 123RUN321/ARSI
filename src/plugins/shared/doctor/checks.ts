@@ -17,3 +17,16 @@ export function missingPath(error: unknown): string | undefined {
 export function checkOperationConfiguration(): DoctorResult {
   return passed('configuration');
 }
+
+export function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      !url.username &&
+      !url.password
+    );
+  } catch {
+    return false;
+  }
+}

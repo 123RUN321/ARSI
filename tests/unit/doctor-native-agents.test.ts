@@ -81,7 +81,8 @@ else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.strin
         'failed',
       );
       assert.ok(!JSON.stringify(report).includes('invalid-native-secret'));
-      assert.equal(report.checks.at(-1)?.status, 'unchecked');
+      assert.equal(report.checks.length, 1);
+      assert.equal(report.checks.at(-1)?.status, 'failed');
     }
 
     await writeFile(executable, 'console.log("--permission-mode");');
@@ -109,7 +110,10 @@ else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.strin
       await symlink(target, link);
       binding.config.executable = link;
       report = await diagnose();
-      assert.equal(report.checks[0].status, 'passed');
+      assert.equal(
+        report.checks[0].id,
+        pluginId === 'agent.dsh' ? 'profile-config' : 'authentication',
+      );
     }
     controller.abort();
     await assert.rejects(diagnose());

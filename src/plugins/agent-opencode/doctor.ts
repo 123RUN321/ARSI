@@ -5,7 +5,7 @@ import type {
   DoctorResult,
   JsonValue,
 } from '../../contracts/index.js';
-import { runDoctorCheck } from '../../shared/doctor-check.js';
+import { failed, passed, runDoctorCheck } from '../../shared/doctor-check.js';
 import {
   checkNativeAgentExecutable,
   runNativeAgentCommand,
@@ -20,27 +20,40 @@ export async function checkOpenCodeAgent(
     ['run', '--help'],
     ['--standalone', '--format', '--model', '--archived'],
   );
+  if (executable.status === 'failed')
+    return failed(executable.id, executable.reason, executable.details);
+  const version = await runDoctorCheck(
+    'version',
+    (signal) => checkOpenCodeVersion(context, signal),
+    { signal: context.signal },
+  );
+  if (version.status === 'failed')
+    return failed(version.id, version.reason, version.details);
+  const configuration = await runDoctorCheck(
+    'configuration',
+    (signal) => checkOpenCodeConfiguration(context, signal),
+    { signal: context.signal },
+  );
+  if (configuration.status === 'failed')
+    return failed(
+      configuration.id,
+      configuration.reason,
+      configuration.details,
+    );
   const modelAccess: DoctorResult['checks'][number] = {
     id: 'model-access',
     status: 'unchecked',
     reason:
       'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
   };
-  if (executable.status !== 'passed')
-    return { checks: [executable, modelAccess] };
-  const version = await runDoctorCheck(
-    'version',
-    (signal) => checkOpenCodeVersion(context, signal),
-    { signal: context.signal },
-  );
-  if (version.status !== 'passed')
-    return { checks: [executable, version, modelAccess] };
-  const configuration = await runDoctorCheck(
-    'configuration',
-    (signal) => checkOpenCodeConfiguration(context, signal),
-    { signal: context.signal },
-  );
-  return { checks: [executable, version, configuration, modelAccess] };
+  return {
+    checks: [
+      executable,
+      version,
+      ...passed('configuration').checks,
+      modelAccess,
+    ],
+  };
 }
 
 async function checkOpenCodeVersion(

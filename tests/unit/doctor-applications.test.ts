@@ -358,7 +358,7 @@ test('doctor resolves Pi model references and token limits without inference or 
   assert.ok(!JSON.stringify(absent).includes('fixture-secret-never-print'));
   assert.equal(
     absent.checks.find((check) => check.id === 'model-access')?.status,
-    'unchecked',
+    undefined,
   );
   assert.equal(
     requests.length,
