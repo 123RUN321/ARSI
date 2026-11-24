@@ -6,7 +6,6 @@ import type {
 import { configSchema, type EvaluatorConfig } from './schema.js';
 import { inferencebenchContract } from '../../contracts/plugin-types/index.js';
 import { createInferencebench } from './service.js';
-import { inferencebenchDoctor } from './doctor.js';
 export const inferencebenchDefinition: OperationDefinition<
   InferencebenchInput,
   InferencebenchOutput,
@@ -18,5 +17,4 @@ export const inferencebenchDefinition: OperationDefinition<
   contract: inferencebenchContract,
   configSchema,
   create: createInferencebench,
-  doctor: inferencebenchDoctor,
 };

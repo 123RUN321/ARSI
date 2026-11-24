@@ -6,7 +6,6 @@ import type {
 import { configSchema, type AgentPiConfig } from './schema.js';
 import { agentContract } from '../../contracts/plugin-types/index.js';
 import { createAgentPi } from './service.js';
-import { checkPiAgent } from './doctor.js';
 export const piDefinition: OperationDefinition<
   AgentInput,
   AgentOutput,
@@ -17,5 +16,4 @@ export const piDefinition: OperationDefinition<
   contract: agentContract,
   configSchema,
   create: createAgentPi,
-  doctor: checkPiAgent,
 };

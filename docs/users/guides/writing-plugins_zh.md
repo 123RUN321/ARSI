@@ -43,10 +43,18 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 | `contract`             | 声明插件遵循的公共契约。        | 必填，填写导入的契约对象，如 `proposerContract`。                                    |
 | `configSchema`         | 校验该实现的配置。              | 必填，填写 JSON Schema；没有配置时也声明对象 Schema。                                |
 | `create`               | 根据配置创建插件实例。          | 必填，填写异步函数 `create(config, context)`，返回含 `execute` 和 `dispose` 的对象。 |
-| `doctor`               | 在实验前诊断该组件的运行前提。  | 可选的 `OperationDoctor<C>` 函数，接收 `DoctorContext<C>` 并返回 `DoctorResult`。    |
 | `implementationDigest` | 记录实现版本，供实验追溯。      | 可选，填写覆盖实际实现代码的摘要；代码变化时更新。                                   |
 
 - 省略 `implementationDigest` 时，Registry 根据 `create` 函数文本、契约和配置 Schema 生成摘要。
+
+### 可选的诊断和清理事件
+
+用 `registry.registerOperation(definition)` 注册插件。按需在 `create(config, ctx)` 中通过 `ctx.event.on` 订阅 `doctor` 和 `cleanup`。两个事件都可省略。诊断和清理命令都会创建临时实例，清理预览也如此。对可复用资源的修改应放在收到 `dryRun: false` 的清理回调中。示例见[插件诊断与资源清理](runtime-events_zh.md#插件诊断与资源清理)。
+
+| 能力      | 注册方式                                     | 处理器返回值                                          |
+| --------- | -------------------------------------------- | ----------------------------------------------------- |
+| `doctor`  | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorResult`，包含当前绑定的诊断结果。              |
+| `cleanup` | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，列出清理或预览结果。无资源时返回 `[]`。 |
 
 ### configSchema
 
@@ -139,7 +147,7 @@ import type { KeepParentConfig } from './schema.js';
 
 export async function createKeepParent(
   config: KeepParentConfig,
-  _context: RuntimeContext,
+  _context: RuntimeContext<KeepParentConfig>,
 ): Promise<Operation<ProposerInput, ProposerOutput>> {
   return {
     // 检查取消信号和父候选，返回保留父候选的结果。
@@ -190,7 +198,7 @@ export const keepParentDefinition: OperationDefinition<
 
 Runtime 通过注册 ID 查找插件。创建文件或在 Recipe 中填写 ID 都不会自动加载代码，需要针对新增的插件进行注册操作。
 
-> 维护框架内置插件时，也可将实现放在 `src/plugins/`，在[内置注册文件](../../../src/runtime/builtins.ts)中注册，并执行 `pnpm build` 随框架构建。
+> 开发内置插件时，从 `src/plugins/<name>/index.ts` 导出插件的 `OperationDefinition`，在 `src/runtime/builtins.ts` 中导入该定义并加入 [`definitions` 数组](../../../src/runtime/builtins.ts)，然后执行 `pnpm build`。
 
 1. 使用自定义插件工程自己的构建命令生成 `dist/proposer-keep-parent/`。创建 `~/.arsi/plugins/my-extension/`，再将编译结果及运行时依赖部署到该目录，保留相对目录结构。
 
@@ -282,7 +290,7 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 arsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
 ```
 
-`doctor` 检查契约、绑定和配置，再调用每个所选组件定义上的可选 `doctor` 函数，并将返回的 `DoctorResult` 纳入报告。
+`doctor` 检查契约、绑定和配置，再向提供 `rsi/doctor` 处理器的每个选中绑定派发事件，并将返回的 `DoctorResult` 纳入报告。
 
 ## 使用 RuntimeContext
 
@@ -373,4 +381,4 @@ try {
 
 宿主中的注册只对该 Runtime 生效。另行启动 CLI 时，将扩展放入默认用户级目录自动加载，或使用 `--plugin-dir` 指定扩展目录。
 
-`Recipe.load` 装配并检查定义的结构，不执行前提探测。需要 CLI 预检时，使用相同的扩展注册运行 `arsi doctor`。在组件定义上增加可选 `doctor` 即可提供自己的诊断，公开回调和完整注册示例见[自定义组件如何接入 doctor](doctor_zh.md#4-自定义组件如何接入-doctor)。
+`Recipe.load` 装配并检查定义的结构，不执行前提探测。需要 CLI 预检时，使用相同的扩展注册运行 `arsi doctor`。注册 `rsi/doctor` 处理器即可提供组件诊断。公开回调和完整注册示例见[自定义组件如何接入 doctor](doctor_zh.md#4-自定义组件如何接入-doctor)。

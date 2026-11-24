@@ -28,8 +28,8 @@ export interface WorkspaceService {
   release(ref: string): Promise<void>;
 }
 declare module './context.js' {
-  interface RuntimeContext {
-    readonly event: EventPipeline;
+  interface RuntimeContext<C extends JsonObject = JsonObject> {
+    readonly event: EventPipeline<C>;
     rootDirectory: string;
     /** Stable local runtime data root; plugins own their subdirectories and cleanup. */
     dataDirectory: string;

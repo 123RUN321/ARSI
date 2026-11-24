@@ -1,9 +1,11 @@
+import type { JsonObject } from '../json.js';
+
 /**
  * Shared runtime scope. Modules add typed capabilities through declaration
  * merging; the owner supplies those capabilities before handing out a scope.
  * Contexts are live process objects and must not be persisted as JSON.
  */
-export class RuntimeContext {
+export class RuntimeContext<C extends JsonObject = JsonObject> {
   /**
    * Inherit this scope and shadow only the supplied fields, following Cordis's
    * metadata scope model. Descriptors preserve getters and symbol keys. Values

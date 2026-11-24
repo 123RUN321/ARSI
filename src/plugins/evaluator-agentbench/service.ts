@@ -22,11 +22,17 @@ import {
   type SdkEvaluatorConfig,
 } from '../shared/evaluator-adapter/configuration.js';
 import { isFinalizedVerifierTimeout } from './finalized-timeout.js';
+import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
+import { agentbenchDoctor } from './doctor.js';
 export async function createAgentbench(
   config: AgentbenchConfig,
-  _context: RuntimeContext,
+  ctx: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<AgentbenchInput, AgentbenchOutput>> {
+  ctx.event?.on('rsi/doctor', agentbenchDoctor);
+  ctx.event?.on('rsi/cleanup', (request) =>
+    cleanupEvaluatorBinding(request, 'agentbundle'),
+  );
   validate(configSchema, config, 'evaluator config');
   return {
     async execute(input, context): Promise<AgentbenchOutput> {
@@ -55,11 +61,18 @@ export async function createAgentbench(
           await context.charge('evaluationRuns', 1);
           let result: unknown;
           try {
-            result = await runner({
-              configPath,
-              signal: context.signal,
-              env: process.env,
-            });
+            result = await runner(
+              {
+                configPath,
+                signal: context.signal,
+                env: process.env,
+              },
+              {
+                context,
+                kind: 'agentbundle',
+                workspaceRef: execution.workspaceRef,
+              },
+            );
           } catch (error) {
             const partial =
               error && typeof error === 'object' && 'result' in error
@@ -121,7 +134,7 @@ export async function createAgentbench(
         },
       );
     },
-    async dispose(): Promise<void> {},
+    async dispose() {},
   };
 }
 

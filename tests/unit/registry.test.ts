@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter, once } from 'node:events';
 import {
   defineContract,
   RuntimeContext,
   type OperationDefinition,
 } from '../../src/contracts/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
+import { withBindingInstance } from '../../src/runtime/manager/instances.js';
+import { FileFacts } from '../../src/runtime/storage/index.js';
 
 function definition(label: string): OperationDefinition {
   return {
@@ -72,34 +75,15 @@ test('managed creation rejects unknown and unregistered plugins', async (t) => {
   );
 });
 
-test('doctor is an optional function capability and registration never invokes it', async (t) => {
+test('registration rejects a doctor field and leaves instance creation to its caller', async (t) => {
   const registry = new Registry();
   t.after(() => registry.dispose());
-  const invalid = definition('invalid');
-  Object.defineProperty(invalid, 'doctor', { value: true });
+  const invalid = { ...definition('invalid'), doctor: () => ({ checks: [] }) };
   assert.throws(
     () => registry.registerOperation(invalid),
-    /doctor must be a function/,
+    /unknown field doctor/,
   );
   assert.deepEqual(registry.catalog().plugins, []);
-  let calls = 0;
-  const worker = definition('worker');
-  registry.registerOperation({
-    ...worker,
-    async doctor() {
-      calls++;
-      return { checks: [] };
-    },
-  });
-  assert.equal(typeof registry.get(worker.id).doctor, 'function');
-  const context = new RuntimeContext();
-  const operation = await registry.get(worker.id).create({}, context);
-  try {
-    assert.equal(await operation.execute('input', context), 'worker:default');
-    assert.equal(calls, 0);
-  } finally {
-    await operation.dispose();
-  }
 });
 
 test('managed configuration is validated before factory effects', async (t) => {
@@ -215,4 +199,82 @@ test('unregister and late Cordis teardown preserve a replacement registration', 
   }
   await registry.dispose();
   assert.deepEqual(registry.catalog(), { plugins: [], policies: [] });
+});
+
+test('a binding request retains only its temporary instance until reply and disposal settle', async (t) => {
+  const registry = new Registry();
+  t.after(() => registry.dispose());
+  const worker = definition('worker');
+  const barrier = new EventEmitter();
+  const entered = once(barrier, 'entered');
+  const finish = once(barrier, 'finish');
+  const disposed: string[] = [];
+  const unload = registry.registerOperation({
+    ...worker,
+    async create(config, ctx) {
+      ctx.event.on('rsi/cleanup', async (request) => {
+        assert.equal(request.bindingId, ctx.bindingId);
+        assert.throws(
+          () => ctx.event.emit('rsi/cleanup', request),
+          /explicit request to a binding/,
+        );
+        barrier.emit('entered');
+        await finish;
+        return [{ key: String(config.suffix), status: 'preview' }];
+      });
+      return {
+        async execute() {
+          return assert.fail('unexpected execution');
+        },
+        async dispose() {
+          await Promise.resolve();
+          disposed.push(ctx.bindingId);
+        },
+      };
+    },
+  });
+  registry.registerOperation({
+    ...worker,
+    id: 'registry.peer',
+    async create() {
+      return assert.fail('unaddressed plugin');
+    },
+  });
+  const context = new RuntimeContext().extend({
+    experimentId: 'test',
+    bindingId: 'left',
+    dataDirectory: '.',
+    facts: new FileFacts('.'),
+    signal: new AbortController().signal,
+  });
+  const request = () =>
+    withBindingInstance(
+      registry,
+      { plugin: worker.id, config: {} },
+      context,
+      'rsi/cleanup',
+      (target, event) =>
+        target.serial(target, event, {
+          ...context,
+          dryRun: true,
+          pluginId: worker.id,
+        }),
+    );
+  const reply = request();
+  await Promise.race([
+    entered,
+    reply.then(() => assert.fail('expected a pending reply')),
+  ]);
+  try {
+    assert.throws(unload, /in use/);
+    assert.deepEqual(disposed, []);
+  } finally {
+    barrier.emit('finish');
+  }
+  assert.deepEqual(await reply, [{ key: 'default', status: 'preview' }]);
+  assert.deepEqual(disposed, ['left']);
+  unload();
+  await assert.rejects(request(), /Unknown plugin/);
+  registry.registerOperation(worker);
+  assert.equal(await request(), undefined);
 });

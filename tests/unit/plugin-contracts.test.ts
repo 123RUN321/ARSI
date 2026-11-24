@@ -47,9 +47,6 @@ test('implementations share a fixed public type and reject conflicting declarati
         }),
       /conflicting.*contract|contract.*conflict/i,
     );
-    const operation = await registry
-      .get(definition.id)
-      .create({}, {} as RuntimeContext);
     const context: RuntimeContext = new RuntimeContext().extend({
       experimentId: 'test',
       callId: 'test',
@@ -59,6 +56,7 @@ test('implementations share a fixed public type and reject conflicting declarati
       signal: new AbortController().signal,
       cleanup: new AbortController().signal,
     });
+    const operation = await registry.get(definition.id).create({}, context);
     await assert.rejects(
       operation.execute(
         { parent: 'candidate', goal: 'Improve', evidenceRefs: [] },

@@ -10,6 +10,8 @@ import { createGym as createGymEvaluate } from './evaluate/service.js';
 import { promotionConfigSchema } from './promotion/schema.js';
 import { createGymPromotion } from './promotion/service.js';
 import { gymPluginConfigSchema, type GymPluginConfig } from './schema.js';
+import { gymDoctor } from './evaluate/doctor.js';
+import { gymPromotionDoctor } from './promotion/doctor.js';
 
 export async function createGymOperation(
   config: GymPluginConfig,
@@ -17,6 +19,9 @@ export async function createGymOperation(
 ): Promise<Operation<GymInput, GymOutput>> {
   validate(gymPluginConfigSchema, config, 'gym plugin config');
   if (config.mode === 'evaluate') {
+    context.event?.on('rsi/doctor', (request) =>
+      gymDoctor({ ...request, binding: { ...request.binding, config } }),
+    );
     const { mode: _mode, ...evaluateConfig } = config;
     const operation = await createGymEvaluate(
       evaluateConfig,
@@ -39,6 +44,9 @@ export async function createGymOperation(
     };
   }
 
+  context.event?.on('rsi/doctor', (request) =>
+    gymPromotionDoctor({ ...request, binding: { ...request.binding, config } }),
+  );
   const { mode: _mode, ...promotionConfig } = config;
   const operation = await createGymPromotion(
     promotionConfig,

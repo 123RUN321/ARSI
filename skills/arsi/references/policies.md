@@ -36,7 +36,7 @@ Use `steps.<id>.output` for a completed visible step. Expression roots are `appl
 
 If/foreach output templates run in their local block after normal completion. Loop output runs in the outer scope after the loop, including zero iterations; retain per-round values in declared state when they are needed afterward. State updates evaluate all right-hand sides against the pre-update state. Parallel foreach branches cannot write shared state: return item results and aggregate in a later serial step. Validate stable keys unique across the complete input array before any item effects. Control results skip pending block output and propagate to the relevant loop boundary; `break`/`continue` cannot cross a foreach boundary to control an outer loop.
 
-All top-level steps run in order. Reporting and held-out evaluation use ordinary later steps. There is no report phase or finally block; plugin and Runtime lifecycles own cleanup after success, failure and cancellation. New execution checkpoints lock definition/input identity. Earlier DSL checkpoints are unsupported for resumption.
+All top-level steps run in order. Reporting and held-out evaluation use ordinary later steps. There is no report phase or finally block. When a run ends, the Runtime waits for each plugin instance to release its handles through `dispose()`. Reusable experiment resources remain available for later runs or explicit cleanup. New execution checkpoints lock definition/input identity. Earlier DSL checkpoints are unsupported for resumption.
 
 ## Expressions and limits
 

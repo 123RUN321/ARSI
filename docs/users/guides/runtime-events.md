@@ -4,7 +4,7 @@ English | [简体中文](runtime-events_zh.md) · [Getting started](../getting-s
 
 This guide explains how to subscribe to built-in events, publish custom events, and manage listeners and cleanup across a plugin's lifecycle.
 
-**Plugins access events through `RuntimeContext.event`: subscribe in `create(config, ctx)` and publish events or call services in `execute(input, ctx)` or a listener callback.**
+Plugin instances subscribe to lifecycle events through `ctx.event` in `create(config, ctx)`. They can publish events and call services in `execute(input, ctx)` or a listener.
 
 ## 1. Four dispatch modes
 
@@ -15,7 +15,7 @@ This guide explains how to subscribe to built-in events, publish custom events, 
 | `serial`    | Run listeners in order, waiting for each to finish before starting the next; a throw prevents subsequent flow.       | `rsi/before-experiment`: run checks in order before the experiment starts.                               |
 | `waterfall` | Process admission decisions through a listener chain; the Manager uses the final result to admit or reject the call. | `rsi/before-call`: decide whether to allow a binding's call, returning a `proceed` or `reject` decision. |
 
-- Listeners for built-in `serial` events must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
+- Listeners for `serial` lifecycle notifications must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
 
 ## 2. Built-in events
 
@@ -117,6 +117,20 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 | `rsi/candidate-recorded`   | After the candidate is saved.                                                                                      | `emit`   | `callId: string`: ID of the call that recorded this data.<br>`bindingId: string`: Name of the binding that recorded this data.<br>`candidateRef: string`: Reference to the saved candidate.<br>`parentRef: string \| null`: Parent candidate reference, or `null` for an initial candidate.                                                                                                                        |
 | `rsi/measurement-recorded` | After the measurement is validated and saved.                                                                      | `emit`   | `callId: string`: ID of the call that recorded this data.<br>`bindingId: string`: Name of the binding that recorded this data.<br>`measurementRef: string`: Reference to the saved measurement.                                                                                                                                                                                                                    |
 | `rsi/revision-activated`   | After activation persistence, effective binding updates, and subscription switching for existing plugin instances. | `emit`   | `activationId: string`: ID of this revision activation record.<br>`bindingIds: readonly string[]`: Names of the bindings affected by this activation.<br>`revisionRefs: Readonly<Record<string, string>>`: Map of revisions activated in this operation, keyed by binding name.<br>`policyRevisionRef?: string`: Optional Policy revision reference reserved by the contract; the current Runtime does not set it. |
+
+### Plugin diagnostics and resource cleanup
+
+Plugins subscribe to either event in `create(config, ctx)`. Full `doctor` creates a temporary instance after the binding’s declared local paths pass validation. Manual `cleanup` visits each distinct `(bindingId, pluginId)` in the current and archived Recipes using its most recent saved configuration. This reaches previous plugins even when a resume reused every evaluation. The framework awaits the reply and instance disposal before visiting the next binding.
+
+```ts
+ctx.event.on('rsi/doctor', checkEnvironment);
+ctx.event.on('rsi/cleanup', cleanupResources);
+```
+
+- `rsi/doctor` returns a `DoctorResult` for the effective Recipe binding. RSI aggregates these results.
+- `rsi/cleanup` receives `experimentId`, `bindingId`, `pluginId`, `dryRun`, `facts`, `dataDirectory` and `signal`. Return a `CleanupResult[]` with a resource `key` and a status of `preview`, `complete` or `pending` for each entry. Return `[]` when nothing remains. Preview when `dryRun` is `true` and make cleanup safe to repeat.
+
+When an instance is replaced or its run ends, the framework waits for its `dispose()` to release its handles.
 
 ## 3. Subscribe to built-in events
 

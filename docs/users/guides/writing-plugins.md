@@ -43,10 +43,18 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 | `contract`             | Declare the public contract the plugin follows.               | Required imported contract object, such as `proposerContract`.                                        |
 | `configSchema`         | Validate this implementation's configuration.                 | Required JSON Schema; declare an object Schema even when there are no settings.                       |
 | `create`               | Create a plugin instance from configuration.                  | Required async function `create(config, context)` returning an object with `execute` and `dispose`.   |
-| `doctor`               | Diagnose this component's prerequisites before an experiment. | Optional `OperationDoctor<C>` function that receives `DoctorContext<C>` and returns a `DoctorResult`. |
 | `implementationDigest` | Record the implementation version for experiment provenance.  | Optional digest covering the actual implementation code; update it when the code changes.             |
 
 - Without `implementationDigest`, Registry generates a digest from the `create` function text, contract, and configuration Schema.
+
+### Optional diagnostic and cleanup events
+
+Register the plugin with `registry.registerOperation(definition)`. In `create(config, ctx)`, subscribe with `ctx.event.on` to either or both events as needed. Both commands create a temporary instance, including for cleanup previews. Defer changes to reusable resources until the cleanup handler receives `dryRun: false`. See [Plugin diagnostics and resource cleanup](runtime-events.md#plugin-diagnostics-and-resource-cleanup).
+
+| Capability | Registration                                 | Handler result                                                     |
+| ---------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| `doctor`   | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorResult` with diagnostics for the binding.                   |
+| `cleanup`  | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results, or `[]` if none. |
 
 ### configSchema
 
@@ -139,7 +147,7 @@ import type { KeepParentConfig } from './schema.js';
 
 export async function createKeepParent(
   config: KeepParentConfig,
-  _context: RuntimeContext,
+  _context: RuntimeContext<KeepParentConfig>,
 ): Promise<Operation<ProposerInput, ProposerOutput>> {
   return {
     // Check cancellation and the parent candidate, then return it unchanged.
@@ -190,7 +198,7 @@ export const keepParentDefinition: OperationDefinition<
 
 Runtime finds plugins by registered ID. Creating a file or adding an ID to a Recipe does not load code automatically. Register each new plugin before using it.
 
-> When maintaining built-in framework plugins, you can place implementations in `src/plugins/`, register them in the [built-in registration file](../../../src/runtime/builtins.ts), and run `pnpm build` to build them with the framework.
+> For a built-in plugin, export its `OperationDefinition` from `src/plugins/<name>/index.ts`. Import the definition in `src/runtime/builtins.ts`, add it to the [`definitions` array](../../../src/runtime/builtins.ts), and run `pnpm build`.
 
 1. Run your custom plugin project's own build command to generate `dist/proposer-keep-parent/`. Create `~/.arsi/plugins/my-extension/`, then deploy the compiled files and runtime dependencies there, preserving the relative directory structure.
 
@@ -282,7 +290,7 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 arsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
 ```
 
-`doctor` checks contracts, bindings and configuration, then invokes each selected component definition's optional `doctor` function. It incorporates the returned `DoctorResult` into the report.
+`doctor` checks contracts, bindings and configuration, then dispatches `rsi/doctor` to each selected binding with a handler. It incorporates the returned `DoctorResult` into the report.
 
 ## Use RuntimeContext
 
@@ -373,4 +381,4 @@ Common `createRuntime` options are listed below; see the [Runtime entrypoint](..
 
 Registrations in a host only apply to that Runtime. A separately started CLI loads extensions from the default user-level directory, or from directories selected with `--plugin-dir`.
 
-`Recipe.load` assembles and structurally validates the definition without running prerequisite probes. Use `arsi doctor` with the same extension registrations for CLI preflight. Add optional `doctor` to the component definition for its own diagnostics; see [Connecting custom components](doctor.md#4-connecting-custom-components) for the public callback and a complete registration example.
+`Recipe.load` assembles and structurally validates the definition without running prerequisite probes. Use `arsi doctor` with the same extension registrations for CLI preflight. Register a `rsi/doctor` handler for component diagnostics. See [Connecting custom components](doctor.md#4-connecting-custom-components) for the public callback and a complete registration example.

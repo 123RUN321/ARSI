@@ -1,11 +1,30 @@
-import { mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { mkdir, mkdtempDisposable } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { lock } from 'proper-lockfile';
+import type {
+  CleanupContext,
+  CleanupResult,
+  FactStore,
+  JsonObject,
+  JsonValue,
+  JsonSchema,
+  RuntimeContext,
+} from '../../contracts/index.js';
+import { errorText, redactConfiguration } from '../../shared/errors.js';
+import { json, object, string } from '../../shared/json.js';
+import { validate } from '../../shared/schema.js';
+import type { Registry } from '../registry/index.js';
 import { acquireResourceGate } from '../revisions/exclusion.js';
-import type { FactStore } from '../../contracts/index.js';
-import { errorText } from '../../shared/errors.js';
 import type { ManagedEvents } from '../services/events.js';
-import type { Instances } from './instances.js';
+import { safeId } from '../storage/index.js';
+import {
+  assertDefinitionDigest,
+  definitionArchiveId,
+} from './definition-lock.js';
+import { acquireExecutionLock } from './execution-lock.js';
+import type { Manager } from './index.js';
+import { type Instances, withBindingInstance } from './instances.js';
 import {
   experimentCleanupState,
   readExperimentCleanupState,
@@ -344,4 +363,254 @@ export async function assertCleanupResolved(
     throw new Error(
       `Experiment ${id} cleanup is unresolved; reconcileCleanup before resuming`,
     );
+}
+
+type CleanupBinding = Pick<CleanupContext, 'bindingId' | 'pluginId'>;
+type BindingCleanupResult = CleanupResult & CleanupBinding;
+type ExperimentCleanupContext = Omit<CleanupContext, keyof CleanupBinding>;
+
+export interface ExperimentCleanupReport {
+  experimentId: string;
+  dryRun: boolean;
+  results: BindingCleanupResult[];
+}
+
+export class ExperimentInUseError extends Error {}
+
+function cleanupFacts(
+  store: FactStore,
+  ownership: AbortSignal,
+  dryRun: boolean,
+): FactStore {
+  return {
+    read: store.read.bind(store),
+    list: store.list.bind(store),
+    scan: store.scan?.bind(store),
+    write(kind, id, value) {
+      ownership.throwIfAborted();
+      if (dryRun) throw new Error('Cleanup previews cannot write facts');
+      return store.write(kind, id, value);
+    },
+  };
+}
+
+const cleanupResultSchema: JsonSchema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['key', 'status'],
+    properties: {
+      key: { type: 'string', minLength: 1 },
+      status: { enum: ['complete', 'preview', 'pending'] },
+      report: { type: 'object' },
+      error: { type: 'string' },
+    },
+  },
+};
+
+/** Read only this experiment's saved Recipes, including effective Policy defaults. */
+async function readCleanupBindings({
+  facts,
+  experimentId,
+  signal,
+}: ExperimentCleanupContext): Promise<
+  (CleanupBinding & { config?: JsonValue })[]
+> {
+  const bindings = new Map<string, CleanupBinding & { config?: JsonValue }>();
+  function add(
+    bindingId: string,
+    plugin: unknown,
+    config: JsonValue | undefined,
+  ): void {
+    const pluginId = string(plugin, 'cleanup plugin ID');
+    const key = JSON.stringify([bindingId, pluginId]);
+    // Definitions are traversed newest first.
+    if (!bindings.has(key)) bindings.set(key, { bindingId, pluginId, config });
+  }
+  function addRecipe(recipe: JsonObject): void {
+    const application = object(recipe.application);
+    add('_application', application.plugin, application.config);
+    for (const [name, entry] of Object.entries(object(recipe.bindings ?? {}))) {
+      const binding = object(entry);
+      add(name, binding.plugin, binding.config);
+    }
+  }
+
+  let definition: JsonObject;
+  try {
+    definition = await facts.read('definitions', experimentId);
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
+      throw error;
+    // A run that failed before locking its definition can still have a saved Recipe.
+    const { recipe } = await facts.read('experiments', experimentId);
+    if (recipe !== undefined) addRecipe(object(recipe));
+    return [...bindings.values()];
+  }
+  for (;;) {
+    signal.throwIfAborted();
+    assertDefinitionDigest(definition);
+    addRecipe(object(definition.recipe));
+    if (definition.reflection) {
+      const implementation = object(
+        object(definition.reflection).implementation,
+      );
+      add('_reflection', implementation.ref, implementation.config);
+    }
+    if (definition.retry === undefined) break;
+    const ref = string(
+      object(definition.retry).previousDefinition,
+      'previous definition',
+    );
+    definition = await facts.read('definition-attempts', ref);
+    if (definitionArchiveId(experimentId, definition) !== ref)
+      throw new Error(
+        'Invalid archived definition for experiment ' + experimentId,
+      );
+  }
+  return [...bindings.values()];
+}
+
+async function cleanupBinding(
+  registry: Registry,
+  runtime: RuntimeContext,
+  context: CleanupContext,
+  config: JsonValue | undefined,
+  ownership: AbortSignal,
+): Promise<CleanupResult[] | undefined> {
+  await using directory = await mkdtempDisposable(
+    join(tmpdir(), 'arsi-cleanup-'),
+  );
+  const bindingContext = runtime.extend({
+    experimentId: context.experimentId,
+    bindingId: context.bindingId,
+    callId: 'cleanup',
+    directory: directory.path,
+    dataDirectory: context.dataDirectory,
+    facts: context.facts,
+    signal: context.signal,
+    cleanup: ownership,
+  });
+  return await withBindingInstance(
+    registry,
+    {
+      plugin: context.pluginId,
+      config: object(config === undefined ? {} : config),
+    },
+    bindingContext,
+    'rsi/cleanup',
+    (target, event) => target.serial(target, event, context),
+  );
+}
+
+/**
+ * Await one cleanup reply per distinct binding and plugin in the saved Recipes.
+ * The caller holds the execution lock for writes. Its ownership signal lets handlers
+ * record an interruption while the lock is still held.
+ */
+export async function dispatchRecipeCleanup(
+  registry: Registry,
+  runtime: RuntimeContext,
+  request: ExperimentCleanupContext,
+  ownership: AbortSignal = request.signal,
+): Promise<BindingCleanupResult[]> {
+  const context: ExperimentCleanupContext = {
+    ...request,
+    facts: cleanupFacts(request.facts, ownership, request.dryRun),
+    signal: AbortSignal.any([request.signal, ownership]),
+  };
+  context.signal.throwIfAborted();
+  const results: BindingCleanupResult[] = [];
+  for (const { config, ...owner } of await readCleanupBindings(context)) {
+    if (context.signal.aborted) break;
+    try {
+      const entries = await cleanupBinding(
+        registry,
+        runtime,
+        { ...context, ...owner },
+        config,
+        ownership,
+      );
+      if (entries === undefined) continue;
+      validate(cleanupResultSchema, entries, 'Plugin cleanup results');
+      const expected = context.dryRun ? 'preview' : 'complete';
+      if (
+        entries.some(
+          (entry) => entry.status !== expected && entry.status !== 'pending',
+        )
+      )
+        throw new Error(
+          'Plugin cleanup result does not match the requested mode',
+        );
+      for (const entry of entries) {
+        if (entry.report !== undefined) json(entry.report);
+        results.push({ ...structuredClone(entry), ...owner });
+      }
+    } catch (error) {
+      results.push({
+        ...owner,
+        key: owner.bindingId,
+        status: 'pending',
+        error: redactConfiguration(config)(errorText(error)),
+      });
+    }
+  }
+  return results;
+}
+
+/** Previews are read-only. Execution shares the lock used by run and resume. */
+export async function collectExperimentCleanup(
+  manager: Manager,
+  report: ExperimentCleanupReport,
+  signal: AbortSignal,
+): Promise<void> {
+  const { experimentId, dryRun } = report;
+  signal.throwIfAborted();
+  const experiment = await manager.get(safeId(experimentId));
+  if (experiment.id !== experimentId)
+    throw new Error('Experiment identity mismatch');
+  signal.throwIfAborted();
+  const ownership = new AbortController();
+  let release: (() => Promise<void>) | undefined;
+  try {
+    if (!dryRun) {
+      const gate = await acquireResourceGate(manager.directory);
+      try {
+        release = await acquireExecutionLock(
+          manager.directory,
+          experimentId,
+          gate,
+          ownership,
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ELOCKED'
+        )
+          throw new ExperimentInUseError(
+            `Experiment ${experimentId} is in use. Preview with --dry-run or retry after it finishes.`,
+          );
+        throw error;
+      } finally {
+        await gate.release();
+      }
+    }
+    report.results = await dispatchRecipeCleanup(
+      manager.options.registry,
+      manager.context,
+      {
+        experimentId,
+        dryRun,
+        dataDirectory: manager.directory,
+        facts: manager.facts,
+        signal,
+      },
+      ownership.signal,
+    );
+    ownership.signal.throwIfAborted();
+  } finally {
+    await release?.();
+  }
 }

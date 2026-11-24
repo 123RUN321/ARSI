@@ -45,12 +45,18 @@ import {
   operatorbenchConfigSchema,
   type OperatorbenchConfig,
 } from './schema.js';
+import { cleanupEvaluatorBinding } from '../shared/evaluator-adapter/cleanup.js';
+import { operatorbenchDoctor } from './doctor.js';
 
 export async function createOperatorbench(
   rawConfig: unknown,
-  _context: RuntimeContext,
+  ctx: RuntimeContext,
   runner: EvaluatorRunner = sdkRunner,
 ): Promise<Operation<OperatorbenchInput, OperatorbenchOutput>> {
+  ctx.event?.on('rsi/doctor', operatorbenchDoctor);
+  ctx.event?.on('rsi/cleanup', (request) =>
+    cleanupEvaluatorBinding(request, 'kernel'),
+  );
   const config = parseConfig<OperatorbenchConfig>(
     operatorbenchConfigSchema,
     rawConfig,
@@ -156,15 +162,18 @@ export async function createOperatorbench(
           try {
             try {
               native = object(
-                await runner({
-                  configPath,
-                  signal: context.signal,
-                  env: {
-                    ...process.env,
-                    RSI_KERNEL_REPLAY_NO_MODEL_KEY:
-                      'not-a-secret-no-model-calls',
+                await runner(
+                  {
+                    configPath,
+                    signal: context.signal,
+                    env: {
+                      ...process.env,
+                      RSI_KERNEL_REPLAY_NO_MODEL_KEY:
+                        'not-a-secret-no-model-calls',
+                    },
                   },
-                }),
+                  { context, kind: 'kernel' },
+                ),
               );
             } catch (error) {
               if (
@@ -261,7 +270,7 @@ export async function createOperatorbench(
         },
       );
     },
-    async dispose(): Promise<void> {},
+    async dispose() {},
   };
 }
 

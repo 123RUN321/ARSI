@@ -14,8 +14,7 @@ import type { JsonObject, JsonValue } from '../../src/contracts/index.js';
 import { createRuntime, type Runtime } from '../../src/runtime/context.js';
 import { Recipe } from '../../src/runtime/loaders/recipe.js';
 import { doctorRecipe } from '../../src/runtime/doctor/index.js';
-import { Registry } from '../../src/runtime/registry/index.js';
-import { createAgentbenchDoctor } from '../../src/plugins/evaluator-agentbench/doctor.js';
+import { Evaluator } from 'arsi-evaluator';
 import type {
   SdkDoctorOptions,
   SdkDoctorRunner,
@@ -72,23 +71,12 @@ async function fixture(
   );
   Object.assign(process.env, variables);
   let selectedRunner: SdkDoctorRunner;
-  const registry = new Registry();
-  const register = registry.registerOperation.bind(registry);
-  registry.registerOperation = (definition) =>
-    register(
-      definition.id === 'evaluator.agentbench'
-        ? {
-            ...definition,
-            doctor: createAgentbenchDoctor((options) =>
-              selectedRunner(options),
-            ),
-          }
-        : definition,
-    );
+  t.mock.method(Evaluator.prototype, 'doctor', (options: SdkDoctorOptions) =>
+    selectedRunner(options),
+  );
   const runtime = await createRuntime({
     homeDirectory: false,
     rootDirectory: root,
-    registry,
   });
   t.after(async () => {
     await runtime.dispose();
@@ -297,20 +285,16 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       await writeFile(f.path, JSON.stringify(data));
       const report = await doctorRecipe(f.runtime, f.path);
       assert.ok(report.summary.failed > 0);
-      assert.equal(
-        report.checks.find((check) => check.id === 'application.baseline')
-          ?.status,
-        'failed',
+      const field =
+        missing === 'target' ? 'target.schema' : 'baseline.directory';
+      const failure = report.checks.find(
+        (check) => check.id === `application.resource.${field}`,
       );
+      assert.equal(failure?.status, 'failed');
+      assert.ok(failure.reason?.includes(resource));
       assert.equal(
-        report.checks.find((check) => check.id === 'application.verify-bundle')
+        report.checks.find((check) => check.id === 'application.plugin')
           ?.status,
-        'unchecked',
-      );
-      assert.equal(
-        report.checks.find(
-          (check) => check.id === 'application.acquire-instance',
-        )?.status,
         'unchecked',
       );
       assert.equal(
@@ -323,8 +307,12 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
           ?.status,
         'passed',
       );
-      assert.ok(
-        report.missingResources.some((entry) => entry.reference === resource),
+      assert.deepEqual(
+        report.missingResources.find(
+          (entry) =>
+            entry.binding === 'application' && entry.reference === resource,
+        )?.checksNotRun,
+        ['application.plugin'],
       );
       if (name === 'dsh-gepa' && missing === 'baseline')
         assert.equal(

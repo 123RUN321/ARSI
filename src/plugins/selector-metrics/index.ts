@@ -6,7 +6,6 @@ import type {
 import { configSchema, type MetricSelectorConfig } from './schema.js';
 import { metricSelectorContract } from '../../contracts/plugin-types/index.js';
 import { createMetricSelector } from './service.js';
-import { checkOperationConfiguration } from '../shared/doctor/checks.js';
 export const metricSelectorDefinition: OperationDefinition<
   MetricSelectorInput,
   MetricSelectorOutput,
@@ -17,5 +16,4 @@ export const metricSelectorDefinition: OperationDefinition<
   contract: metricSelectorContract,
   configSchema,
   create: createMetricSelector,
-  doctor: checkOperationConfiguration,
 };
