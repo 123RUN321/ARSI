@@ -1,3 +1,4 @@
+import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
@@ -96,7 +97,7 @@ test('gym doctor identifies the field to fix when the service URL is invalid', a
       definition,
       config: { ...config, baseUrl: 'invalid-url' },
     };
-    const report = await definition.doctor!({
+    const report = await diagnoseBinding(registry, {
       binding,
       recipe: { application: binding, bindings: {}, policyConfig: {} },
       registry,

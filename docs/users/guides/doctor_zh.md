@@ -149,7 +149,7 @@ arsi doctor my-experiment/recipe.yaml --json
 | `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。                               |
 | `DoctorResult`       | 组件通过 `checks` 返回检查结果。失败项可附上 `missingResource`，未检查项可用 `blockedBy` 引用失败项的局部 ID。框架为检查 ID 和引用添加绑定名前缀。 |
 
-组件在执行依赖检查前，可以从 `context.failedPrerequisites` 查找失败的通用检查。路径和绑定引用检查的局部 ID 分别为 `resource.<field>` 和 `binding.<field>`。组件可以用它们作为 `unchecked` 结果的 `blockedBy`。
+路径检查通过后，`context.failedPrerequisites` 会列出失败的绑定引用，例如局部 ID `binding.agentRef`。处理器可以用这些 ID 作为受阻检查的 `blockedBy`。
 
 `missingResource.field` 使用相对于绑定配置的字段名，例如 `inputFile`。本地资源的引用使用解析后的路径。报告会为字段加上绑定名和 `config` 前缀。
 

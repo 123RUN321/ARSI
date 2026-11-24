@@ -8,10 +8,9 @@ import type {
   JsonValue,
   MissingResource,
 } from '../../contracts/index.js';
-import { errorText } from '../../shared/errors.js';
+import { errorText, redactConfiguration } from '../../shared/errors.js';
 import { json, object } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
-import { createDoctorRedactor } from './redaction.js';
 
 const doctorResultSchema: JsonSchema = {
   type: 'object',
@@ -58,7 +57,7 @@ export function createFailureReport(
       {
         id: checkId,
         status: 'failed',
-        reason: createDoctorRedactor()(errorText(error)),
+        reason: redactConfiguration()(errorText(error)),
       },
     ],
   };
@@ -110,7 +109,7 @@ export class DoctorReportBuilder {
     private readonly recipeId: string,
     configuration: JsonValue,
   ) {
-    this.redactText = createDoctorRedactor(configuration);
+    this.redactText = redactConfiguration(configuration);
   }
 
   addCheck(check: DoctorCheck): void {

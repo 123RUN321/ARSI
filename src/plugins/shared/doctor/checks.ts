@@ -1,4 +1,4 @@
-import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
+import type { DoctorResult } from '../../../contracts/index.js';
 
 export function missingPath(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;

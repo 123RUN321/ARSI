@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import type { RuntimeContext } from '../../contracts/index.js';
 import type { Runtime } from '../context.js';
 import { Manager } from '../manager/index.js';
-import { ManagedEvents } from '../services/events.js';
 
 interface CleanupFailure {
   id: string;
@@ -39,7 +38,6 @@ async function rejectExperimentOperation(): Promise<never> {
 function createProbeContext(
   sourceRuntime: Runtime,
   probeManager: Manager,
-  events: ManagedEvents,
   signal: AbortSignal,
 ): RuntimeContext {
   const probeArtifacts = probeManager.artifacts;
@@ -48,7 +46,6 @@ function createProbeContext(
     cleanup: new AbortController().signal,
     experimentId: 'doctor',
     callId: 'doctor',
-    event: events.event,
     // Existing artifacts are inputs. Captures and writes belong to probe storage.
     artifacts: {
       putJson: probeArtifacts.putJson.bind(probeArtifacts),
@@ -80,19 +77,13 @@ function createProbeContext(
 async function disposeProbeRuntime(
   temporaryDirectory: string,
   probeManager: Manager | undefined,
-  probeEvents: ManagedEvents | undefined,
 ): Promise<CleanupFailure[]> {
   const failures: CleanupFailure[] = [];
-  const cleanupResults = await Promise.allSettled([
-    probeManager?.dispose(),
-    probeEvents?.dispose(),
-  ]);
-  for (const [cleanupIndex, result] of cleanupResults.entries())
-    if (result.status === 'rejected')
-      failures.push({
-        id: `doctor.cleanup.${cleanupIndex}`,
-        error: result.reason,
-      });
+  try {
+    await probeManager?.dispose();
+  } catch (error) {
+    failures.push({ id: 'doctor.cleanup.0', error });
+  }
   try {
     await rm(temporaryDirectory, { recursive: true, force: true });
   } catch (error) {
@@ -107,9 +98,8 @@ export async function openProbeRuntime(
 ): Promise<ProbeRuntime> {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'arsi-doctor-'));
   let probeManager: Manager | undefined;
-  let probeEvents: ManagedEvents | undefined;
   const dispose = (): Promise<CleanupFailure[]> =>
-    disposeProbeRuntime(temporaryDirectory, probeManager, probeEvents);
+    disposeProbeRuntime(temporaryDirectory, probeManager);
 
   try {
     const manager = new Manager({
@@ -118,18 +108,7 @@ export async function openProbeRuntime(
       directory: temporaryDirectory,
     });
     probeManager = manager;
-    probeEvents = new ManagedEvents({
-      context: () => manager.context,
-      diagnostic: ({ error }) => {
-        throw error;
-      },
-    });
-    const probeContext = createProbeContext(
-      sourceRuntime,
-      manager,
-      probeEvents,
-      signal,
-    );
+    const probeContext = createProbeContext(sourceRuntime, manager, signal);
     return {
       async createBindingContext(
         bindingIndex,

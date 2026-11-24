@@ -65,7 +65,7 @@ export interface DoctorContext<C extends JsonObject = JsonObject> {
   readonly runtime: RuntimeContext;
   readonly directory: string;
   readonly signal: AbortSignal;
-  /** Local IDs of failed checks for declared paths or binding references. */
+  /** Local IDs of failed prerequisite checks available to this handler. */
   readonly failedPrerequisites?: readonly string[];
 }
 

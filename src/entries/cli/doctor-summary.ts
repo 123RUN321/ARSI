@@ -1,5 +1,6 @@
 import { stripVTControlCharacters } from 'node:util';
 import type { DoctorCheck, DoctorReport } from '../../contracts/index.js';
+import { redactConfiguration } from '../../shared/errors.js';
 
 export function formatDoctorSummary(
   report: DoctorReport,
@@ -11,8 +12,9 @@ export function formatDoctorSummary(
   );
   const passed = report.checks.length - failed.length - unchecked.length;
   const result = failed.length ? 'failures' : 'no failures';
+  const displayPath = redactConfiguration()(recipePath);
   const lines = [
-    `Doctor found ${result} for ${report.recipeId ?? recipePath}.`,
+    `Doctor found ${result} for ${report.recipeId ?? displayPath}.`,
     `${passed} passed, ${failed.length} failed, ${unchecked.length} unchecked.`,
   ];
 
@@ -26,7 +28,7 @@ export function formatDoctorSummary(
       );
     } else if (check.id === 'recipe.validate') {
       lines.push(
-        `  Fix: Check ${recipePath} and correct the path or configuration named in the error.`,
+        `  Fix: Check ${displayPath} and correct the path or configuration named in the error.`,
       );
     } else if (check.id === 'runtime.registration') {
       lines.push(

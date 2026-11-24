@@ -166,7 +166,7 @@ function verifyReport(report: DoctorReport): void {
   }
 }
 
-test('an initialization failure belongs to its binding, static mode skips creation, and full doctor disposes live peers', async (t) => {
+test('an initialization failure belongs to its binding and doctor disposes live peers', async (t) => {
   const f = await fixture();
   t.after(f.dispose);
   const log: string[] = [];
@@ -198,13 +198,11 @@ test('an initialization failure belongs to its binding, static mode skips creati
     right: { plugin: 'selector.probe' },
   };
   await writeFile(f.path, JSON.stringify(recipe));
-  const staticReport = await doctorRecipe(f.runtime, f.path, {
-    staticOnly: true,
-  });
-  assert.equal(staticReport.summary.failed, 0);
-  assert.deepEqual(log, []);
   const full = await doctorRecipe(f.runtime, f.path);
-  assert.equal(full.summary.failed, 1);
+  assert.equal(
+    full.checks.filter(({ status }) => status === 'failed').length,
+    1,
+  );
   assert.match(
     full.checks.find((check) => check.id === 'left.script')?.reason ?? '',
     /dependency unavailable/,
@@ -246,7 +244,10 @@ test('a rejected Target path skips the Application factory and still probes othe
   const report = await doctorRecipe(f.runtime, f.path);
   const byId = new Map(report.checks.map((check) => [check.id, check]));
   assert.equal(creations, 0);
-  assert.equal(report.summary.failed, 1);
+  assert.equal(
+    report.checks.filter(({ status }) => status === 'failed').length,
+    1,
+  );
   assert.equal(
     byId.get('application.resource.target.schema')?.status,
     'failed',
@@ -314,7 +315,11 @@ test('doctor checks declared paths and continues with component diagnostics', as
       missing.checks
         .filter(({ id }) => id.endsWith('.component'))
         .map(({ id }) => id),
-      ['application.component', 'left.component', 'right.component'],
+      ['left.component', 'right.component'],
+    );
+    assert.equal(
+      missing.checks.find(({ id }) => id === 'application.plugin')?.blockedBy,
+      'application.resource.input',
     );
     verifyReport(missing);
 
@@ -373,6 +378,21 @@ test('doctor checks declared Agent references independently of plugin diagnostic
     );
     verifyReport(report);
   }
+  f.doctors({
+    'test.application': async ({ failedPrerequisites }) => {
+      assert.deepEqual(failedPrerequisites, ['binding.conflictingRef']);
+      return {
+        checks: [
+          {
+            id: 'dependent',
+            status: 'unchecked',
+            blockedBy: 'binding.conflictingRef',
+          },
+          { id: 'independent', status: 'passed' },
+        ],
+      };
+    },
+  });
   application.config = { agentRef: 'agent', conflictingRef: 'agent' };
   await writeFile(f.path, JSON.stringify(recipe));
   const report = await doctorRecipe(f.runtime, f.path);
@@ -387,6 +407,14 @@ test('doctor checks declared Agent references independently of plugin diagnostic
       ?.status,
     'passed',
   );
+  assert.equal(
+    report.checks.find(({ id }) => id === 'application.dependent')?.blockedBy,
+    'application.binding.conflictingRef',
+  );
+  assert.equal(
+    report.checks.find(({ id }) => id === 'application.independent')?.status,
+    'passed',
+  );
   verifyReport(report);
 });
 
@@ -399,18 +427,8 @@ test('doctor exposes failed resource prerequisites with a canonical blocker', as
   const link = join(f.root, 'baseline-link');
   await symlink(baseline, link, 'dir');
   f.doctors({
-    'test.application': async (context) => ({
-      checks: [
-        context.failedPrerequisites?.includes('resource.baseline')
-          ? {
-              id: 'dependent',
-              status: 'unchecked',
-              blockedBy: 'resource.baseline',
-            }
-          : { id: 'dependent', status: 'passed' },
-        { id: 'independent', status: 'passed' },
-      ],
-    }),
+    'test.application': async () =>
+      assert.fail('Invalid paths reached the binding'),
   });
   for (const [config, failedField] of [
     [{ baseline: link + '/' }, 'baseline'],
@@ -427,18 +445,18 @@ test('doctor exposes failed resource prerequisites with a canonical blocker', as
       'failed',
     );
     assert.equal(
-      report.checks.find(({ id }) => id === 'application.dependent')?.blockedBy,
+      report.checks.find(({ id }) => id === 'application.plugin')?.blockedBy,
       blocker,
     );
     assert.equal(
-      report.checks.find(({ id }) => id === 'application.independent')?.status,
+      report.checks.find(({ id }) => id === 'left.configuration')?.status,
       'passed',
     );
     verifyReport(report);
   }
 });
 
-test('doctor reports failures for the inference launch script and executable independently', async (t) => {
+test('doctor gates the inference factory on its script and probes the executable when present', async (t) => {
   const f = await fixture();
   t.after(f.dispose);
   await mkdir(join(f.root, 'baseline'));
@@ -472,17 +490,29 @@ test('doctor reports failures for the inference launch script and executable ind
     report.checks
       .filter(({ status }) => status === 'failed')
       .map(({ id }) => id),
-    ['application.resource.remote.script', 'application.remote-executable'],
+    ['application.resource.remote.script'],
   );
   assert.equal(
-    report.checks.find(({ id }) => id === 'application.baseline')?.status,
-    'passed',
-  );
-  assert.equal(
-    report.checks.find(({ id }) => id === 'application.launch-prerequisites')
-      ?.blockedBy,
+    report.checks.find(({ id }) => id === 'application.plugin')?.blockedBy,
     'application.resource.remote.script',
   );
+  await writeFile(
+    join(f.root, 'absent.py'),
+    'raise RuntimeError("must not run")',
+  );
+  const executable = await doctorRecipe(f.runtime, f.path);
+  assert.equal(
+    executable.checks.find(({ id }) => id === 'application.remote-executable')
+      ?.status,
+    'failed',
+  );
+  assert.equal(
+    executable.checks.find(
+      ({ id }) => id === 'application.launch-prerequisites',
+    )?.blockedBy,
+    'application.remote-executable',
+  );
+  verifyReport(executable);
   verifyReport(report);
 });
 
@@ -611,14 +641,14 @@ test('agent editor doctor uses declared path failures and still checks skill con
       [blocker],
     );
     assert.equal(checks.get('editor.binding.agentRef')?.status, 'passed');
-    assert.equal(checks.get('editor.prepare-project')?.blockedBy, blocker);
     if (failedId === 'editing-inputs') {
+      assert.equal(checks.get('editor.prepare-project')?.blockedBy, blocker);
       assert.equal(
         checks.get(blocker)?.missingResource?.reference,
         join(f.root, 'skill', 'SKILL.md'),
       );
     } else {
-      assert.equal(checks.get('editor.editing-inputs')?.blockedBy, blocker);
+      assert.equal(checks.get('editor.plugin')?.blockedBy, blocker);
     }
     verifyReport(report);
   }
@@ -1093,20 +1123,6 @@ test('CLI doctor explains missing files, blocked work and network fixes in its d
     object(recipe.application).config = { input: './input.txt' };
     await writeFile(f.path, JSON.stringify(recipe));
     f.doctors({
-      'test.application': async () => ({
-        checks: [
-          {
-            id: 'input',
-            status: 'failed',
-            missingResource: {
-              field: 'input',
-              kind: 'file',
-              reference: join(f.root, 'input.txt'),
-            },
-          },
-          { id: 'prepare', status: 'unchecked', blockedBy: 'input' },
-        ],
-      }),
       'selector.metric': async ({ binding }) => ({
         checks:
           binding.name === 'left'
@@ -1145,7 +1161,7 @@ test('CLI doctor explains missing files, blocked work and network fixes in its d
     assert.match(summary, /application\.resource\.input/);
     assert.ok(summary.includes(join(f.root, 'input.txt')));
     assert.match(summary, /Fix:.*application\.config\.input/);
-    assert.match(summary, /Blocked:.*application\.prepare/);
+    assert.match(summary, /Blocked:.*application\.plugin/);
     assert.match(summary, /Dataset download.*Connection timed out/);
     assert.match(summary, /Configure the download proxy/);
     assert.match(summary, /network\.proxy/);
@@ -1222,15 +1238,21 @@ test('CLI doctor emits one JSON diagnostic with --json and reports usage separat
     assert.match(help.stdout, /doctor/);
     assert.doesNotMatch(help.stdout, /\bvalidate\b/);
     const doctorHome = join(f.root, 'doctor-home');
-    const fresh = await run(['doctor', join(f.root, 'absent.yaml')], {
+    const secret = 'doctor-summary-secret-fixture';
+    const fresh = await run(['doctor', join(f.root, `absent-${secret}.yaml`)], {
       ...process.env,
       HOME: doctorHome,
       USERPROFILE: doctorHome,
+      DOCTOR_TEST_API_KEY: secret,
     });
     assert.equal(fresh.code, 1);
-    assert.match(fresh.stdout, /Doctor found failures.*absent\.yaml/);
+    assert.match(
+      fresh.stdout,
+      /Doctor found failures.*absent-\[redacted\]\.yaml/,
+    );
     assert.match(fresh.stdout, /recipe\.validate.*ENOENT/);
     assert.match(fresh.stdout, /Fix:/);
+    assert.ok(!fresh.stdout.includes(secret));
     await assert.rejects(access(join(doctorHome, '.arsi')));
   } finally {
     await f.dispose();

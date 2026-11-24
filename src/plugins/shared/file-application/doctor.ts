@@ -51,13 +51,6 @@ export async function checkBaselineDirectory(
   check: DoctorResult['checks'][number];
   directory?: string;
 }> {
-  const blockedBy = [
-    'resource.target.schema',
-    'resource.baseline.directory',
-  ].find((id) => context.failedPrerequisites?.includes(id));
-  if (blockedBy)
-    return { check: { id: 'baseline', status: 'unchecked', blockedBy } };
-
   let baselineDirectory: string | undefined;
   const check = await runDoctorCheck(
     'baseline',
@@ -139,19 +132,18 @@ export async function checkFileApplication(
   const result = { checks };
   if (!baseline.directory) {
     const reason = 'Baseline or Target prerequisites failed.';
-    const blockedBy = baseline.check.blockedBy ?? baseline.check.id;
     checks.push(
       {
         id: verification,
         status: 'unchecked',
         reason,
-        blockedBy,
+        blockedBy: baseline.check.id,
       },
       {
         id: 'acquire-instance',
         status: 'unchecked',
         reason,
-        blockedBy,
+        blockedBy: baseline.check.id,
       },
     );
     return result;

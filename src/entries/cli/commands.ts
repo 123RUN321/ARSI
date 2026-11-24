@@ -194,7 +194,9 @@ export async function runCommand(
   ): Promise<void> {
     if (id !== undefined && all)
       cmd.error('--all cannot be combined with an experiment ID');
-    const { manager } = await openRuntime();
+    const { manager } = await context.openRuntime(
+      program.opts<{ pluginDir: string[] }>().pluginDir,
+    );
     const { cleanupExperiment, cleanupWorkspace } = await import(
       './cleanup.js'
     );

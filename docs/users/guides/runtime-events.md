@@ -120,7 +120,7 @@ The framework automatically saves the observation to `agent/events.jsonl` under 
 
 ### Plugin diagnostics and resource cleanup
 
-Plugins subscribe to either event in `create(config, ctx)`. Full `doctor` creates a temporary instance after the binding’s declared local paths pass validation. Manual `cleanup` visits each distinct `(bindingId, pluginId)` in the current and archived Recipes using its most recent saved configuration. This reaches previous plugins even when a resume reused every evaluation. The framework awaits the reply and instance disposal before visiting the next binding.
+Plugins subscribe to either event in `create(config, ctx)`. `doctor` creates a temporary instance after the binding’s declared local paths pass validation. Manual `cleanup` visits each distinct `(bindingId, pluginId)` in the current and archived Recipes using its most recent saved configuration. This reaches previous plugins even when a resume reused every evaluation. The framework awaits the reply and instance disposal before visiting the next binding.
 
 ```ts
 ctx.event.on('rsi/doctor', checkEnvironment);

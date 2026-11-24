@@ -120,7 +120,7 @@ ctx.event.emit('rsi/agent-observation', {
 
 ### 插件诊断与资源清理
 
-插件在 `create(config, ctx)` 中按需订阅这两个事件。完整 `doctor` 在绑定声明的本地路径通过检查后创建临时实例。手动 `cleanup` 从当前和历次归档的 Recipe 中收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近一次保存的配置创建实例。即使续跑复用了全部评测结果，也能找到旧插件。框架等待回调和实例的 `dispose()` 完成，再处理下一个绑定。
+插件在 `create(config, ctx)` 中按需订阅这两个事件。`doctor` 在绑定声明的本地路径通过检查后创建临时实例。手动 `cleanup` 从当前和历次归档的 Recipe 中收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近一次保存的配置创建实例。即使续跑复用了全部评测结果，也能找到旧插件。框架等待回调和实例的 `dispose()` 完成，再处理下一个绑定。
 
 ```ts
 ctx.event.on('rsi/doctor', checkEnvironment);

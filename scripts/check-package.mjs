@@ -288,6 +288,10 @@ export function register(registry){
           reference: inputPath,
         },
       );
+      assert.equal(
+        report.checks.find((check) => check.id === 'custom.plugin')?.blockedBy,
+        'custom.resource.inputFile',
+      );
       return true;
     },
   );
@@ -295,6 +299,7 @@ export function register(registry){
     'Installed component doctor: registration, text and JSON diagnostics passed.',
   );
 
+  await writeFile(inputPath, 'doctor-ready');
   const cleanupWorkspace = join(temporary, 'cleanup-workspace');
   await mkdir(cleanupWorkspace);
   assert.throws(

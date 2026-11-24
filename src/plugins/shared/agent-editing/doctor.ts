@@ -25,24 +25,6 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
   );
   const skills = config.skills ?? [];
   const roles = checkedRoles(config);
-  const inputPathChecks = [
-    'resource.prompt',
-    'resource.guidance',
-    ...skills.map((_, index) => `resource.skills.${index}`),
-    ...roles.map(({ promptField }) => `resource.${promptField}`),
-  ];
-  const blockedBy = context.failedPrerequisites?.find((id) =>
-    inputPathChecks.includes(id),
-  );
-  if (blockedBy)
-    return {
-      checks: ['editing-inputs', 'prepare-project'].map((id) => ({
-        id,
-        status: 'unchecked',
-        blockedBy,
-      })),
-    };
-
   const options = { signal: context.signal };
   let prompt = '';
   const loaded = await runDoctorCheck(

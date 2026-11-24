@@ -37,6 +37,18 @@ export async function doctorRecipe(
     reflection: recipe.reflection?.implementation.config ?? {},
   });
   reportBuilder.addCheck({ id: 'recipe.validate', status: 'passed' });
+  await checkBindings(sourceRuntime, recipe, reportBuilder, signal);
+  signal.throwIfAborted();
+  return reportBuilder.build();
+}
+
+/** Owns the probe Runtime for the binding phase. */
+async function checkBindings(
+  sourceRuntime: Runtime,
+  recipe: Recipe,
+  reportBuilder: DoctorReportBuilder,
+  signal: AbortSignal,
+): Promise<void> {
   const bindings = getDoctorBindings(recipe, sourceRuntime.registry);
   const probeRuntime = await openProbeRuntime(sourceRuntime, signal);
   try {
@@ -66,9 +78,6 @@ export async function doctorRecipe(
         reason: errorText(error),
       });
   }
-
-  signal.throwIfAborted();
-  return reportBuilder.build();
 }
 
 function getDoctorBindings(

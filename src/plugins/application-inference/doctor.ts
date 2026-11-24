@@ -25,16 +25,13 @@ export async function checkInferenceApplication(
       id: 'launch-prerequisites',
       status: 'unchecked',
       reason: 'Baseline or Target prerequisites failed.',
-      blockedBy: check.blockedBy ?? check.id,
+      blockedBy: check.id,
     });
     return { checks };
   }
   const config = context.binding.config;
   const remote =
     config.remote === undefined ? undefined : object(config.remote);
-  let blockedBy: string | undefined = context.failedPrerequisites?.find(
-    (id) => id === 'resource.remote.script',
-  );
   if (remote) {
     const executableCheck = await runDoctorCheck(
       'remote-executable',
@@ -49,15 +46,14 @@ export async function checkInferenceApplication(
       { signal: context.signal },
     );
     checks.push(executableCheck);
-    if (executableCheck.status === 'failed') blockedBy ??= executableCheck.id;
-  }
-  if (blockedBy) {
-    checks.push({
-      id: 'launch-prerequisites',
-      status: 'unchecked',
-      blockedBy,
-    });
-    return { checks };
+    if (executableCheck.status === 'failed') {
+      checks.push({
+        id: 'launch-prerequisites',
+        status: 'unchecked',
+        blockedBy: executableCheck.id,
+      });
+      return { checks };
+    }
   }
   checks.push(
     await runDoctorCheck(

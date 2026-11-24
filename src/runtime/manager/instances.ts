@@ -266,7 +266,7 @@ export async function withBindingInstance<
       try {
         return await registry.createManagedOperation(
           binding.plugin,
-          structuredClone(binding.config),
+          binding.config,
           ctx,
         );
       } catch (cause) {
