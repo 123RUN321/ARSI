@@ -1,3 +1,4 @@
+import { buildRoundLabels } from '../../web/features/experiments/round-label-model.js';
 import { FileAgentRecorder } from '../../src/runtime/storage/agent-records.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -354,4 +355,36 @@ test('instructions project the owned submission and only instruction files from 
   const bounded = await query.callInstructions('run-alpha', 'large-prompt');
   assert.equal(bounded.submittedTask?.text.length, 32768);
   assert.equal(bounded.submittedTask?.truncated, true);
+});
+
+test('candidate labels follow proposal order before either candidate has a measurement', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'rsi-batch-origins-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { facts, artifacts } = await seedObservation(directory);
+  const refs = ['z-first', 'a-second'];
+  for (const ref of refs)
+    await facts.write('candidates', ref, {
+      experimentId: 'run-alpha',
+      ref,
+      parentRef: 'base',
+      artifactRef: 'artifact-placeholder',
+    });
+  await facts.write('calls', 'batch-propose', {
+    experimentId: 'run-alpha',
+    callId: 'batch-propose',
+    parentCallId: 'root',
+    path: 'steps/exploration/iteration-1/generate_batch/then/propose',
+    output: {
+      status: 'batch',
+      candidates: refs.map((candidateRef) => ({ candidateRef })),
+    },
+  });
+  const { items } = await new ObservationQueries(facts, artifacts).candidates(
+    'run-alpha',
+  );
+  const labels = buildRoundLabels(items, [], []);
+  assert.deepEqual(refs.map(labels.candidate), [
+    'Round 2 · Candidate 1',
+    'Round 2 · Candidate 2',
+  ]);
 });

@@ -55,6 +55,8 @@ export interface CallDetail extends CallSummary {
   output: JsonPreview | null;
 }
 export interface CandidateSummary {
+  /** One-based position in a recorded multi-candidate proposal. */
+  batchPosition?: number;
   originPath?: string | null;
   ref: string;
   parentRef: string | null;

@@ -57,10 +57,24 @@ export function callLabels(
 
   const path =
     owner.path && !owner.path.startsWith('call-') ? owner.path : null;
-  const round = stage?.round ?? roundLabel(owner.triggerPath ?? path);
+  let scope = owner;
+  const ancestors = new Set<string>();
+  while (
+    !scope.triggerPath &&
+    scope.path?.startsWith('call-') &&
+    scope.parentCallId &&
+    !ancestors.has(scope.callId)
+  ) {
+    ancestors.add(scope.callId);
+    const parent = byId.get(scope.parentCallId);
+    if (!parent) break;
+    scope = parent;
+  }
+  const roundPath = scope.triggerPath ?? scope.path;
+  const round = stage?.round ?? roundLabel(roundPath);
   return {
     title: component,
-    round: round ?? (path === 'steps/baseline' ? 'Baseline' : null),
+    round: round ?? (roundPath === 'steps/baseline' ? 'Baseline' : null),
     plugins:
       owner.callId === call.callId
         ? call.pluginId

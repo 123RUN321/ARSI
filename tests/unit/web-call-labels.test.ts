@@ -109,3 +109,21 @@ test('infra business bindings retain their role for agent-prefixed plugin IDs', 
   };
   assert.equal(callLabels(proposer, [proposer]).title, 'Proposer');
 });
+
+test('a benchmark inherits its sampling round and candidate without losing its own role', () => {
+  const sample = call(
+    'call-sample',
+    'measurement.infra-sampling',
+    'root',
+    'steps/exploration/iteration-1/evaluate_batch/iteration-0/evaluate',
+  );
+  const benchmark = call(
+    'call-bench',
+    'evaluator.inferencebench',
+    sample.callId,
+    sample.callId,
+  );
+  const labels = callLabels(benchmark, [sample, benchmark]);
+  assert.equal(labels.round, 'Round 2 · Candidate 1');
+  assert.equal(labels.title, 'Evaluator');
+});

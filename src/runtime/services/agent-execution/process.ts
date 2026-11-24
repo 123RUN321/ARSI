@@ -1,6 +1,29 @@
 import { terminateWindowsTree } from './terminate.js';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import type { AgentProcessLauncher } from '../../../contracts/runtime/agent-execution.js';
+
+// Darwin can report EPERM for a group containing only unreaped zombies.
+function hasNoLiveGroupMembers(pgid: number): boolean {
+  try {
+    const rows = execFileSync('/bin/ps', ['-A', '-o', 'pgid=,stat='], {
+      encoding: 'utf8',
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return (
+      rows.length > 0 &&
+      rows.split('\n').every((row) => {
+        const fields = /^\s*(\d+)\s+(\S+)\s*$/.exec(row);
+        return (
+          fields !== null &&
+          (Number(fields[1]) !== pgid || fields[2]!.startsWith('Z'))
+        );
+      })
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** The caller waits for process and pipe settlement before publishing any result. */
 export function agentProcessLauncher(scope: {
@@ -27,19 +50,25 @@ export function agentProcessLauncher(scope: {
         try {
           process.kill(-child.pid, signal);
         } catch (error) {
+          const code =
+            error instanceof Error && 'code' in error ? error.code : undefined;
+          if (code === 'ESRCH') return;
           if (
-            !(
-              error instanceof Error &&
-              'code' in error &&
-              error.code === 'ESRCH'
-            )
+            code === 'EPERM' &&
+            process.platform === 'darwin' &&
+            hasNoLiveGroupMembers(child.pid)
           )
-            failure = Object.assign(
-              new Error('Agent process-group cleanup could not be confirmed', {
-                cause: { execution: failure, cleanup: error },
-              }),
-              { status: 'unknown' },
-            );
+            return;
+          const detail = error instanceof Error ? error.message : String(error);
+          failure = Object.assign(
+            new Error(
+              `Agent process-group cleanup could not be confirmed (${signal}, ${code ?? 'unknown'}): ${detail}`,
+              {
+                cause: failure ?? error,
+              },
+            ),
+            { status: 'unknown' },
+          );
         }
       };
       let terminating: Promise<void> | undefined;

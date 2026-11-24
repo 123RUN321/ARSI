@@ -63,6 +63,13 @@ export function buildRoundLabels(
         : origin
           ? `${origin.round} · ${origin.variant}`
           : roundLabel(candidate.originPath);
+    if (name && !origin && candidate.batchPosition !== undefined) {
+      names.set(
+        candidate.ref,
+        `${name} · Candidate ${candidate.batchPosition}`,
+      );
+      continue;
+    }
     if (name) groups.set(name, [...(groups.get(name) ?? []), candidate]);
   }
   for (const [name, group] of groups)

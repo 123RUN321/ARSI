@@ -149,3 +149,32 @@ test(
     );
   },
 );
+
+test(
+  'Darwin accepts a cleanup permission error after the group has disappeared',
+  { skip: process.platform !== 'darwin', timeout: 10000 },
+  async (t) => {
+    const original = process.kill;
+    t.mock.method(process, 'kill', (pid: number, signal: NodeJS.Signals) => {
+      if (pid < 0 && signal === 'SIGKILL') {
+        throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+      }
+      return original(pid, signal);
+    });
+    const lines: string[] = [];
+    await agentProcessLauncher({
+      project: tmpdir(),
+      signal: AbortSignal.timeout(5000),
+    })(
+      {
+        executable: process.execPath,
+        args: ['-e', 'console.log("done")'],
+        input: '',
+      },
+      (line) => {
+        lines.push(line);
+      },
+    );
+    assert.deepEqual(lines, ['done']);
+  },
+);
