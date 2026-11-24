@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRuntime } from '../../src/runtime/context.js';
 import type { DoctorContext } from '../../src/contracts/index.js';
+import { isNativeAgentCompatible } from '../../src/plugins/shared/doctor/native-agent.js';
 
 const flags =
   '--json --permission-mode --approval-policy --print --output-format --json-schema --tools --permission-prompts --strict-mcp-config --verbose --no-session-persistence --disallowedTools --mcp-config --settings';
@@ -54,6 +55,16 @@ else if (args.includes('auth')) { assert.deepEqual(args, ['auth', 'status', args
 else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.stringify(flags)}); }`,
     );
     const diagnose = () => diagnoseBinding(runtime.registry, context);
+    assert.equal(
+      await isNativeAgentCompatible(
+        context,
+        pluginId === 'agent.dsh' ? 'dsh' : 'claude',
+        args,
+        ['--json'],
+        context.signal,
+      ),
+      true,
+    );
     let report = await diagnose();
     assert.deepEqual(
       report.checks.map((c) => c.status),
@@ -86,6 +97,16 @@ else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.strin
     }
 
     await writeFile(executable, 'console.log("--permission-mode");');
+    assert.equal(
+      await isNativeAgentCompatible(
+        context,
+        pluginId === 'agent.dsh' ? 'dsh' : 'claude',
+        args,
+        ['--json'],
+        context.signal,
+      ),
+      false,
+    );
     report = await diagnose();
     assert.equal(report.checks[0].status, 'failed');
     assert.match(report.checks[0].reason ?? '', /required CLI options/);

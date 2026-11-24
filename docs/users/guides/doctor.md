@@ -187,6 +187,7 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 ```
 
 - `failed` and `passed` are ordinary result constructors exported from `arsi`. Keep simple conditions synchronous and return immediately on failure; await file, process and network operations. Use `unchecked` for unsupported diagnostics.
+- Name predicate helpers after the fact they establish, such as `isHttpUrl` or `isNativeAgentCompatible`, and return a boolean. The handler supplies the failure explanation. Keep timeouts and cancellation in the probe layer and retain its error reason for timeouts or execution failures.
 - In the example above, `runDoctorCheck` sets a deadline, propagates cancellation and converts a probe error into a check result. Resource cleanup must still run on failure or cancellation.
 
 In `service.ts`, type the factory parameter as `ctx: RuntimeContext<CustomConfig>`. Import `RuntimeContext` from `arsi/contracts` and subscribe to `checkCustom` from `./doctor.js` inside the factory. The extension entry point registers `customDefinition` with `registry.registerOperation(customDefinition)`.

@@ -1,35 +1,23 @@
-import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
-import { runDoctorCheck } from '../../../shared/doctor-check.js';
+import type { DoctorContext } from '../../../contracts/index.js';
 import { string } from '../../../shared/json.js';
 import { nativeAgentCommand } from '../native-agent/executable.js';
 import { runCommand } from './process.js';
 
-/** Check CLI compatibility without submitting a task or exposing native output. */
-export async function checkNativeAgentExecutable(
+export async function isNativeAgentCompatible(
   context: DoctorContext,
   command: string,
   helpArgs: string[],
   requiredFlags: string[],
-): Promise<DoctorResult['checks'][number]> {
-  return runDoctorCheck(
-    'executable',
-    async (signal) => {
-      const stdout = await runNativeAgentCommand(
-        context,
-        command,
-        helpArgs,
-        signal,
-      );
-      const missing = requiredFlags.filter(
-        (flag) =>
-          !new RegExp(`(?:^|\\s|,)${flag}(?=[\\s,=]|$)`, 'm').test(stdout),
-      );
-      if (missing.length)
-        throw new Error(
-          `Upgrade ${command}; required CLI options are missing: ${missing.join(', ')}.`,
-        );
-    },
-    { signal: context.signal },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const stdout = await runNativeAgentCommand(
+    context,
+    command,
+    helpArgs,
+    signal,
+  );
+  return requiredFlags.every((flag) =>
+    new RegExp(`(?:^|\\s|,)${flag}(?=[\\s,=]|$)`, 'm').test(stdout),
   );
 }
 

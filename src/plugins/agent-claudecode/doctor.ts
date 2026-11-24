@@ -1,45 +1,55 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { failed, passed, runDoctorCheck } from '../../shared/doctor-check.js';
+import { failed, passed, runDoctorProbe } from '../../shared/doctor-check.js';
 import { object } from '../../shared/json.js';
 import {
-  checkNativeAgentExecutable,
+  isNativeAgentCompatible,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
 export async function checkClaudeCodeAgent(
   context: DoctorContext,
 ): Promise<DoctorResult> {
-  const executable = await checkNativeAgentExecutable(
-    context,
-    'claude',
-    ['--help'],
-    [
-      '--print',
-      '--output-format',
-      '--json-schema',
-      '--permission-mode',
-      '--tools',
-      '--permission-prompts',
-      '--verbose',
-      '--no-session-persistence',
-      '--disallowedTools',
-      '--mcp-config',
-      '--settings',
-      '--strict-mcp-config',
-    ],
-  );
-  if (executable.status === 'failed')
-    return failed(executable.id, executable.reason, executable.details);
-  const authentication = await runDoctorCheck(
-    'authentication',
-    (signal) => checkClaudeAuthentication(context, signal),
+  const executable = await runDoctorProbe(
+    'executable',
+    (signal) =>
+      isNativeAgentCompatible(
+        context,
+        'claude',
+        ['--help'],
+        [
+          '--print',
+          '--output-format',
+          '--json-schema',
+          '--permission-mode',
+          '--tools',
+          '--permission-prompts',
+          '--verbose',
+          '--no-session-persistence',
+          '--disallowedTools',
+          '--mcp-config',
+          '--settings',
+          '--strict-mcp-config',
+        ],
+        signal,
+      ),
     { signal: context.signal },
   );
-  if (authentication.status === 'failed')
+  if (!executable.value)
     return failed(
-      authentication.id,
-      authentication.reason,
-      authentication.details,
+      'executable',
+      executable.check.reason ??
+        `The CLI lacks required CLI options. Check ${context.binding.name}.config.executable and upgrade the native CLI.`,
+    );
+  const authentication = await runDoctorProbe(
+    'authentication',
+    (signal) => isClaudeAuthenticated(context, signal),
+    { signal: context.signal },
+  );
+  if (!authentication.value)
+    return failed(
+      'authentication',
+      authentication.check.reason ??
+        'Claude Code has no valid authentication status. Check executable, upgrade the native CLI and configure authentication with claude auth login.',
     );
   const modelAccess: DoctorResult['checks'][number] = {
     id: 'model-access',
@@ -49,7 +59,7 @@ export async function checkClaudeCodeAgent(
   };
   return {
     checks: [
-      executable,
+      ...passed('executable').checks,
       {
         id: 'doctor',
         status: 'unchecked',
@@ -62,20 +72,17 @@ export async function checkClaudeCodeAgent(
   };
 }
 
-async function checkClaudeAuthentication(
+async function isClaudeAuthenticated(
   context: DoctorContext,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   const help = await runNativeAgentCommand(
     context,
     'claude',
     ['auth', 'status', '--help'],
     signal,
   );
-  if (!/(?:^|\s)--json(?:\s|$)/m.test(help))
-    throw new Error(
-      'Claude Code does not advertise JSON authentication status; upgrade the CLI.',
-    );
+  if (!/(?:^|\s)--json(?:\s|$)/m.test(help)) return false;
   const stdout = await runNativeAgentCommand(
     context,
     'claude',
@@ -83,20 +90,9 @@ async function checkClaudeAuthentication(
     signal,
     [0, 1],
   );
-  let loggedIn: unknown;
   try {
-    loggedIn = object(JSON.parse(stdout)).loggedIn;
+    return object(JSON.parse(stdout)).loggedIn === true;
   } catch {
-    throw new Error(
-      'Claude Code returned invalid authentication status. Check agent.claudecode executable and upgrade the native CLI.',
-    );
+    return false;
   }
-  if (typeof loggedIn !== 'boolean')
-    throw new Error(
-      'Claude Code returned unsupported authentication status. Check agent.claudecode executable and upgrade the native CLI.',
-    );
-  if (!loggedIn)
-    throw new Error(
-      'Claude Code has no active authentication; configure authentication in the native CLI.',
-    );
 }

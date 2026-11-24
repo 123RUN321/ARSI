@@ -187,6 +187,7 @@ export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
 ```
 
 - `failed` 和 `passed` 是从 `arsi` 导出的普通结果构造函数。简单条件保持同步，失败立即返回；文件、进程和网络操作显式使用 `await`。不支持的诊断使用 `unchecked`。
+- 判断函数按其验证的事实命名，例如 `isHttpUrl`、`isNativeAgentCompatible`，并返回布尔值。处理器负责失败说明。超时与取消继续由探测层处理，并保留其超时或执行失败的错误原因。
 - 上例中的 `runDoctorCheck` 设置截止时间、传递取消信号，并将探测错误转换为检查结果。资源清理仍须在失败或取消后执行。
 
 在 `service.ts` 中导入 `checkCustom`，从 `arsi/contracts` 导入 `RuntimeContext` 类型，将工厂参数标注为 `ctx: RuntimeContext<CustomConfig>`，再在工厂内订阅。扩展入口照常调用 `registry.registerOperation(customDefinition)`。

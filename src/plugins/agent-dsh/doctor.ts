@@ -1,29 +1,43 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import { parseDocument } from 'yaml';
-import { failed, passed, runDoctorCheck } from '../../shared/doctor-check.js';
+import { failed, passed, runDoctorProbe } from '../../shared/doctor-check.js';
 import {
-  checkNativeAgentExecutable,
+  isNativeAgentCompatible,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
 export async function checkDshAgent(
   context: DoctorContext,
 ): Promise<DoctorResult> {
-  const executable = await checkNativeAgentExecutable(
-    context,
-    'dsh',
-    ['--profile', 'headless', '--help'],
-    ['--json', '--permission-mode', '--approval-policy'],
-  );
-  if (executable.status === 'failed')
-    return failed(executable.id, executable.reason, executable.details);
-  const profile = await runDoctorCheck(
-    'profile-config',
-    (signal) => checkDshProfile(context, signal),
+  const executable = await runDoctorProbe(
+    'executable',
+    (signal) =>
+      isNativeAgentCompatible(
+        context,
+        'dsh',
+        ['--profile', 'headless', '--help'],
+        ['--json', '--permission-mode', '--approval-policy'],
+        signal,
+      ),
     { signal: context.signal },
   );
-  if (profile.status === 'failed')
-    return failed(profile.id, profile.reason, profile.details);
+  if (!executable.value)
+    return failed(
+      'executable',
+      executable.check.reason ??
+        `The CLI lacks required CLI options. Check ${context.binding.name}.config.executable and upgrade the native CLI.`,
+    );
+  const profile = await runDoctorProbe(
+    'profile-config',
+    (signal) => isDshProfileValid(context, signal),
+    { signal: context.signal },
+  );
+  if (!profile.value)
+    return failed(
+      'profile-config',
+      profile.check.reason ??
+        'DSH returned invalid or unsupported headless configuration. Check executable and repair the native headless profile.',
+    );
   const modelAccess: DoctorResult['checks'][number] = {
     id: 'model-access',
     status: 'unchecked',
@@ -32,7 +46,7 @@ export async function checkDshAgent(
   };
   return {
     checks: [
-      executable,
+      ...passed('executable').checks,
       ...passed('profile-config').checks,
       {
         id: 'doctor',
@@ -45,10 +59,10 @@ export async function checkDshAgent(
   };
 }
 
-async function checkDshProfile(
+async function isDshProfileValid(
   context: DoctorContext,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   const stdout = await runNativeAgentCommand(
     context,
     'dsh',
@@ -57,20 +71,11 @@ async function checkDshProfile(
   );
   // Keep native expressions inert, and never include dump values or parser errors in diagnostics.
   const document = parseDocument(stdout, { logLevel: 'silent' });
-  if (document.errors.length)
-    throw new Error(
-      'DSH returned invalid headless configuration. Check agent.dsh executable and repair the native headless profile.',
-    );
-  let value: unknown;
+  if (document.errors.length) return false;
   try {
-    value = document.toJS();
+    const value: unknown = document.toJS();
+    return Array.isArray(value) && value.length > 0;
   } catch {
-    throw new Error(
-      'DSH returned unsupported headless configuration. Check agent.dsh executable and repair the native headless profile.',
-    );
+    return false;
   }
-  if (!Array.isArray(value) || value.length === 0)
-    throw new Error(
-      'DSH returned an empty or unsupported headless configuration. Check agent.dsh executable and repair the native headless profile.',
-    );
 }
