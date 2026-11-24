@@ -50,6 +50,7 @@ const ordinaryNotifications = new Set<keyof Events>([
   'rsi/candidate-recorded',
   'rsi/measurement-recorded',
   'rsi/revision-activated',
+  'rsi/memory-activated',
 ]);
 
 /** One independent Cordis root per experiment, with binding-owned subscriptions. */

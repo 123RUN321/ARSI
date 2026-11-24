@@ -3,10 +3,10 @@ import { object } from '../../shared/json.js';
 
 export function openCodeObservations(
   record: (event: AgentObservation) => void,
-): (event: JsonObject) => void {
+): (event: JsonObject, completedText: string | null) => void {
   let sessionId: string | undefined;
   const children = new Set<string>();
-  return (event) => {
+  return (event, completedText) => {
     if (!sessionId && typeof event.sessionID === 'string') {
       sessionId = event.sessionID;
       record({
@@ -46,6 +46,16 @@ export function openCodeObservations(
         event: value,
       });
     if (
+      event.type === 'text' &&
+      typeof part.messageID === 'string' &&
+      typeof part.text === 'string'
+    ) {
+      emit({
+        type: 'message.appended',
+        messageId: part.messageID,
+        text: part.text,
+      });
+    } else if (
       (event.type === 'text' || event.type === 'reasoning') &&
       typeof part.text === 'string' &&
       typeof part.id === 'string'
@@ -81,13 +91,33 @@ export function openCodeObservations(
             : {}),
         });
       }
-    } else if (event.type === 'step_finish' && part.tokens !== undefined)
-      emit({
-        type: 'usage.reported',
-        usageId: String(part.id),
-        scope: 'step',
-        mode: 'incremental',
-        values: { tokens: part.tokens, cost: part.cost ?? null },
-      });
+    } else if (event.type === 'step_finish') {
+      if (typeof part.messageID === 'string' && completedText)
+        emit({
+          type: 'message.completed',
+          messageId: part.messageID,
+          role: 'assistant',
+          text: completedText,
+          ...(part.reason === 'stop'
+            ? { phase: 'final_answer' }
+            : part.reason === 'tool-calls'
+              ? { phase: 'commentary' }
+              : {}),
+        });
+      if (part.tokens !== undefined)
+        emit({
+          type: 'usage.reported',
+          usageId: String(part.id),
+          scope: 'step',
+          mode: 'incremental',
+          values: { tokens: part.tokens, cost: part.cost ?? null },
+        });
+      if (part.reason === 'stop')
+        emit({
+          type: 'run.finished',
+          status: 'completed',
+          nativeStatus: part.reason,
+        });
+    }
   };
 }

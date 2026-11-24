@@ -35,15 +35,16 @@ export async function runSession(options: {
   let sessionId: string | undefined;
   let finalMessage: string | undefined;
   let finalReason: string | undefined;
+  const prompt = JSON.stringify({
+    goal: request.goal,
+    instruction:
+      'Read AGENTS.md and the project instructions. Return proposed changes through the requested result Schema; leave task input files unchanged. Your final answer must be only a JSON object matching outputSchema, without Markdown or prose.',
+    outputSchema: request.outputSchema,
+  });
   await runNativeJsonProcess(
     config.executable ?? 'opencode',
     args,
-    JSON.stringify({
-      goal: request.goal,
-      instruction:
-        'Read AGENTS.md and the project instructions. Return proposed changes through the requested result Schema; leave task input files unchanged. Your final answer must be only a JSON object matching outputSchema, without Markdown or prose.',
-      outputSchema: request.outputSchema,
-    }),
+    prompt,
     (line) => {
       let event: JsonObject;
       try {
@@ -51,30 +52,53 @@ export async function runSession(options: {
       } catch {
         throw new Error('OpenCode emitted invalid JSON protocol output.');
       }
-      observe(event);
       const part = event.part === undefined ? {} : object(event.part);
-      if (typeof event.sessionID === 'string') {
-        if (sessionId === undefined) sessionId = event.sessionID;
-        else if (sessionId !== event.sessionID) return;
-      }
+      const source =
+        typeof event.sessionID === 'string' ? event.sessionID : sessionId;
+      sessionId ??= source;
+      const messageKey =
+        typeof part.messageID === 'string'
+          ? JSON.stringify([
+              source === sessionId ? null : source,
+              part.messageID,
+            ])
+          : undefined;
       if (
         event.type === 'text' &&
-        typeof part.messageID === 'string' &&
+        messageKey &&
         typeof part.text === 'string'
       ) {
-        messages.set(
-          part.messageID,
-          (messages.get(part.messageID) ?? '') + part.text,
-        );
-      } else if (event.type === 'step_finish') {
-        finalMessage =
-          typeof part.messageID === 'string' ? part.messageID : undefined;
+        messages.set(messageKey, (messages.get(messageKey) ?? '') + part.text);
+      }
+      observe(
+        event,
+        event.type === 'step_finish' && messageKey
+          ? (messages.get(messageKey) ?? null)
+          : null,
+      );
+      if (source !== sessionId) return;
+      if (event.type === 'step_finish') {
+        finalMessage = messageKey;
         finalReason = typeof part.reason === 'string' ? part.reason : undefined;
-      } else if (event.type === 'error')
+      } else if (event.type === 'error') {
+        record({
+          runId: 'main',
+          ...(sessionId ? { native: { sessionId } } : {}),
+          event: {
+            type: 'run.finished',
+            status: 'failed',
+            nativeStatus: 'error',
+          },
+        });
         throw new Error('OpenCode execution failed');
+      }
     },
     options.launch,
-    launchEnvironment(options.directory),
+    {
+      record,
+      outputSchema: request.outputSchema,
+      env: launchEnvironment(options.directory),
+    },
   );
   if (finalMessage === undefined || finalReason !== 'stop')
     throw new Error(

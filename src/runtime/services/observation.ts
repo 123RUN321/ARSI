@@ -1,5 +1,6 @@
 import {
   readAgentRecords,
+  readAgentPayload,
   streamAgentPayload,
 } from '../storage/agent-records.js';
 import { createHash } from 'node:crypto';
@@ -684,37 +685,17 @@ export class ObservationQueries {
     ref: string,
   ): Promise<import('node:fs').ReadStream> {
     const call = await this.ownedCall(id, callId);
-    if (!this.directory) throw new Error('Agent record storage is unavailable');
-    return streamAgentPayload(
-      join(
-        this.directory,
-        'experiments',
-        safeId(id),
-        'calls',
-        safeId(callId),
-        ...(typeof call.attemptId === 'string'
-          ? ['attempts', safeId(call.attemptId)]
-          : []),
-      ),
-      ref,
-    );
+    const directory = this.agentCallDirectory(id, callId, call);
+    if (!directory) throw new Error('Agent record storage is unavailable');
+    return streamAgentPayload(directory, ref);
   }
-  async callTrace(
+  private agentCallDirectory(
     id: string,
     callId: string,
-    offset = 0,
-    limit = 50,
-  ): Promise<CallTrace> {
-    const call = await this.ownedCall(id, callId);
-    if (!this.directory)
-      return {
-        ...page([], offset, limit),
-        unavailable: 'Agent record storage is unavailable',
-        incomplete: false,
-      };
-    try {
-      const records = await readAgentRecords(
-        join(
+    call: JsonObject,
+  ): string | null {
+    return this.directory
+      ? join(
           this.directory,
           'experiments',
           safeId(id),
@@ -723,7 +704,28 @@ export class ObservationQueries {
           ...(typeof call.attemptId === 'string'
             ? ['attempts', safeId(call.attemptId)]
             : []),
-        ),
+        )
+      : null;
+  }
+  async callTrace(
+    id: string,
+    callId: string,
+    offset = 0,
+    limit = 50,
+  ): Promise<CallTrace> {
+    const call = await this.ownedCall(id, callId);
+    const directory = this.agentCallDirectory(id, callId, call);
+    if (!directory)
+      return {
+        ...page([], offset, limit),
+        unavailable: 'Agent record storage is unavailable',
+        recording: 'unavailable',
+        incomplete: false,
+        finalResponses: [],
+      };
+    try {
+      const records = await readAgentRecords(
+        directory,
         offset,
         limit,
         typeof call.finishedAt === 'string',
@@ -735,21 +737,27 @@ export class ObservationQueries {
           type: item.type,
           runId: item.runId,
           native: item.native ?? null,
-          event: item.event,
-          payloadRef: item.payload?.ref ?? null,
+          event:
+            item.type === 'task.submitted' ? { type: item.type } : item.event,
+          payloadRef:
+            item.type === 'task.submitted' ? null : (item.payload?.ref ?? null),
         })),
         total: records.total,
         nextOffset:
           records.nextAfter < records.total ? records.nextAfter : null,
         unavailable: null,
-        incomplete: records.recording === 'interrupted',
+        recording: records.recording,
+        incomplete: records.recording === 'interrupted' || records.gaps > 0,
+        finalResponses: records.finalResponses,
       };
     } catch (error) {
       if (missing(error))
         return {
           ...page([], offset, limit),
           unavailable: 'No agent record has been saved for this call',
+          recording: 'unavailable',
           incomplete: false,
+          finalResponses: [],
         };
       throw error;
     }
@@ -765,18 +773,82 @@ export class ObservationQueries {
   async callInstructions(
     id: string,
     callId: string,
+    runId = 'main',
   ): Promise<CallInstructions> {
-    const record = await this.ownedCall(id, callId);
-    const input = record.input;
-    const prompt =
-      input && typeof input === 'object' && !Array.isArray(input)
-        ? input.prompt
-        : null;
-    if (typeof prompt !== 'string') return { prompt: null };
-    const secrets = this.payloadSecrets(record.input!, await this.secrets(id));
-    const text = redactText(prompt, secrets);
+    const call = await this.ownedCall(id, callId);
+    const directory = this.agentCallDirectory(id, callId, call);
+    const [records, snapshot, knownSecrets] = await Promise.all([
+      directory
+        ? readAgentRecords(
+            directory,
+            0,
+            1,
+            typeof call.finishedAt === 'string',
+            runId,
+          ).catch((error: unknown) => {
+            if (missing(error)) return null;
+            throw error;
+          })
+        : null,
+      typeof call.agentProjectArtifactRef === 'string'
+        ? this.artifacts.readJson(call.agentProjectArtifactRef)
+        : null,
+      this.secrets(id),
+    ]);
+    const secrets = this.payloadSecrets(call.input ?? null, knownSecrets);
+    const previewText = (value: string): JsonPreview => {
+      const text = redactText(value, secrets).replace(
+        /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,
+        '[REDACTED]',
+      );
+      return { text: text.slice(0, 32768), truncated: text.length > 32768 };
+    };
+    const submission = records?.submitted;
+    const event =
+      submission?.payload && directory
+        ? object(
+            JSON.parse(
+              (
+                await readAgentPayload(directory, submission.payload.ref)
+              ).toString('utf8'),
+            ),
+          )
+        : submission
+          ? object(submission.event)
+          : undefined;
+    const instructionPaths = [
+      'AGENTS.md',
+      'CLAUDE.md',
+      'context/instructions.md',
+    ];
+    const files = snapshot ? parseFileTree(snapshot).files : [];
+    const delegation = records?.delegation;
     return {
-      prompt: { text: text.slice(0, 32768), truncated: text.length > 32768 },
+      submittedTask:
+        typeof event?.text === 'string' ? previewText(event.text) : null,
+      delegation: delegation
+        ? {
+            parentRunId: delegation.parentRunId,
+            sequence: delegation.sequence,
+            message: delegation.message
+              ? previewText(delegation.message)
+              : null,
+          }
+        : null,
+      outputSchema: this.preview(event?.outputSchema, secrets),
+      workspaceInstructions: instructionPaths.flatMap((path) => {
+        const file = files.find((entry) => entry.path === path);
+        return file
+          ? [
+              {
+                path,
+                content: previewText(
+                  Buffer.from(file.base64, 'base64').toString('utf8'),
+                ),
+              },
+            ]
+          : [];
+      }),
     };
   }
   async callDetail(id: string, callId: string): Promise<CallDetail> {

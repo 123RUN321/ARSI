@@ -12,8 +12,12 @@ import type {
 } from '../../contracts/index.js';
 import { agentContract } from '../../contracts/plugin-types/agent.js';
 import { RuntimeContext } from '../../contracts/runtime/context.js';
-import { object, string, digest } from '../../shared/json.js';
-import { createCallExecutor, type CallExecutor } from './calls.js';
+import { object, string, digest, freezeSnapshot } from '../../shared/json.js';
+import {
+  assertCallAdmitted,
+  createCallExecutor,
+  type CallExecutor,
+} from './calls.js';
 import { Instances } from './instances.js';
 import { acquireExecutionLock } from './execution-lock.js';
 import { ManagedEvents } from '../services/events.js';
@@ -661,7 +665,32 @@ export class Manager {
             throw new Error(
               `Binding ${agentRef} does not implement contract.agent`,
             );
-          return object(await calls.invoke(agentRef, input, this));
+          const event = freezeSnapshot({
+            experimentId: id,
+            callerBindingId: this.bindingId,
+            callerDirectory: this.directory,
+            agentRef,
+            input: structuredClone(input),
+          });
+          const decision = await this.event.waterfall(
+            'rsi/before-agent-invoke',
+            event,
+            async () => ({
+              kind: 'proceed',
+              input: structuredClone(event.input),
+            }),
+          );
+          this.signal.throwIfAborted();
+          assertCallAdmitted(decision);
+          return object(
+            await calls.invoke(
+              agentRef,
+              decision.input,
+              this,
+              undefined,
+              decision.metadata,
+            ),
+          );
         },
         async readEvidence(this: RuntimeContext, refs, options) {
           return experimentFacts.readEvidence(refs, options, this);

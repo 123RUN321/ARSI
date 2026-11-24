@@ -64,16 +64,18 @@ export const createAgentDsh: OperationDefinition<
       let sessionId: string | undefined;
       let finalText: string | undefined;
       try {
-        await runDshProcess(
-          config.executable ?? 'dsh',
-          patch,
+        const prompt =
           JSON.stringify({
             goal: request.goal,
             instruction:
               'Read AGENTS.md and follow the project instructions. Use native subagents for delegation, reading roles/<name>.md when a role is listed. The project is read-only; return proposed edits in the requested JSON rather than modifying files. Return only the JSON object matching outputSchema in your final answer.',
             outputSchema: request.outputSchema,
           }) +
-            '\n\nAfter completing the task, your final response MUST be only the JSON object matching outputSchema above. Do not summarize your work in prose or Markdown. A prose response is a failed task.',
+          '\n\nAfter completing the task, your final response MUST be only the JSON object matching outputSchema above. Do not summarize your work in prose or Markdown. A prose response is a failed task.';
+        await runDshProcess(
+          config.executable ?? 'dsh',
+          patch,
+          prompt,
           (line) => {
             const event = object(JSON.parse(line));
             observe(event);
@@ -81,21 +83,44 @@ export const createAgentDsh: OperationDefinition<
               if (sessionId !== undefined)
                 throw new Error('DSH emitted duplicate session events');
               sessionId = string(event.sessionId);
-            } else if (event.type === 'error')
+            } else if (event.type === 'error') {
+              record({
+                runId: 'main',
+                ...(sessionId ? { native: { sessionId } } : {}),
+                event: {
+                  type: 'run.finished',
+                  status: 'failed',
+                  nativeStatus: 'error',
+                  error: String(event.message),
+                },
+              });
               throw new Error(`DSH execution failed: ${String(event.message)}`);
-            else if (event.type === 'final') {
+            } else if (event.type === 'final') {
               if (
                 !sessionId ||
                 event.sessionId !== sessionId ||
                 finalText !== undefined
               )
                 throw new Error('Invalid DSH final session');
-              if (object(event.reason).kind !== 'completed')
+              const reason = object(event.reason).kind;
+              record({
+                runId: 'main',
+                native: { sessionId },
+                event: {
+                  type: 'run.finished',
+                  status: reason === 'completed' ? 'completed' : 'unknown',
+                  ...(typeof reason === 'string'
+                    ? { nativeStatus: reason }
+                    : {}),
+                },
+              });
+              if (reason !== 'completed')
                 throw new Error('DSH task did not complete');
               finalText = string(event.text);
             }
           },
           launch,
+          { record, outputSchema: request.outputSchema },
         );
         if (finalText === undefined)
           throw new Error('DSH returned no final result');

@@ -18,20 +18,28 @@ test('Web imports only contract types, observation types, and approved pure util
     root,
     'src/shared/observation/policy-range-preview',
   );
+  const agentCollaboration = resolve(
+    root,
+    'src/shared/observation/agent-collaboration',
+  );
   const pureUtilities = new Set([
     resolve(root, 'src/shared/iterations.js'),
     `${policyParser}.js`,
     `${rangePreview}.js`,
+    `${agentCollaboration}.js`,
   ]);
-  const policySources = [policyModel, policyParser, rangePreview].map(
-    (path) => `${path}.ts`,
-  );
+  const pureSources = [
+    policyModel,
+    policyParser,
+    rangePreview,
+    agentCollaboration,
+  ].map((path) => `${path}.ts`);
   const verify = (
     filename: string,
     specifier: string,
     typeOnly: boolean,
   ): void => {
-    if (policySources.includes(filename)) {
+    if (pureSources.includes(filename)) {
       assert.ok(
         typeOnly,
         `${filename} must have no runtime imports: ${specifier}`,
@@ -75,7 +83,7 @@ test('Web imports only contract types, observation types, and approved pure util
   const webSources = (await readdir(web, { recursive: true }))
     .filter((name) => /\.tsx?$/.test(name))
     .map((name) => resolve(web, name));
-  for (const filename of [...webSources, ...policySources]) {
+  for (const filename of [...webSources, ...pureSources]) {
     const source = ts.createSourceFile(
       filename,
       await readFile(filename, 'utf8'),
