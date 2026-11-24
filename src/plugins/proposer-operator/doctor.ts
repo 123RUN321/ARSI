@@ -1,4 +1,4 @@
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { missingInputError } from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
 import { missingPath } from '../shared/doctor/checks.js';
@@ -6,7 +6,7 @@ import { loadOperatorTask } from '../shared/operator-task.js';
 import type { OperatorProposerConfig } from './schema.js';
 import { loadOperatorResources, readHardwareContext } from './resources.js';
 
-export function checkOperatorProposer(context: DoctorContext): DoctorStep[] {
+export function checkOperatorProposer(context: DoctorContext): DoctorRule[] {
   context.signal.throwIfAborted();
   const config = parseConfig<OperatorProposerConfig>(
     context.binding.definition.configSchema,

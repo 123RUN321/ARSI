@@ -1,6 +1,6 @@
 import type {
   DoctorContext,
-  DoctorStep,
+  DoctorRule,
   Operation,
 } from '../../contracts/index.js';
 import { checkFileApplication } from '../shared/file-application/doctor.js';
@@ -8,7 +8,7 @@ import { checkFileApplication } from '../shared/file-application/doctor.js';
 export function checkAgentbundleApplication(
   context: DoctorContext,
   operation: Operation,
-): DoctorStep[] {
+): DoctorRule[] {
   return checkFileApplication(context, operation, {
     verification: 'verify-bundle',
     capability: 'agentbundle',

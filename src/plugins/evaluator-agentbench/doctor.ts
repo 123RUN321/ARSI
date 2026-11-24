@@ -1,20 +1,20 @@
 import { join } from 'node:path';
 import type {
   DoctorContext,
-  DoctorStep,
+  DoctorRule,
   JsonValue,
   OperationDoctor,
 } from '../../contracts/index.js';
 import { plain } from '../shared/evaluator-adapter/data.js';
 import type { SdkEvaluatorConfig } from '../shared/evaluator-adapter/configuration.js';
-import { sdkDoctorSteps } from '../shared/evaluator-adapter/doctor.js';
+import { sdkDoctorRules } from '../shared/evaluator-adapter/doctor.js';
 import type { SdkDoctorRunner } from '../shared/evaluator-adapter/doctor-sdk.js';
 import { prepareEvaluationConfig } from './service.js';
 
 export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
   return (context) => {
     const baseline = plain(context.recipe.application.config.baseline);
-    const instanceScope: DoctorStep[] =
+    const instanceScope: DoctorRule[] =
       typeof baseline.directory !== 'string' &&
       typeof baseline.artifactRef !== 'string'
         ? [
@@ -27,7 +27,7 @@ export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
         : [];
     return [
       ...instanceScope,
-      ...sdkDoctorSteps(context, prepareAgentbenchConfig, run),
+      ...sdkDoctorRules(context, prepareAgentbenchConfig, run),
       {
         id: 'model-access',
         reason:

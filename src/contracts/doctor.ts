@@ -22,7 +22,7 @@ export interface DoctorResult {
   }[];
 }
 
-export interface DoctorStep {
+export interface DoctorRule {
   id: string;
   check?: (signal: AbortSignal) => boolean | Promise<boolean>;
   reason: string;
@@ -73,4 +73,4 @@ export interface DoctorContext<C extends JsonObject = JsonObject> {
 /** A handler for the binding instance’s `rsi/doctor` event. */
 export type OperationDoctor<C extends JsonObject = JsonObject> = (
   context: DoctorContext<C>,
-) => DoctorStep[] | Promise<DoctorStep[]>;
+) => DoctorRule[] | Promise<DoctorRule[]>;

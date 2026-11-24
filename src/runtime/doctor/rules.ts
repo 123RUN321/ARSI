@@ -1,67 +1,67 @@
-import type { DoctorResult, DoctorStep } from '../../contracts/index.js';
+import type { DoctorResult, DoctorRule } from '../../contracts/index.js';
 import { runDoctorProbe } from '../../shared/doctor-check.js';
 import { errorText } from '../../shared/errors.js';
 
-export async function runDoctorSteps(
-  steps: DoctorStep[],
+export async function runDoctorRules(
+  rules: DoctorRule[],
   signal: AbortSignal,
 ): Promise<DoctorResult> {
-  if (!Array.isArray(steps))
+  if (!Array.isArray(rules))
     throw new Error('Doctor must return an array of check definitions.');
   const ids = new Set<string>();
-  for (const step of steps) {
+  for (const rule of rules) {
     if (
-      !step ||
-      typeof step !== 'object' ||
-      typeof step.id !== 'string' ||
-      !step.id ||
-      ids.has(step.id)
+      !rule ||
+      typeof rule !== 'object' ||
+      typeof rule.id !== 'string' ||
+      !rule.id ||
+      ids.has(rule.id)
     )
       throw new Error('Doctor check IDs must be nonempty and unique.');
     if (
-      Object.keys(step).some(
+      Object.keys(rule).some(
         (key) =>
           !['id', 'check', 'reason', 'details', 'timeoutMs'].includes(key),
       )
     )
-      throw new Error(`Doctor ${step.id} has an unsupported definition field.`);
-    if (step.check !== undefined && typeof step.check !== 'function')
-      throw new Error(`Doctor ${step.id}.check must be a function.`);
+      throw new Error(`Doctor ${rule.id} has an unsupported definition field.`);
+    if (rule.check !== undefined && typeof rule.check !== 'function')
+      throw new Error(`Doctor ${rule.id}.check must be a function.`);
     if (
-      step.timeoutMs !== undefined &&
-      step.timeoutMs !== null &&
-      (!Number.isFinite(step.timeoutMs) || step.timeoutMs <= 0)
+      rule.timeoutMs !== undefined &&
+      rule.timeoutMs !== null &&
+      (!Number.isFinite(rule.timeoutMs) || rule.timeoutMs <= 0)
     )
-      throw new Error(`Doctor ${step.id}.timeoutMs must be positive.`);
-    ids.add(step.id);
+      throw new Error(`Doctor ${rule.id}.timeoutMs must be positive.`);
+    ids.add(rule.id);
   }
   const checks: DoctorResult['checks'] = [];
   let failure: string | undefined;
-  for (const step of steps) {
+  for (const rule of rules) {
     signal.throwIfAborted();
     if (failure) {
       checks.push({
-        id: step.id,
+        id: rule.id,
         status: 'unchecked',
         reason: `Not executed because ${failure} failed. Fix that failure and rerun doctor.`,
       });
       continue;
     }
-    if (typeof step.reason !== 'string')
-      throw new Error(`Doctor ${step.id}.reason must be a string.`);
-    const check = step.check;
+    if (typeof rule.reason !== 'string')
+      throw new Error(`Doctor ${rule.id}.reason must be a string.`);
+    const check = rule.check;
     if (!check) {
       checks.push({
-        id: step.id,
+        id: rule.id,
         status: 'unchecked',
-        reason: step.reason,
-        ...(step.details ? { details: step.details } : {}),
+        reason: rule.reason,
+        ...(rule.details ? { details: rule.details } : {}),
       });
       continue;
     }
     const requireBoolean = (value: unknown): boolean => {
       if (typeof value !== 'boolean')
-        throw new Error(`${step.id}.check must return a boolean.`);
+        throw new Error(`${rule.id}.check must return a boolean.`);
       return value;
     };
     const execute = (bounded: AbortSignal): boolean | Promise<boolean> => {
@@ -71,7 +71,7 @@ export async function runDoctorSteps(
         : Promise.resolve(result).then(requireBoolean);
     };
     const result =
-      step.timeoutMs === null
+      rule.timeoutMs === null
         ? await Promise.resolve()
             .then(() => execute(signal))
             .then(
@@ -81,19 +81,19 @@ export async function runDoctorSteps(
                 return { value: undefined, reason: errorText(error) };
               },
             )
-        : await runDoctorProbe(step.id, execute, {
+        : await runDoctorProbe(rule.id, execute, {
             signal,
-            timeoutMs: step.timeoutMs,
+            timeoutMs: rule.timeoutMs,
           }).then(({ value, check }) => ({ value, reason: check.reason }));
     signal.throwIfAborted();
-    if (result.value !== true) failure = step.id;
+    if (result.value !== true) failure = rule.id;
     checks.push({
-      id: step.id,
+      id: rule.id,
       status: result.value === true ? 'passed' : 'failed',
       ...(result.value !== true
-        ? { reason: [step.reason, result.reason].filter(Boolean).join(' ') }
+        ? { reason: [rule.reason, result.reason].filter(Boolean).join(' ') }
         : {}),
-      ...(step.details ? { details: step.details } : {}),
+      ...(rule.details ? { details: rule.details } : {}),
     });
   }
   return { checks };

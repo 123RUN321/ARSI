@@ -1,4 +1,4 @@
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
 import { parseOptunaConfig } from './schema.js';
 import {
@@ -10,7 +10,7 @@ import {
 export function checkOptunaDependencies(
   context: DoctorContext,
   worker: OptunaWorker = runOptunaWorker,
-): DoctorStep[] {
+): DoctorRule[] {
   context.signal.throwIfAborted();
   const config = parseOptunaConfig(context.binding.config);
   async function arePythonDependenciesAvailable(

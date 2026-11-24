@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
 import { projectMarker } from '../shared/agent-editing/project.js';
 import { executablePath } from '../shared/doctor/executable.js';
@@ -14,7 +14,7 @@ interface CodexDiagnostics {
   supportsNetworkOnly: boolean;
 }
 
-export function checkCodexAgent(context: DoctorContext): DoctorStep[] {
+export function checkCodexAgent(context: DoctorContext): DoctorRule[] {
   let command: CodexDiagnostics | undefined;
   let diagnosis: Awaited<ReturnType<typeof runCodexDiagnostics>> | undefined;
   const isExecutableAvailable = async (

@@ -1,4 +1,4 @@
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { isHttpUrl } from '../shared/doctor/checks.js';
 import { probeModelAccess, type ModelAccessResult } from './model-access.js';
 import { resolveModelConfig } from './session.js';
@@ -6,7 +6,7 @@ import type { AgentPiConfig } from './schema.js';
 
 export function checkPiAgent(
   context: DoctorContext<AgentPiConfig>,
-): DoctorStep[] {
+): DoctorRule[] {
   context.signal.throwIfAborted();
   let model: ReturnType<typeof resolveModelConfig>;
   let access: ModelAccessResult | undefined;

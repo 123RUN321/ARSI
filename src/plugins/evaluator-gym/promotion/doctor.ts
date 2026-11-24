@@ -1,11 +1,11 @@
-import type { DoctorContext, DoctorStep } from '../../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../../contracts/index.js';
 import { isHttpUrl } from '../../shared/doctor/checks.js';
 import type { GymPromotionConfig } from './schema.js';
 import { resolvePromotionConfig } from './service.js';
 
 export function gymPromotionDoctor(
   context: DoctorContext<GymPromotionConfig>,
-): DoctorStep[] {
+): DoctorRule[] {
   context.signal.throwIfAborted();
   function isConfigurationValid(signal: AbortSignal): boolean {
     signal.throwIfAborted();

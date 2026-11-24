@@ -2,7 +2,7 @@ import { object } from '../../shared/json.js';
 import { launchEnvironment } from './session.js';
 import type {
   DoctorContext,
-  DoctorStep,
+  DoctorRule,
   JsonValue,
 } from '../../contracts/index.js';
 import {
@@ -10,7 +10,7 @@ import {
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
-export function checkOpenCodeAgent(context: DoctorContext): DoctorStep[] {
+export function checkOpenCodeAgent(context: DoctorContext): DoctorRule[] {
   const isExecutableCompatible = (signal: AbortSignal): Promise<boolean> =>
     isNativeAgentCompatible(
       context,

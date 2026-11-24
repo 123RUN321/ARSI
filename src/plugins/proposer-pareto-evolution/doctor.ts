@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import {
   parseFileTree,
   type DoctorContext,
-  type DoctorStep,
+  type DoctorRule,
 } from '../../contracts/index.js';
 import { missingInputError } from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
@@ -13,7 +13,7 @@ import { validateModules } from './service.js';
 
 export function checkParetoEvolutionProposer(
   context: DoctorContext,
-): DoctorStep[] {
+): DoctorRule[] {
   context.signal.throwIfAborted();
   const config = parseConfig<ParetoEvolutionConfig>(
     configSchema,

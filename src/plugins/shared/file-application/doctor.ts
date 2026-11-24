@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import type {
   Candidate,
   DoctorContext,
-  DoctorStep,
+  DoctorRule,
   Operation,
   RuntimeContext,
 } from '../../../contracts/index.js';
@@ -85,7 +85,7 @@ export function checkFileApplication(
     capability,
     entryFile,
   }: { verification: string; capability: string; entryFile: string },
-): DoctorStep[] {
+): DoctorRule[] {
   const runtime = createApplicationProbeRuntime(context);
   let candidateRef: string;
 

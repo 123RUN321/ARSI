@@ -144,16 +144,16 @@ Subscribe to `rsi/doctor` in the component’s `create(config, ctx)`. See [Write
 
 Existing handlers returning `{ checks: [...] }` must migrate to definition arrays. Plugin handlers no longer call `failed`, `passed` or `runDoctorCheck`; these exports have been removed. The CLI JSON report remains `{ recipeId, checks }`.
 
-Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorStep` from `arsi/contracts` or `arsi`.
+Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorRule` from `arsi/contracts` or `arsi`.
 
 - Each temporary instance owns its handler. The `doctor` command supplies each binding’s effective configuration.
 - When a component has no `rsi/doctor` subscription, the framework still runs the common checks and marks the component-specific `plugin` check as `unchecked`.
 
 | Type                 | Purpose                                                                                                                                         |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | Returns `DoctorStep[]`, or a Promise of definitions when declaration itself requires I/O.                                                       |
+| `OperationDoctor<C>` | Returns `DoctorRule[]`, or a Promise of definitions when declaration itself requires I/O.                                                       |
 | `DoctorContext<C>`   | Effective configuration, isolated Runtime, temporary directory and command cancellation.                                                        |
-| `DoctorStep`         | `id`, a lazy boolean `check(signal)`, and failure/fix `reason`. Omit `check` for unsupported diagnosis. Optional `details` stores observations. |
+| `DoctorRule`         | `id`, a lazy boolean `check(signal)`, and failure/fix `reason`. Omit `check` for unsupported diagnosis. Optional `details` stores observations. |
 | `DoctorResult`       | The framework's executed results in `checks`; it is not returned by a plugin handler.                                                           |
 
 The framework checks binding references before dispatching the handler. An invalid reference stops that binding.
@@ -164,10 +164,10 @@ In this example, the existing `configSchema` declares a required string named `i
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import type { DoctorContext, DoctorStep } from 'arsi/contracts';
+import type { DoctorContext, DoctorRule } from 'arsi/contracts';
 import type { CustomConfig } from './schema.js';
 
-export function doctor(context: DoctorContext<CustomConfig>): DoctorStep[] {
+export function doctor(context: DoctorContext<CustomConfig>): DoctorRule[] {
   async function isInputReady(signal: AbortSignal): Promise<boolean> {
     const text = await readFile(context.binding.config.inputFile, {
       encoding: 'utf8',

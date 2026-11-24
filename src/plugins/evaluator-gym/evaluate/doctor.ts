@@ -1,9 +1,9 @@
-import type { DoctorContext, DoctorStep } from '../../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../../contracts/index.js';
 import { isHttpUrl } from '../../shared/doctor/checks.js';
 import type { GymConfig } from './schema.js';
 import { resolveGymConfig } from './service.js';
 
-export function gymDoctor(context: DoctorContext<GymConfig>): DoctorStep[] {
+export function gymDoctor(context: DoctorContext<GymConfig>): DoctorRule[] {
   context.signal.throwIfAborted();
   function isConfigurationValid(signal: AbortSignal): boolean {
     signal.throwIfAborted();

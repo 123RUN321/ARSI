@@ -1,11 +1,11 @@
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { parseDocument } from 'yaml';
 import {
   isNativeAgentCompatible,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
-export function checkDshAgent(context: DoctorContext): DoctorStep[] {
+export function checkDshAgent(context: DoctorContext): DoctorRule[] {
   const isExecutableCompatible = (signal: AbortSignal): Promise<boolean> =>
     isNativeAgentCompatible(
       context,

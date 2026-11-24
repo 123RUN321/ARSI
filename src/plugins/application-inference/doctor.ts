@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { missingInputError } from '../../shared/doctor-check.js';
 import { object, string } from '../../shared/json.js';
 import { requireReadablePath } from '../shared/doctor/checks.js';
@@ -17,7 +17,7 @@ import type {
 
 export function checkInferenceApplication(
   context: DoctorContext<InferenceConfig>,
-): DoctorStep[] {
+): DoctorRule[] {
   const config = context.binding.config;
   const apiKeyEnv = config.credentials?.apiKeyEnv;
   let directory: string;

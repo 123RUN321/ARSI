@@ -2,7 +2,7 @@ import { lstat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   DoctorContext,
-  DoctorStep,
+  DoctorRule,
   JsonObject,
 } from '../../../contracts/index.js';
 import { object, string } from '../../../shared/json.js';
@@ -16,14 +16,14 @@ import {
   type SdkDoctorRunner,
 } from './doctor-sdk.js';
 
-export function sdkDoctorSteps(
+export function sdkDoctorRules(
   context: DoctorContext,
   prepareConfig: (
     context: DoctorContext,
     env: NodeJS.ProcessEnv,
   ) => SdkEvaluatorConfig | Promise<SdkEvaluatorConfig>,
   run: SdkDoctorRunner = sdkDoctor,
-): DoctorStep[] {
+): DoctorRule[] {
   let options: SdkDoctorOptions;
   let report: SdkReport;
 

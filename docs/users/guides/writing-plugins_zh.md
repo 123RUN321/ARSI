@@ -53,7 +53,7 @@ Policy 的 `require` 指定所需契约，绑定时需要选择满足该契约�
 
 | 能力      | 注册方式                                        | 处理器返回值                                               |
 | --------- | ----------------------------------------------- | ---------------------------------------------------------- |
-| `doctor`  | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorStep[]`，包含当前绑定的有序检查定义。               |
+| `doctor`  | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorRule[]`，包含当前绑定的有序检查定义。               |
 | `cleanup` | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]`，列出清理或预览结果。无资源时返回 `[]`。 |
 
 ### configSchema

@@ -53,7 +53,7 @@ Register the plugin with `registry.registerOperation(definition)`. In `create(co
 
 | Capability | Registration                                    | Handler result                                                      |
 | ---------- | ----------------------------------------------- | ------------------------------------------------------------------- |
-| `doctor`   | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorStep[]` with ordered check definitions.                      |
+| `doctor`   | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorRule[]` with ordered check definitions.                      |
 | `cleanup`  | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results, or `[]` if none. |
 
 ### configSchema

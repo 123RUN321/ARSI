@@ -1,5 +1,5 @@
 import type { Context, Events } from '@deepseek-ai/cordis';
-import type { DoctorContext, DoctorStep } from '../doctor.js';
+import type { DoctorContext, DoctorRule } from '../doctor.js';
 import type { JsonObject } from '../json.js';
 import type { AgentObservation } from '../models/agent-record.js';
 import type { RuntimeContext } from './context.js';
@@ -159,7 +159,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** The framework awaits one reply from the handler for each addressed binding. */
 export interface OperationEventMap<C extends JsonObject = JsonObject> {
-  'rsi/doctor'(context: DoctorContext<C>): DoctorStep[] | Promise<DoctorStep[]>;
+  'rsi/doctor'(context: DoctorContext<C>): DoctorRule[] | Promise<DoctorRule[]>;
   /** Preview or release resources for a binding on an explicit cleanup request. */
   'rsi/cleanup'(
     context: CleanupContext,

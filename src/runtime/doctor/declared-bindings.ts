@@ -1,11 +1,11 @@
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { visitConfigStrings } from '../../shared/config-fields.js';
 
-export function bindingReferenceSteps({
+export function bindingReferenceRules({
   binding,
   recipe,
   signal,
-}: DoctorContext): DoctorStep[] {
+}: DoctorContext): DoctorRule[] {
   signal.throwIfAborted();
   const references = new Map<
     string,

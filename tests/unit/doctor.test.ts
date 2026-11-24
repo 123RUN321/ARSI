@@ -23,7 +23,7 @@ import { Registry } from '../../src/runtime/registry/index.js';
 import { waitForProcessExit } from '../helpers/process-exit.js';
 import type {
   DoctorReport,
-  DoctorStep,
+  DoctorRule,
   OperationDoctor,
 } from '../../src/contracts/index.js';
 import { runCommand } from '../../src/plugins/shared/doctor/process.js';
@@ -823,7 +823,7 @@ test('probe errors and deadlines preserve independent results, redact secrets an
     object(object(declaration.application).config).api_key = '${DOCTOR_VALUE}';
     await writeFile(f.path, JSON.stringify(declaration));
     f.doctors({
-      'test.application': (ctx): DoctorStep[] => [
+      'test.application': (ctx): DoctorRule[] => [
         {
           id: 'scope',
           reason: 'This fixture does not probe credentials.',
@@ -950,7 +950,7 @@ test('interruption cancels an owned subprocess, cleans storage and stops dispatc
   let independent = false;
   try {
     f.doctors({
-      'test.application': (ctx): DoctorStep[] => [
+      'test.application': (ctx): DoctorRule[] => [
         {
           id: 'process',
           reason: 'The subprocess must finish.',

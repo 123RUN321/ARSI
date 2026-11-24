@@ -127,7 +127,7 @@ ctx.event.on('rsi/doctor', checkEnvironment);
 ctx.event.on('rsi/cleanup', cleanupResources);
 ```
 
-- `rsi/doctor` returns ordered `DoctorStep[]` definitions. RSI executes them, stops at the first failure, and marks remaining definitions `unchecked`.
+- `rsi/doctor` returns ordered `DoctorRule[]` definitions. RSI executes them, stops at the first failure, and marks remaining definitions `unchecked`.
 - `rsi/cleanup` receives `experimentId`, `bindingId`, `pluginId`, `dryRun`, `facts`, `dataDirectory` and `signal`. Return a `CleanupResult[]` with a resource `key` and a status of `preview`, `complete` or `pending` for each entry. Return `[]` when nothing remains. Preview when `dryRun` is `true` and make cleanup safe to repeat.
 
 When an instance is replaced or its run ends, the framework waits for its `dispose()` to release its handles.

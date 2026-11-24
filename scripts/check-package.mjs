@@ -925,12 +925,12 @@ export function checkExecution(context:Parameters<OperationDefinition['create']>
   await writeFile(
     join(consumer, 'doctor-consumer.ts'),
     `
-import {proposerContract,type RuntimeContext,type Operation,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorStep} from 'arsi/contracts';
-import {type OperationDoctor as RootOperationDoctor,type DoctorStep as RootDoctorStep} from 'arsi';
+import {proposerContract,type RuntimeContext,type Operation,type OperationDefinition,type ProposerInput,type ProposerOutput,type OperationDoctor,type DoctorContext,type DoctorRule} from 'arsi/contracts';
+import {type OperationDoctor as RootOperationDoctor,type DoctorRule as RootDoctorRule} from 'arsi';
 type Config={inputFile:string};
-export const checkCustom:OperationDoctor<Config>=(context:DoctorContext<Config>):DoctorStep[]=>{
+export const checkCustom:OperationDoctor<Config>=(context:DoctorContext<Config>):DoctorRule[]=>{
  const path:string=context.binding.config.inputFile;
- const step:RootDoctorStep={id:'input',check:signal=>{signal.throwIfAborted();return Boolean(path);},reason:'Correct inputFile.'};
+ const step:RootDoctorRule={id:'input',check:signal=>{signal.throwIfAborted();return Boolean(path);},reason:'Correct inputFile.'};
  return [step];
 };
 const rootDoctor:RootOperationDoctor<Config>=checkCustom;void rootDoctor;

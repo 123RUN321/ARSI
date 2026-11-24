@@ -127,7 +127,7 @@ ctx.event.on('rsi/doctor', checkEnvironment);
 ctx.event.on('rsi/cleanup', cleanupResources);
 ```
 
-- `rsi/doctor` 为当前 Recipe 绑定返回有序的 `DoctorStep[]` 定义，由 RSI 执行；首项失败后停止，并将后续项记为 `unchecked`。
+- `rsi/doctor` 为当前 Recipe 绑定返回有序的 `DoctorRule[]` 定义，由 RSI 执行；首项失败后停止，并将后续项记为 `unchecked`。
 - `rsi/cleanup` 接收 `experimentId`、`bindingId`、`pluginId`、`dryRun`、`facts`、`dataDirectory` 和 `signal`，返回 `CleanupResult[]`。每项包含资源键 `key` 和状态 `preview`、`complete` 或 `pending`。没有待清理资源时返回 `[]`。`dryRun` 为 `true` 时只做预览，实际清理应支持重复执行。
 
 实例被替换或运行结束时，框架仍会等待各实例的 `dispose()` 释放句柄。

@@ -1,6 +1,6 @@
 import type {
   DoctorContext,
-  DoctorStep,
+  DoctorRule,
   Operation,
 } from '../../contracts/index.js';
 import { checkFileApplication } from '../shared/file-application/doctor.js';
@@ -9,7 +9,7 @@ import { kernelSourcePath } from './schema.js';
 export function checkKernelApplication(
   context: DoctorContext,
   operation: Operation,
-): DoctorStep[] {
+): DoctorRule[] {
   return checkFileApplication(context, operation, {
     verification: 'verify-source',
     capability: 'kernel-source',

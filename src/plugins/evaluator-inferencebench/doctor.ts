@@ -2,7 +2,7 @@ import type { DoctorContext, OperationDoctor } from '../../contracts/index.js';
 import { string } from '../../shared/json.js';
 import type { SdkEvaluatorConfig } from '../shared/evaluator-adapter/configuration.js';
 import { plain } from '../shared/evaluator-adapter/data.js';
-import { sdkDoctorSteps } from '../shared/evaluator-adapter/doctor.js';
+import { sdkDoctorRules } from '../shared/evaluator-adapter/doctor.js';
 import type { SdkDoctorRunner } from '../shared/evaluator-adapter/doctor-sdk.js';
 import { prepareEvaluationConfig } from './service.js';
 
@@ -35,7 +35,7 @@ export function createInferencebenchDoctor(
   run?: SdkDoctorRunner,
 ): OperationDoctor {
   return (context) => [
-    ...sdkDoctorSteps(context, prepareInferencebenchConfig, run),
+    ...sdkDoctorRules(context, prepareInferencebenchConfig, run),
     {
       id: 'inference-endpoint',
       reason:

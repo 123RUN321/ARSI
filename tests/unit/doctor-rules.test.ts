@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { DoctorStep } from '../../src/contracts/index.js';
-import { runDoctorSteps } from '../../src/runtime/doctor/steps.js';
+import type { DoctorRule } from '../../src/contracts/index.js';
+import { runDoctorRules } from '../../src/runtime/doctor/rules.js';
 
-test('doctor definitions stay lazy and retain every remaining step after failure', async () => {
+test('doctor definitions stay lazy and retain every remaining rule after failure', async () => {
   const calls: string[] = [];
-  const steps: DoctorStep[] = [
+  const rules: DoctorRule[] = [
     {
       id: 'url',
       check: () => {
@@ -34,7 +34,7 @@ test('doctor definitions stay lazy and retain every remaining step after failure
     { id: 'remote', reason: 'Remote readiness is unsupported.' },
   ];
   assert.deepEqual(calls, []);
-  const result = await runDoctorSteps(steps, new AbortController().signal);
+  const result = await runDoctorRules(rules, new AbortController().signal);
   assert.deepEqual(calls, ['url', 'prompt']);
   assert.deepEqual(
     result.checks.map(({ id, status }) => [id, status]),
@@ -57,7 +57,7 @@ test('doctor definitions stay lazy and retain every remaining step after failure
 
 test('unsupported diagnostics do not block checks and observations are read after execution', async () => {
   let ready = false;
-  const steps: DoctorStep[] = [
+  const rules: DoctorRule[] = [
     { id: 'unsupported', reason: 'This diagnostic is unsupported.' },
     {
       id: 'native',
@@ -71,7 +71,7 @@ test('unsupported diagnostics do not block checks and observations are read afte
       },
     },
   ];
-  const result = await runDoctorSteps(steps, new AbortController().signal);
+  const result = await runDoctorRules(rules, new AbortController().signal);
   assert.deepEqual(result.checks, [
     {
       id: 'unsupported',
@@ -85,7 +85,7 @@ test('unsupported diagnostics do not block checks and observations are read afte
 test('doctor rejects invalid definitions and nonboolean predicate results', async () => {
   const signal = new AbortController().signal;
   let calls = 0;
-  const step: DoctorStep = {
+  const rule: DoctorRule = {
     id: 'input',
     reason: 'Correct input.',
     check: () => {
@@ -93,12 +93,12 @@ test('doctor rejects invalid definitions and nonboolean predicate results', asyn
       return true;
     },
   };
-  await assert.rejects(runDoctorSteps([step, step], signal), /unique/);
+  await assert.rejects(runDoctorRules([rule, rule], signal), /unique/);
   assert.equal(calls, 0);
-  Object.defineProperty(step, 'check', { value: () => undefined });
-  const result = await runDoctorSteps(
+  Object.defineProperty(rule, 'check', { value: () => undefined });
+  const result = await runDoctorRules(
     [
-      step,
+      rule,
       {
         id: 'later',
         reason: 'Later check.',

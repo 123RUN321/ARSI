@@ -1,14 +1,14 @@
 import { constants } from 'node:fs';
 import { access, lstat, stat } from 'node:fs/promises';
 import { parse, sep } from 'node:path';
-import type { DoctorBinding, DoctorStep } from '../../contracts/index.js';
+import type { DoctorBinding, DoctorRule } from '../../contracts/index.js';
 import { missingInputError } from '../../shared/doctor-check.js';
 import { configPathFields, isResourceUrl } from '../../shared/paths.js';
 
 const directorySuffix = sep === '\\' ? /(?:[\\/]\.?)+$/ : /(?:\/\.?)+$/;
 
-export function declaredPathSteps(binding: DoctorBinding): DoctorStep[] {
-  const steps: DoctorStep[] = [];
+export function declaredPathRules(binding: DoctorBinding): DoctorRule[] {
+  const rules: DoctorRule[] = [];
   for (const { pointer, kind, reference, localOnly } of configPathFields(
     binding.definition.configSchema,
     binding.config,
@@ -17,7 +17,7 @@ export function declaredPathSteps(binding: DoctorBinding): DoctorStep[] {
     if (isUrl && !localOnly) continue;
     const configField = pointer.slice(1).replaceAll('/', '.');
     const field = `${binding.name}.config.${configField}`;
-    steps.push({
+    rules.push({
       id: `resource.${configField}`,
       reason: `Correct ${field} to point to a readable ${kind}.`,
       check: async () => {
@@ -56,5 +56,5 @@ export function declaredPathSteps(binding: DoctorBinding): DoctorStep[] {
       },
     });
   }
-  return steps;
+  return rules;
 }

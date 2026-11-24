@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { access, lstat } from 'node:fs/promises';
 import { missingInputError } from '../../../shared/doctor-check.js';
-import type { DoctorStep } from '../../../contracts/index.js';
+import type { DoctorRule } from '../../../contracts/index.js';
 
 export function missingPath(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;
@@ -15,7 +15,7 @@ export function missingPath(error: unknown): string | undefined {
   return missingPath(error.cause);
 }
 
-export function checkOperationConfiguration(): DoctorStep[] {
+export function checkOperationConfiguration(): DoctorRule[] {
   function checkConfiguration(signal: AbortSignal): boolean {
     signal.throwIfAborted();
     return true;

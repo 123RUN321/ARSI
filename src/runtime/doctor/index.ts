@@ -9,11 +9,11 @@ import { errorText } from '../../shared/errors.js';
 import type { Runtime } from '../context.js';
 import { Recipe } from '../loaders/recipe.js';
 import type { Registry } from '../registry/index.js';
-import { bindingReferenceSteps } from './declared-bindings.js';
+import { bindingReferenceRules } from './declared-bindings.js';
 import { diagnoseBinding } from './dispatch.js';
-import { declaredPathSteps } from './declared-paths.js';
+import { declaredPathRules } from './declared-paths.js';
 import { openProbeRuntime } from './probe-runtime.js';
-import { runDoctorSteps } from './steps.js';
+import { runDoctorRules } from './rules.js';
 import { createFailureReport, DoctorReportBuilder } from './report.js';
 
 export { diagnoseBinding };
@@ -104,8 +104,8 @@ async function checkBinding(
   reportBuilder: DoctorReportBuilder,
 ): Promise<void> {
   const { binding, signal } = context;
-  const prerequisites = await runDoctorSteps(
-    [...declaredPathSteps(binding), ...bindingReferenceSteps(context)],
+  const prerequisites = await runDoctorRules(
+    [...declaredPathRules(binding), ...bindingReferenceRules(context)],
     signal,
   );
   reportBuilder.addBindingResult(binding, prerequisites);

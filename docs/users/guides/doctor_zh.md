@@ -144,16 +144,16 @@ SDK 在一次调用内完成自己的诊断流程，RSI 将其作为 `sdk-doctor
 
 现有返回 `{ checks: [...] }` 的处理器需要迁移为定义数组。插件处理器不再调用 `failed`、`passed` 或 `runDoctorCheck`，这些导出已删除。CLI JSON 报告仍为 `{ recipeId, checks }`。
 
-从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorStep`。
+从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorRule`。
 
 - 处理器由临时插件实例持有。`doctor` 命令为每个绑定传入其生效配置。
 - 组件未订阅 `rsi/doctor` 时，框架仍执行通用检查，并将组件专用的 `plugin` 项标为 `unchecked`。
 
 | 类型                 | 用途                                                                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | 返回 `DoctorStep[]`；只有声明本身需要 I/O 时才返回定义数组的 Promise。                                                      |
+| `OperationDoctor<C>` | 返回 `DoctorRule[]`；只有声明本身需要 I/O 时才返回定义数组的 Promise。                                                      |
 | `DoctorContext<C>`   | 生效配置、隔离 Runtime、临时目录及命令取消信号。                                                                            |
-| `DoctorStep`         | 包含 `id`、惰性布尔判断 `check(signal)` 和失败原因/修复提示 `reason`。不支持的诊断省略 `check`，可通过 `details` 保存证据。 |
+| `DoctorRule`         | 包含 `id`、惰性布尔判断 `check(signal)` 和失败原因/修复提示 `reason`。不支持的诊断省略 `check`，可通过 `details` 保存证据。 |
 | `DoctorResult`       | 框架执行后通过 `checks` 汇总的结果，由框架生成，插件处理器不返回它。                                                        |
 
 框架在调用处理器前检查绑定引用。引用无效时，该绑定立即停止检查。
@@ -164,10 +164,10 @@ SDK 在一次调用内完成自己的诊断流程，RSI 将其作为 `sdk-doctor
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import type { DoctorContext, DoctorStep } from 'arsi/contracts';
+import type { DoctorContext, DoctorRule } from 'arsi/contracts';
 import type { CustomConfig } from './schema.js';
 
-export function doctor(context: DoctorContext<CustomConfig>): DoctorStep[] {
+export function doctor(context: DoctorContext<CustomConfig>): DoctorRule[] {
   async function isInputReady(signal: AbortSignal): Promise<boolean> {
     const text = await readFile(context.binding.config.inputFile, {
       encoding: 'utf8',

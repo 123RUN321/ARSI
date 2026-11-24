@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DoctorContext, DoctorStep } from '../../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../../contracts/index.js';
 import { missingInputError } from '../../../shared/doctor-check.js';
 import { parseConfig } from '../../../shared/schema.js';
 import { missingPath } from '../doctor/checks.js';
@@ -13,7 +13,7 @@ type CheckedRole = { role: AgentRole; promptField: string };
 export function checkAgentEditor<C extends AgentEditingConfig>(
   context: DoctorContext,
   checkedRoles: (config: C) => readonly CheckedRole[] = () => [],
-): DoctorStep[] {
+): DoctorRule[] {
   context.signal.throwIfAborted();
   const config = parseConfig<C>(
     context.binding.definition.configSchema,

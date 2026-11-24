@@ -24,11 +24,11 @@ import type {
   OperationDoctor,
 } from '../../src/contracts/index.js';
 
-import { runDoctorSteps } from '../../src/runtime/doctor/steps.js';
+import { runDoctorRules } from '../../src/runtime/doctor/rules.js';
 
 function executeDoctor(doctor: OperationDoctor) {
   return async (context: DoctorContext) =>
-    runDoctorSteps(await doctor(context), context.signal);
+    runDoctorRules(await doctor(context), context.signal);
 }
 const createAgentbenchDoctor = (run?: SdkDoctorRunner) =>
   executeDoctor(defineAgentbenchDoctor(run));
@@ -174,7 +174,7 @@ test('agentbench delegates effective task and service configuration to SDK docto
     readFile(join(ctx.directory, 'evaluator.json')),
     /ENOENT/,
   );
-  const { checks } = await runDoctorSteps(steps, ctx.signal);
+  const { checks } = await runDoctorRules(steps, ctx.signal);
   assert.equal(calls, 1);
   assert.equal(
     checks.find((check) => check.id === 'configuration')?.status,

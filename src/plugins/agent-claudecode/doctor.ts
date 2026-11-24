@@ -1,11 +1,11 @@
-import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import type { DoctorContext, DoctorRule } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
 import {
   isNativeAgentCompatible,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
-export function checkClaudeCodeAgent(context: DoctorContext): DoctorStep[] {
+export function checkClaudeCodeAgent(context: DoctorContext): DoctorRule[] {
   const isExecutableCompatible = (signal: AbortSignal): Promise<boolean> =>
     isNativeAgentCompatible(
       context,
