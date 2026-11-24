@@ -186,10 +186,10 @@ test('agentbench delegates effective task and service configuration to SDK docto
   );
 });
 
-test('SDK diagnostics preserve failures, unsupported checks and incomplete network evidence', async (t) => {
+test('SDK diagnostics stop at the first failure and retain unsupported scope on success', async (t) => {
   const f = await fixture(t);
   const ctx = f.context(agentConfig());
-  const { checks } = await createAgentbenchDoctor(async () => ({
+  const report = {
     checks: [
       {
         name: 'Model credentials',
@@ -213,7 +213,9 @@ test('SDK diagnostics preserve failures, unsupported checks and incomplete netwo
         },
       ],
     },
-  }))(ctx);
+  };
+  const { checks } = await createAgentbenchDoctor(async () => report)(ctx);
+  assert.equal(checks.length, 1);
   assert.equal(
     checks.find((check) => check.id === 'sdk.check-0')?.status,
     'failed',
@@ -222,11 +224,15 @@ test('SDK diagnostics preserve failures, unsupported checks and incomplete netwo
     checks.find((check) => check.id === 'sdk.check-0')?.reason ?? '',
     /rejected its API key/,
   );
+  const success = await createAgentbenchDoctor(async () => ({
+    ...report,
+    checks: report.checks.filter((check) => check.status !== 'failed'),
+  }))(ctx);
   assert.equal(
-    checks.find((check) => check.id === 'sdk.check-1')?.status,
+    success.checks.find((check) => check.id === 'sdk.check-0')?.status,
     'unchecked',
   );
-  const network = checks.find((check) => check.id === 'sdk.network');
+  const network = success.checks.find((check) => check.id === 'sdk.network');
   assert.equal(network?.status, 'unchecked');
   assert.match(JSON.stringify(network?.details), /remote node unavailable/);
 });

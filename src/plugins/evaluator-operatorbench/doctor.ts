@@ -29,14 +29,7 @@ async function prepareOperatorbenchConfig(
 export function createOperatorbenchDoctor(
   run?: SdkDoctorRunner,
 ): OperationDoctor {
-  return async (context) => {
-    const { checks } = await checkSdkDoctor(
-      context,
-      prepareOperatorbenchConfig,
-      run,
-    );
-    return { checks };
-  };
+  return (context) => checkSdkDoctor(context, prepareOperatorbenchConfig, run);
 }
 
 export const operatorbenchDoctor = createOperatorbenchDoctor();

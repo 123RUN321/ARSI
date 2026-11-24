@@ -125,6 +125,8 @@ For `application.inference`, Recipe loading checks that `healthcheck.path` and `
 
 All three Evaluators use their configuration adapters to call the installed Evaluator SDK doctor. Configuration and output paths stay in the isolated temporary directory.
 
+The SDK runs its own diagnostic workflow in one call. RSI validates the returned report, reports its first failed check and stops that Evaluator's remaining RSI checks. This does not stop individual probes inside the SDK call. If there is no failure, RSI retains the SDK's results and unsupported diagnostic scopes.
+
 | Implementation             | Checks performed                                                                                                                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `evaluator.agentbench`     | 1. Check Application compatibility and prepare the AgentBundle path and selected tasks.<br>2. Pass the evaluation configuration to the SDK for diagnosis.                            |

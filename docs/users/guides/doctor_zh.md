@@ -125,6 +125,8 @@ arsi doctor my-experiment/recipe.yaml --json
 
 三个 Evaluator 都通过各自的配置适配器调用已安装的 Evaluator SDK doctor。配置与输出路径位于隔离的临时目录。
 
+SDK 在一次调用内完成自己的诊断流程。RSI 校验返回的报告，报告其中的首个失败，并停止该 Evaluator 后续的 RSI 检查；这不会中止 SDK 调用内部的单项探测。没有失败时，RSI 保留 SDK 的结果及未覆盖的诊断范围。
+
 | 实现                       | 实际检查                                                                                        |
 | -------------------------- | ----------------------------------------------------------------------------------------------- |
 | `evaluator.agentbench`     | 1. 核对 Application 兼容性，准备 AgentBundle 路径和选中的任务。<br>2. 将评测配置交给 SDK 检查。 |

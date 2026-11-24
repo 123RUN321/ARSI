@@ -6,7 +6,7 @@ import type {
   JsonValue,
   OperationDoctor,
 } from '../../contracts/index.js';
-import { missingInputReason } from '../../shared/doctor-check.js';
+import { failed, missingInputReason } from '../../shared/doctor-check.js';
 import { missingPath } from '../shared/doctor/checks.js';
 import { plain } from '../shared/evaluator-adapter/data.js';
 import type { SdkEvaluatorConfig } from '../shared/evaluator-adapter/configuration.js';
@@ -17,9 +17,52 @@ import { prepareEvaluationConfig } from './service.js';
 export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
   return async (context) => {
     const sdk = await checkSdkDoctor(context, prepareAgentbenchConfig, run);
-    const checks = await explainBundleChecks(context, sdk.checks);
-    if (sdk.reported)
-      checks.push(
+    const failure = sdk.checks.find((check) => check.status === 'failed');
+    if (failure) {
+      const baseline = plain(context.recipe.application.config.baseline);
+      if (
+        failure.details?.sdkName === 'AgentBundle path' &&
+        typeof baseline.directory === 'string'
+      ) {
+        try {
+          await access(baseline.directory);
+        } catch (error) {
+          if (missingPath(error))
+            return failed(
+              failure.id,
+              [
+                failure.reason,
+                missingInputReason(
+                  'application.config.baseline.directory',
+                  'directory',
+                  baseline.directory,
+                ),
+              ]
+                .filter(Boolean)
+                .join(' '),
+              failure.details,
+            );
+        }
+      }
+      return { checks: sdk.checks };
+    }
+    const baseline = plain(context.recipe.application.config.baseline);
+    const instanceScope: DoctorResult['checks'] =
+      typeof baseline.directory !== 'string' &&
+      typeof baseline.artifactRef !== 'string'
+        ? [
+            {
+              id: 'application-instance',
+              status: 'unchecked',
+              reason:
+                'The Application supplies its instance during execution; SDK doctor uses a temporary path without establishing instance readiness.',
+            },
+          ]
+        : [];
+    return {
+      checks: [
+        ...instanceScope,
+        ...sdk.checks,
         {
           id: 'model-access',
           status: 'unchecked',
@@ -32,8 +75,8 @@ export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
           reason:
             'The installed Evaluator SDK doctor does not measure disk capacity, so evaluation storage sufficiency is unchecked.',
         },
-      );
-    return { checks };
+      ],
+    };
   };
 }
 
@@ -80,54 +123,4 @@ async function prepareAgentbenchConfig(
     execution: { directory: await prepareBundleDirectory(context) },
     directory: context.directory,
   });
-}
-
-async function explainBundleChecks(
-  context: DoctorContext,
-  sdkChecks: DoctorResult['checks'],
-): Promise<DoctorResult['checks']> {
-  const baseline = plain(context.recipe.application.config.baseline);
-  const checks = [...sdkChecks];
-  if (
-    !['application.inference', 'application.kernel'].includes(
-      context.recipe.application.pluginId,
-    ) &&
-    typeof baseline.directory !== 'string' &&
-    typeof baseline.artifactRef !== 'string'
-  ) {
-    checks.unshift({
-      id: 'application-instance',
-      status: 'unchecked',
-      reason:
-        'The Application supplies its instance during execution; SDK doctor uses a temporary path without establishing instance readiness.',
-    });
-  }
-  const bundleIndex = checks.findIndex(
-    (check) =>
-      check.status === 'failed' &&
-      check.details?.sdkName === 'AgentBundle path',
-  );
-  const directory = baseline.directory;
-  if (bundleIndex < 0 || typeof directory !== 'string') return checks;
-  try {
-    await access(directory);
-  } catch (error) {
-    if (missingPath(error)) {
-      const check = checks[bundleIndex]!;
-      checks[bundleIndex] = {
-        ...check,
-        reason: [
-          check.reason,
-          missingInputReason(
-            'application.config.baseline.directory',
-            'directory',
-            directory,
-          ),
-        ]
-          .filter(Boolean)
-          .join(' '),
-      };
-    }
-  }
-  return checks;
 }

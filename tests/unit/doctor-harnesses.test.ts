@@ -201,9 +201,7 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       ),
     );
     for (const id of [
-      'application.verify-bundle',
       'application.acquire-instance',
-      'agent.model-config',
       'agent.model-access',
       'evaluator.configuration',
       'evaluator.sdk-doctor',
@@ -314,7 +312,7 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       assert.equal(
         report.checks.find((check) => check.id === 'evaluator.sdk-doctor')
           ?.status,
-        'passed',
+        missing === 'baseline' ? undefined : 'passed',
       );
       if (missing === 'baseline') {
         const sdkFailure = report.checks.find(
@@ -438,7 +436,7 @@ test('proposal success does not hide an evaluation key failure for the same mode
   assert.ok(!failed?.reason?.includes('Plugin availability'));
   assert.equal(
     report.checks.filter(({ status }) => status === 'failed').length,
-    2,
+    1,
   );
   assert.deepEqual(hostRequests, ['http://proposal.example/v1/models']);
   assert.equal(evaluation?.api_key, '${DOCTOR_EVALUATION_TEST_KEY}');
