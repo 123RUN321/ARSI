@@ -374,20 +374,9 @@ test('doctor checks declared Agent references independently of plugin diagnostic
     verifyReport(report);
   }
   f.doctors({
-    'test.application': async ({ failedPrerequisites }) => {
-      assert.deepEqual(failedPrerequisites, ['binding.conflictingRef']);
-      return {
-        checks: [
-          {
-            id: 'dependent',
-            status: 'unchecked',
-            reason:
-              'The binding.conflictingRef check failed. Correct conflictingRef before rerunning.',
-          },
-          { id: 'independent', status: 'passed' },
-        ],
-      };
-    },
+    'test.application': async () => ({
+      checks: [{ id: 'independent', status: 'passed' }],
+    }),
   });
   application.config = { agentRef: 'agent', conflictingRef: 'agent' };
   await writeFile(f.path, JSON.stringify(recipe));
@@ -404,9 +393,9 @@ test('doctor checks declared Agent references independently of plugin diagnostic
     'passed',
   );
   assert.match(
-    report.checks.find(({ id }) => id === 'application.dependent')?.reason ??
-      '',
-    /binding\.conflictingRef.*Correct conflictingRef/,
+    report.checks.find(({ id }) => id === 'application.binding.conflictingRef')
+      ?.reason ?? '',
+    /conflictingRef.*conflicting binding contracts/,
   );
   assert.equal(
     report.checks.find(({ id }) => id === 'application.independent')?.status,

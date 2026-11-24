@@ -149,7 +149,7 @@ arsi doctor my-experiment/recipe.yaml --json
 | `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。 |
 | `DoctorResult`       | 组件通过 `checks` 返回检查结果。失败时，在 `reason` 中说明原因和修复方法。跳过检查时，在 `reason` 中说明哪个前提失败。框架为检查 ID 添加绑定名前缀。      |
 
-路径检查通过后，`context.failedPrerequisites` 会列出失败的绑定引用，例如局部 ID `binding.agentRef`。跳过依赖该前提的检查时，请在 `reason` 中说明哪个前提失败。
+框架在调用处理器前报告无效的绑定引用。只要该绑定声明的路径通过检查，处理器仍可执行独立检查。
 
 - `C` 是组件配置类型。本例在 `schema.ts` 中导出 `type CustomConfig = { inputFile: string }`，那么 `context.binding.config.inputFile` 就会被推导为 `string`。
 

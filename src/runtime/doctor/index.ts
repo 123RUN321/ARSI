@@ -110,11 +110,8 @@ async function checkBinding(
     if (check.status === 'failed')
       failedPaths.push(`${binding.name}.${check.id}`);
   }
-  const failedPrerequisites: string[] = [];
-  for await (const check of checkDeclaredBindings(context)) {
+  for await (const check of checkDeclaredBindings(context))
     reportBuilder.addBindingCheck(binding, check);
-    if (check.status === 'failed') failedPrerequisites.push(check.id);
-  }
   if (failedPaths.length) {
     reportBuilder.addBindingCheck(binding, {
       id: 'plugin',
@@ -125,10 +122,7 @@ async function checkBinding(
   }
 
   try {
-    const bindingResult = await diagnoseBinding(context.registry, {
-      ...context,
-      failedPrerequisites: Object.freeze(failedPrerequisites),
-    });
+    const bindingResult = await diagnoseBinding(context.registry, context);
     signal.throwIfAborted();
     reportBuilder.addBindingResult(binding, bindingResult);
   } catch (error) {

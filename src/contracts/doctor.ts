@@ -8,7 +8,6 @@ export interface DoctorCheck {
   binding?: string;
   pluginId?: string;
   status: 'passed' | 'failed' | 'unchecked';
-  /** Describe what failed or why the check was skipped, including available fixes. */
   reason?: string;
   /** Observations establish only the scope described by this check. */
   details?: JsonObject;
@@ -56,8 +55,6 @@ export interface DoctorContext<C extends JsonObject = JsonObject> {
   readonly runtime: RuntimeContext;
   readonly directory: string;
   readonly signal: AbortSignal;
-  /** Local IDs of failed prerequisite checks available to this handler. */
-  readonly failedPrerequisites?: readonly string[];
 }
 
 /** An asynchronous handler for the binding instance’s `rsi/doctor` event. */

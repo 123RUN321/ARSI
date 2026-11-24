@@ -149,7 +149,7 @@ Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/co
 | `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                            |
 | `DoctorResult`       | The component's results in `checks`. For failures, use `reason` to identify the cause and what to fix. For skipped checks, explain the failed prerequisite in `reason`. The framework prefixes check IDs with the binding name. |
 
-For a binding whose declared paths pass, `context.failedPrerequisites` lists failed binding references with local IDs such as `binding.agentRef`. When a dependent check is skipped, name the prerequisite in its `reason`.
+The framework reports invalid binding references before dispatching the handler. If the binding's declared paths pass, its handler can still run independent checks.
 
 - `C` is the component configuration type. Here `schema.ts` exports `type CustomConfig = { inputFile: string }`, so TypeScript infers `context.binding.config.inputFile` as `string`.
 
