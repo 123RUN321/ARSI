@@ -5,13 +5,14 @@ import {
   checkNativeAgent,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
+import { defaultExecutable } from './schema.js';
 
 export async function checkDshAgent(
   context: DoctorContext,
 ): Promise<DoctorResult> {
   const result = await checkNativeAgent(
     context,
-    'dsh',
+    defaultExecutable,
     ['--profile', 'headless', '--help'],
     ['--json', '--permission-mode', '--approval-policy'],
   );
@@ -24,7 +25,7 @@ export async function checkDshAgent(
       async (signal) => {
         const stdout = await runNativeAgentCommand(
           context,
-          'dsh',
+          defaultExecutable,
           ['--profile', 'headless', '--dump-config'],
           signal,
         );

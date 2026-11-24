@@ -5,11 +5,13 @@ export type AgentDshConfig = {
   timeoutMs?: number;
 };
 
+export const defaultExecutable = 'dsh';
+
 export const configSchema: JsonSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    executable: { type: 'string', minLength: 1, default: 'dsh' },
+    executable: { type: 'string', minLength: 1, default: defaultExecutable },
     timeoutMs: { type: 'integer', minimum: 1, maximum: 2147483647 },
   },
 };

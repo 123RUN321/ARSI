@@ -7,13 +7,13 @@ import type {
 } from '../../contracts/index.js';
 import { checkClaudeCodeAgent } from './doctor.js';
 
-import type { ResolvedAgentClaudeCodeConfig } from './schema.js';
+import type { AgentClaudeCodeConfig } from './schema.js';
 import { runSession } from './session.js';
 
 export const createAgentClaudeCode: OperationDefinition<
   AgentInput,
   AgentOutput,
-  ResolvedAgentClaudeCodeConfig
+  AgentClaudeCodeConfig
 >['create'] = async (config, ctx) => {
   ctx.event?.on('rsi/doctor', checkClaudeCodeAgent);
   const operation: Operation<AgentInput, AgentOutput> = {

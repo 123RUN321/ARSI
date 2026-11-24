@@ -7,13 +7,13 @@ import type {
 } from '../../contracts/index.js';
 import { checkOpenCodeAgent } from './doctor.js';
 
-import type { ResolvedAgentOpenCodeConfig } from './schema.js';
+import type { AgentOpenCodeConfig } from './schema.js';
 import { runSession } from './session.js';
 
 export const createAgentOpenCode: OperationDefinition<
   AgentInput,
   AgentOutput,
-  ResolvedAgentOpenCodeConfig
+  AgentOpenCodeConfig
 >['create'] = async (config, ctx) => {
   ctx.event?.on('rsi/doctor', checkOpenCodeAgent);
   const operation: Operation<AgentInput, AgentOutput> = {

@@ -26,15 +26,15 @@ import { createProjectSubagentTool, readProjectRole } from './subagent.js';
 import { piObservations } from './observations.js';
 import { projectTools } from './project-tools.js';
 import { validate, validateSchemaDefinition } from '../../shared/schema.js';
-import type { ResolvedAgentPiConfig } from './schema.js';
+import { configDefaults, type AgentPiConfig } from './schema.js';
 
 /** Resolve only for execution; persisted config keeps environment references. */
 export function resolveModelConfig(
-  config: ResolvedAgentPiConfig,
+  config: AgentPiConfig,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): { model: string; base_url: string; api_key: string } {
   const resolve = (field: 'model' | 'base_url' | 'api_key'): string => {
-    const value = config[field].replace(
+    const value = (config[field] ?? configDefaults[field]).replace(
       /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
       (_match, name: string) => {
         const replacement = environment[name];
@@ -62,7 +62,7 @@ export type PiTask = AgentInput & {
   parentRunId: string | null;
 };
 export async function createPiSession(
-  config: ResolvedAgentPiConfig,
+  config: AgentPiConfig,
   delegate: (
     role: string,
     goal: string,
@@ -73,7 +73,12 @@ export async function createPiSession(
   execute(request: PiTask, context: RuntimeContext): Promise<AgentOutput>;
   dispose(): Promise<void>;
 }> {
-  const thinkingLevel = config.thinkingLevel;
+  const {
+    contextWindow = configDefaults.contextWindow,
+    thinkingLevel = configDefaults.thinkingLevel,
+    retries = configDefaults.retries,
+    retryBaseDelayMs = configDefaults.retryBaseDelayMs,
+  } = config;
   return {
     async execute(request, context) {
       const {
@@ -131,8 +136,8 @@ export async function createPiSession(
               thinkingLevelMap: { xhigh: 'xhigh' },
               input: ['text'],
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-              contextWindow: config.contextWindow,
-              maxTokens: config.maxTokens ?? config.contextWindow,
+              contextWindow,
+              maxTokens: config.maxTokens ?? contextWindow,
             },
           ],
         });
@@ -150,9 +155,9 @@ export async function createPiSession(
               : { reserveTokens: config.maxTokens }),
           },
           retry: {
-            enabled: config.retries > 0,
-            maxRetries: config.retries,
-            baseDelayMs: config.retryBaseDelayMs,
+            enabled: retries > 0,
+            maxRetries: retries,
+            baseDelayMs: retryBaseDelayMs,
             provider: { maxRetries: 0 },
           },
         });

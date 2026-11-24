@@ -10,13 +10,14 @@ import {
   checkNativeAgent,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
+import { defaultExecutable } from './schema.js';
 
 export async function checkOpenCodeAgent(
   context: DoctorContext,
 ): Promise<DoctorResult> {
   const result = await checkNativeAgent(
     context,
-    'opencode',
+    defaultExecutable,
     ['run', '--help'],
     ['--standalone', '--format', '--model', '--archived'],
   );
@@ -29,7 +30,7 @@ export async function checkOpenCodeAgent(
       async (signal) => {
         const version = await runNativeAgentCommand(
           context,
-          'opencode',
+          defaultExecutable,
           ['--version'],
           signal,
         );
@@ -50,7 +51,7 @@ export async function checkOpenCodeAgent(
       async (signal) => {
         const stdout = await runNativeAgentCommand(
           context,
-          'opencode',
+          defaultExecutable,
           ['debug', 'config', '--standalone'],
           signal,
           [0],

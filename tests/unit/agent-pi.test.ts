@@ -8,11 +8,7 @@ import { join } from 'node:path';
 import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import { resolveModelConfig } from '../../src/plugins/agent-pi/service.js';
 import { piDefinition } from '../../src/plugins/agent-pi/index.js';
-import type {
-  AgentPiConfig,
-  ResolvedAgentPiConfig,
-} from '../../src/plugins/agent-pi/schema.js';
-import { parseConfig } from '../../src/shared/schema.js';
+import type { AgentPiConfig } from '../../src/plugins/agent-pi/schema.js';
 
 import { Registry } from '../../src/runtime/registry/index.js';
 
@@ -249,11 +245,7 @@ test('Agent uses SDK model fields and resolves environment references without pe
   const resolved = (
     raw: AgentPiConfig,
     environment: Readonly<Record<string, string | undefined>> = env,
-  ) =>
-    resolveModelConfig(
-      parseConfig<ResolvedAgentPiConfig>(piDefinition.configSchema, raw),
-      environment,
-    );
+  ) => resolveModelConfig(raw, environment);
   assert.deepEqual(resolved(config), {
     model: 'test-model',
     base_url: 'https://model.example/v1',

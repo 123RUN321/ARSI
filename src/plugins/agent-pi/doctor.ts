@@ -2,10 +2,10 @@ import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import { runDoctorCheck } from '../../shared/doctor-check.js';
 import { probeModelAccess, type ModelAccessResult } from './model-access.js';
 import { resolveModelConfig } from './session.js';
-import type { ResolvedAgentPiConfig } from './schema.js';
+import type { AgentPiConfig } from './schema.js';
 
 export async function checkPiAgent(
-  context: DoctorContext<ResolvedAgentPiConfig>,
+  context: DoctorContext<AgentPiConfig>,
 ): Promise<DoctorResult> {
   const options = { signal: context.signal };
   let resolved: ReturnType<typeof resolveModelConfig> | undefined;

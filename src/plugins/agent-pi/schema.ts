@@ -14,33 +14,51 @@ export type AgentPiConfig = {
   executionTimeoutMs?: number;
 };
 
-export type ResolvedAgentPiConfig = Required<
-  Omit<AgentPiConfig, 'maxTokens' | 'timeoutMs' | 'executionTimeoutMs'>
-> &
-  Pick<AgentPiConfig, 'maxTokens' | 'timeoutMs' | 'executionTimeoutMs'>;
+export const configDefaults = {
+  model: '${MODEL_NAME}',
+  base_url: '${MODEL_ENDPOINT}',
+  api_key: '${MODEL_API_KEY}',
+  contextWindow: 262144,
+  thinkingLevel: 'low',
+  retries: 0,
+  retryBaseDelayMs: 1000,
+} satisfies Partial<AgentPiConfig>;
 
 export const configSchema: JsonSchema = {
   type: 'object',
   properties: {
-    model: { type: 'string', minLength: 1, default: '${MODEL_NAME}' },
-    base_url: { type: 'string', minLength: 1, default: '${MODEL_ENDPOINT}' },
+    model: { type: 'string', minLength: 1, default: configDefaults.model },
+    base_url: {
+      type: 'string',
+      minLength: 1,
+      default: configDefaults.base_url,
+    },
     api_key: {
       type: 'string',
       pattern: '^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$',
-      default: '${MODEL_API_KEY}',
+      default: configDefaults.api_key,
     },
     maxTokens: { type: 'integer', minimum: 1 },
-    contextWindow: { type: 'integer', minimum: 1, default: 262144 },
+    contextWindow: {
+      type: 'integer',
+      minimum: 1,
+      default: configDefaults.contextWindow,
+    },
     thinkingLevel: {
       enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-      default: 'low',
+      default: configDefaults.thinkingLevel,
     },
-    retries: { type: 'integer', minimum: 0, maximum: 10, default: 0 },
+    retries: {
+      type: 'integer',
+      minimum: 0,
+      maximum: 10,
+      default: configDefaults.retries,
+    },
     retryBaseDelayMs: {
       type: 'integer',
       minimum: 0,
       maximum: 300000,
-      default: 1000,
+      default: configDefaults.retryBaseDelayMs,
     },
     executionTimeoutMs: { type: 'integer', minimum: 1, maximum: 2147483647 },
     timeoutMs: {

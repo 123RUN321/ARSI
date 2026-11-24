@@ -8,7 +8,7 @@ import type {
 } from '../../contracts/index.js';
 import { checkPiAgent } from './doctor.js';
 
-import type { ResolvedAgentPiConfig } from './schema.js';
+import { configDefaults, type AgentPiConfig } from './schema.js';
 import { createPiSession, type PiTask } from './session.js';
 export { resolveModelConfig } from './session.js';
 
@@ -16,10 +16,11 @@ export { resolveModelConfig } from './session.js';
 export const createAgentPi: OperationDefinition<
   AgentInput,
   AgentOutput,
-  ResolvedAgentPiConfig
+  AgentPiConfig
 >['create'] = async (config, ctx) => {
   ctx.event?.on('rsi/doctor', checkPiAgent);
-  if (config.maxTokens !== undefined && config.maxTokens > config.contextWindow)
+  const contextWindow = config.contextWindow ?? configDefaults.contextWindow;
+  if (config.maxTokens !== undefined && config.maxTokens > contextWindow)
     throw new Error('agent.pi maxTokens must not exceed contextWindow');
   const operation: Operation<AgentInput, AgentOutput> = {
     async execute(request, context) {

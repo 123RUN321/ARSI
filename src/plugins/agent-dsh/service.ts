@@ -12,14 +12,14 @@ import type {
 import { object, string } from '../../shared/json.js';
 import { checkDshAgent } from './doctor.js';
 
-import type { AgentDshConfig } from './schema.js';
+import { defaultExecutable, type AgentDshConfig } from './schema.js';
 import { runDshProcess } from './process.js';
 import { dshObservations } from './observations.js';
 
 export const createAgentDsh: OperationDefinition<
   AgentInput,
   AgentOutput,
-  AgentDshConfig & { executable: string }
+  AgentDshConfig
 >['create'] = async (config, ctx) => {
   ctx.event?.on('rsi/doctor', checkDshAgent);
   const operation: Operation<AgentInput, AgentOutput> = {
@@ -65,7 +65,7 @@ export const createAgentDsh: OperationDefinition<
       let finalText: string | undefined;
       try {
         await runDshProcess(
-          config.executable,
+          config.executable ?? defaultExecutable,
           patch,
           JSON.stringify({
             goal: request.goal,
