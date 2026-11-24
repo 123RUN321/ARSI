@@ -9,7 +9,7 @@ import {
 } from 'commander';
 import type { Runtime } from '../../runtime/context.js';
 import type { RevisionApplication } from '../../runtime/revisions/application.js';
-import { formatDoctorSummary } from './doctor-summary.js';
+import { formatDoctorSummary } from '../../runtime/doctor/summary.js';
 
 export interface CommandContext {
   signal: AbortSignal;
