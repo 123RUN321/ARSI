@@ -53,7 +53,13 @@ export function Overview({
       <div className="overview-metrics">
         <div>
           <span>Duration</span>
-          <strong>{recordedDuration(data.startedAt, data.finishedAt)}</strong>
+          <strong>
+            {recordedDuration(
+              data.startedAt,
+              data.finishedAt ??
+                (data.status === 'running' ? data.observedAt : null),
+            )}
+          </strong>
         </div>
         <div>
           <span>
@@ -72,8 +78,14 @@ export function Overview({
           </strong>
         </div>
         <div>
-          <span>Evaluations</span>
-          <strong>{measurements.data?.total ?? '—'}</strong>
+          <span>
+            {usage?.evaluationRuns == null
+              ? 'Measurement records'
+              : 'Evaluation runs'}
+          </span>
+          <strong>
+            {usage?.evaluationRuns ?? measurements.data?.total ?? '—'}
+          </strong>
         </div>
         <div>
           <span>Model calls</span>

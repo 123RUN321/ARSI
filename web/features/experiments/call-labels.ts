@@ -36,13 +36,21 @@ export function callLabels(
     invariantProposer: 'Inv Proposer',
     domainProposer: 'Domain Proposer',
     composer: 'Composer',
+    proposer: 'Proposer',
+    prelude: 'Preparation',
+    sampling: 'Measurement sampling',
+    ledger: 'Ledger',
+    framework: 'Grid proposer',
+    sweep: 'Concurrency sweep',
+    close: 'Summary',
   };
   let component = isAgentCall(owner)
     ? 'Agent'
-    : owner.pluginId.startsWith('proposer.')
-      ? (roles[owner.bindingId] ??
-        (owner.bindingId === 'proposer' ? 'Proposer' : owner.bindingId))
-      : (names[owner.pluginId.split('.')[0]!] ?? owner.bindingId);
+    : (roles[owner.bindingId] ??
+      (owner.pluginId.startsWith('proposer.')
+        ? owner.bindingId
+        : names[owner.pluginId.split('.')[0]!]) ??
+      owner.bindingId);
   const stage = stages.get(owner.callId);
   if (owner.pluginId.startsWith('evaluator.') && stage)
     component += ` · ${stage.variant === 'Invariant' ? 'Inv' : stage.variant}`;
@@ -52,7 +60,7 @@ export function callLabels(
   const round = stage?.round ?? roundLabel(owner.triggerPath ?? path);
   return {
     title: component,
-    round: round?.replace(/Round /g, 'R') ?? null,
+    round: round ?? (path === 'steps/baseline' ? 'Baseline' : null),
     plugins:
       owner.callId === call.callId
         ? call.pluginId

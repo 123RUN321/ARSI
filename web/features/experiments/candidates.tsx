@@ -202,9 +202,7 @@ export function Candidates({
                                 item.ref === current.ref ? 'page' : undefined
                               }
                             >
-                              {labels
-                                .candidate(item.ref)
-                                .replace(/Round /g, 'R')}
+                              {labels.candidate(item.ref)}
                             </a>
                           </React.Fragment>
                         ))}

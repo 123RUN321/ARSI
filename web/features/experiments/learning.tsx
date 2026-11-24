@@ -31,7 +31,11 @@ function revisionDepth(
 }
 function title(record: LearningRecord, records: LearningRecord[]): string {
   if (record.kind === 'memory')
-    return roundLabel(record.path) ?? 'Memory update';
+    return !record.parentRef &&
+      record.resourceRef &&
+      record.status === 'updated'
+      ? 'First memory'
+      : 'Memory update';
   return record.kind === 'initial'
     ? 'Initial version'
     : `Revision ${revisionDepth(record, records)}`;
@@ -351,10 +355,10 @@ function Detail({
   memory: boolean;
 }): React.JSX.Element {
   const selection = useRoute();
-  const full = selection.content === 'full';
   const parent = memory
     ? record.parentRef
     : records.find((item) => item.id === record.parentRef)?.resourceRef;
+  const full = !parent || selection.content === 'full';
   const prefix = memory ? '' : `bindings/${record.binding}/resources/`;
   return (
     <Card>
@@ -374,8 +378,8 @@ function Detail({
         </div>
         <p className="muted">
           {record.binding}
-          {!memory && record.kind !== 'initial' && roundLabel(record.path)
-            ? ` · Triggered after ${roundLabel(record.path)}`
+          {record.kind !== 'initial' && roundLabel(record.path)
+            ? ` · ${memory ? '' : 'Triggered after '}${roundLabel(record.path)}`
             : null}
           {record.startedAt ? (
             <>
@@ -407,6 +411,7 @@ function Detail({
               >
                 <button
                   className="quiet-button"
+                  disabled={!parent}
                   aria-pressed={!full}
                   onClick={() => replaceRouteSelection({ content: undefined })}
                 >
@@ -544,12 +549,8 @@ export function Learning({
               >
                 <div className="learning-record-heading">
                   <strong>{title(item, items)}</strong>
-                  {!memory &&
-                  item.kind !== 'initial' &&
-                  roundLabel(item.path) ? (
-                    <span className="call-round">
-                      {roundLabel(item.path)?.replace(/Round /g, 'R')}
-                    </span>
+                  {item.kind !== 'initial' && roundLabel(item.path) ? (
+                    <span className="call-round">{roundLabel(item.path)}</span>
                   ) : null}
                 </div>
                 <span>{item.binding}</span>

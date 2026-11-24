@@ -37,7 +37,7 @@ test('agent calls retain business ownership through nested agents without confus
       labels.title,
       `${component[0]!.toUpperCase()}${component.slice(1)}`,
     );
-    assert.equal(labels.round, 'R1');
+    assert.equal(labels.round, 'Round 1');
     assert.equal(labels.plugins, `${component}.agent → agent.pi`);
     assert.equal(labels.path, 'loop/0/remember');
     assert.equal(ownerCallId(nested, [parent, agent, nested]), 'parent');
@@ -84,7 +84,7 @@ test('call labels use bindings and verified evaluation stages, preserving Reflec
     ...call('r', 'reflection.agent', 'root', 'reflection/id'),
     triggerPath: 'loop/3/renamed',
   };
-  assert.equal(callLabels(reflection, []).round, 'R4');
+  assert.equal(callLabels(reflection, []).round, 'Round 4');
   assert.equal(
     callLabels({ ...reflection, triggerPath: null }, []).round,
     null,
@@ -99,4 +99,13 @@ test('third-party Agents are identified by contract rather than implementation n
   };
   assert.equal(ownerCallId(agent, [parent, agent]), 'parent');
   assert.equal(callLabels(agent, [parent, agent]).title, 'Proposer');
+});
+
+test('infra business bindings retain their role for agent-prefixed plugin IDs', () => {
+  const proposer = {
+    ...call('p', 'agent.infra-decision-proposer', 'root', 'steps/propose'),
+    contractId: 'contract.proposer',
+    bindingId: 'proposer',
+  };
+  assert.equal(callLabels(proposer, [proposer]).title, 'Proposer');
 });

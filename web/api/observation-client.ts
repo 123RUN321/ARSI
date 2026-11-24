@@ -89,6 +89,7 @@ function selectionFields(
       candidateRef: nullable(data.candidateRef),
       searchBestCandidateRef: nullable(data.searchBestCandidateRef),
       finalMeasurementRef: nullable(data.finalMeasurementRef),
+      baselineMeasurementRef: nullable(data.baselineMeasurementRef ?? null),
       finalFeasible: data.finalFeasible,
     },
   };

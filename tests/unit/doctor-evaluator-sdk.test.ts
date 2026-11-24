@@ -13,6 +13,28 @@ import {
   type SdkDoctorOptions,
 } from '../../src/plugins/shared/evaluator-adapter/doctor-sdk.js';
 
+async function assertDescendantStopped(pid: number): Promise<void> {
+  if (process.platform === 'win32') {
+    assert.throws(() => process.kill(pid, 0), /ESRCH/);
+    return;
+  }
+  // A terminated grandchild can remain visible until its new parent reaps it.
+  const state = await new Promise<string>((resolve, reject) => {
+    childProcess.execFile(
+      'ps',
+      ['-p', String(pid), '-o', 'stat='],
+      (error, stdout) => {
+        if (error && error.code !== 1) reject(error);
+        else resolve(stdout.trim());
+      },
+    );
+  });
+  assert.ok(
+    !state || state.startsWith('Z'),
+    `SDK descendant must not still run: ${state}`,
+  );
+}
+
 async function fixture(
   t: test.TestContext,
   script: string,
@@ -206,7 +228,7 @@ test('SDK cancellation falls back to terminating an uncooperative process tree',
   t.mock.timers.tick(60000);
   assert.match(String(await outcome), /forced interruption/);
   assert.throws(() => process.kill(child.pid!, 0), /ESRCH/);
-  assert.throws(() => process.kill(descendant, 0), /ESRCH/);
+  await assertDescendantStopped(descendant);
 });
 
 test('SDK cancellation waits until the native signal listener is installed', async (t) => {
@@ -262,17 +284,7 @@ test(
     controller.abort(new Error('Detached SDK interruption'));
     t.mock.timers.tick(60000);
     assert.match(String(await outcome), /Detached SDK interruption/);
-    const state = await new Promise<string>((resolve) => {
-      childProcess.execFile(
-        'ps',
-        ['-p', String(descendant), '-o', 'stat='],
-        (error, stdout) => resolve(error ? '' : stdout.trim()),
-      );
-    });
-    assert.ok(
-      !state || state.startsWith('Z'),
-      `SDK descendant must not still run: ${state}`,
-    );
+    await assertDescendantStopped(descendant);
   },
 );
 

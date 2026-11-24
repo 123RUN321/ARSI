@@ -77,3 +77,33 @@ export function inferenceMetric(
     ? metric.values.value
     : null;
 }
+
+export function compareThroughput(
+  baseline?: MeasurementSummary,
+  confirmation?: MeasurementSummary,
+): { value: number; unit: string; change: number } | null {
+  if (
+    !baseline?.comparisonKey ||
+    baseline.comparisonKey !== confirmation?.comparisonKey ||
+    baseline.coverage !== 'complete' ||
+    confirmation.coverage !== 'complete'
+  )
+    return null;
+  const metric = confirmation.metrics.find(
+    (item) => item.name === 'outputThroughput',
+  );
+  const baseMetric = baseline.metrics.find(
+    (item) => item.name === 'outputThroughput',
+  );
+  if (
+    !metric ||
+    !baseMetric ||
+    metric.definitionRef !== baseMetric.definitionRef ||
+    metric.unit !== baseMetric.unit
+  )
+    return null;
+  const value = inferenceMetric(confirmation, metric.name);
+  const base = inferenceMetric(baseline, metric.name);
+  if (base === null || base <= 0 || value === null) return null;
+  return { value, unit: metric.unit, change: ((value - base) / base) * 100 };
+}

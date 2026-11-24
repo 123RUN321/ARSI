@@ -127,9 +127,17 @@ function selectionFields(
       candidateRef: ref(output.candidateRef, 'candidate'),
       searchBestCandidateRef: ref(output.searchBestCandidateRef, 'candidate'),
       finalMeasurementRef: ref(output.finalMeasurementRef, 'measurement'),
+      baselineMeasurementRef: ref(output.baselineMeasurementRef, 'measurement'),
       finalFeasible: output.finalFeasible,
     },
   };
+}
+
+function isMemoryCall(entry: JsonObject): boolean {
+  return (
+    entry.contractId === 'contract.memory' ||
+    (entry.contractId == null && entry.pluginId === 'memory.agent')
+  );
 }
 
 export class ObservationQueries {
@@ -277,7 +285,7 @@ export class ObservationQueries {
         else if (kind === 'calls') {
           if (entry.output !== undefined) collect(entry.output);
           if (
-            entry.pluginId === 'memory.agent' &&
+            isMemoryCall(entry) &&
             entry.input &&
             typeof entry.input === 'object' &&
             !Array.isArray(entry.input) &&
@@ -328,7 +336,7 @@ export class ObservationQueries {
           reason: entry.reason ?? null,
           status: entry.status ?? 'unknown',
         });
-      } else if (entry.pluginId === 'memory.agent') {
+      } else if (isMemoryCall(entry)) {
         const input =
           entry.input &&
           typeof entry.input === 'object' &&

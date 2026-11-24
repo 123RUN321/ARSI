@@ -17,7 +17,11 @@ import {
   TableRow,
 } from '../../components/ui/table';
 import { useRoundLabels } from './round-labels';
-import { inferenceMetric, inferenceSummary } from './inference-summary';
+import {
+  compareThroughput,
+  inferenceMetric,
+  inferenceSummary,
+} from './inference-summary';
 
 const number = (value: number | null): string =>
   value === null
@@ -61,6 +65,15 @@ export function InferenceReport({
     )?.ref;
   const searchBest = policySelection?.searchBestCandidateRef;
   const confirmation = policySelection?.finalMeasurementRef;
+  const baselineRef =
+    policySelection?.baselineMeasurementRef ??
+    resultReferences?.find(
+      (ref) =>
+        ref.path === '/baselineMeasurementRef' && ref.kind === 'measurement',
+    )?.ref;
+  const baseline = measurements.find((item) => item.ref === baselineRef);
+  const final = measurements.find((item) => item.ref === confirmation);
+  const confirmedRate = compareThroughput(baseline, final);
   const ordered = [...measurements].sort(
     (a, b) =>
       (a.startedAt ?? '').localeCompare(b.startedAt ?? '') ||
@@ -110,13 +123,27 @@ export function InferenceReport({
               Search winner {labels.candidate(searchBest)}
             </a>
           ) : null}
+          {selected &&
+          final?.candidateRef === selected &&
+          confirmedRate !== null ? (
+            <span>
+              {baseline?.candidateRef === selected
+                ? 'Baseline retained'
+                : 'Selected configuration'}{' '}
+              · {number(confirmedRate.value)} {confirmedRate.unit} on retest (
+              {confirmedRate.change >= 0 ? '+' : ''}
+              {number(confirmedRate.change)}% vs. initial baseline)
+            </span>
+          ) : null}
           {confirmation ? (
             <a href={detail(confirmation)}>
               Fixed-workload confirmation
               {typeof policySelection?.finalFeasible === 'boolean'
-                ? policySelection?.finalFeasible
-                  ? ' · Passed'
-                  : ' · Failed'
+                ? selected
+                  ? ' · Selected'
+                  : policySelection.finalFeasible
+                    ? ' · Feasible, selection unconfirmed'
+                    : ' · Failed'
                 : ''}
             </a>
           ) : null}

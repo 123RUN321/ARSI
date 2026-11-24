@@ -12,12 +12,19 @@ import { readIterationScopes } from '../../../src/shared/iterations.js';
 import { evaluationOrdinals } from './record-identifiers.js';
 
 export function roundLabel(path: string | null | undefined): string | null {
-  const rounds = readIterationScopes(path).map(
-    (iteration) => iteration.index + 1,
-  );
-  return rounds.length
-    ? rounds.map((round) => `Round ${round}`).join(' / ')
-    : null;
+  const scopes = readIterationScopes(path);
+  if (!scopes.length) return null;
+  return scopes
+    .map((scope, index) => {
+      const candidate =
+        index > 0 && scopes[index - 1]?.suffix[0] === 'evaluate_batch';
+      return `${candidate ? 'Candidate' : 'Round'} ${scope.index + 1}`;
+    })
+    .join(
+      scopes.some((scope) => scope.suffix[0] === 'evaluate_batch')
+        ? ' · '
+        : ' / ',
+    );
 }
 export interface HarnessStage {
   round: string;

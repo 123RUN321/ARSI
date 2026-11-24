@@ -25,6 +25,7 @@ export interface PolicySelection {
   candidateRef: string | null;
   searchBestCandidateRef: string | null;
   finalMeasurementRef: string | null;
+  baselineMeasurementRef?: string | null;
   finalFeasible: boolean;
 }
 
