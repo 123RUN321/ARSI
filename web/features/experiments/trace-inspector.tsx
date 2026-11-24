@@ -569,7 +569,7 @@ function EventContent({
   const collaboration = outcome ?? request;
   const spawn =
     collaboration?.tool === 'spawnAgent' || row.title === 'Subagent started';
-  const message = request?.message ?? outcome?.message;
+  const message = row.delegationMessage ?? request?.message ?? outcome?.message;
   const targets = outcome?.targets.length
     ? outcome.targets
     : (request?.targets ?? []);

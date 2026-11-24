@@ -186,12 +186,17 @@ export async function readAgentRecords(
           if (
             event.type === 'subagent.activity' &&
             event.activity === 'started' &&
-            event.childRunId === submittedRunId
+            event.childRunId === submittedRunId &&
+            !delegation
           ) {
-            delegation ??= {
+            const activity = await restoreAgentEvent(callDirectory, record);
+            delegation = {
               parentRunId: record.runId,
               sequence: record.sequence,
-              message: null,
+              message:
+                activity.type === 'subagent.activity' && activity.text
+                  ? activity.text
+                  : null,
             };
           }
           if (event.type === 'tool.started' && event.name === 'spawnAgent') {

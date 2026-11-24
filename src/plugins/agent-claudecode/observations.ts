@@ -5,7 +5,11 @@ export function claudeObservations(
   record: (event: AgentObservation) => void,
 ): (event: JsonObject) => void {
   const children = new Set<string>();
-  const toolOwners = new Map<string, string>();
+  const tools = new Map<string, { runId: string; prompt?: string }>();
+  const lastMessages = new Map<
+    string,
+    Extract<AgentObservation['event'], { type: 'message.completed' }>
+  >();
   let serial = 0;
   return (event) => {
     const runId =
@@ -14,12 +18,24 @@ export function claudeObservations(
         : 'main';
     if (runId !== 'main' && !children.has(runId)) {
       children.add(runId);
+      const tool = tools.get(runId);
+      const parentRunId = tool?.runId ?? null;
+      if (parentRunId !== null)
+        record({
+          runId: parentRunId,
+          event: {
+            type: 'subagent.activity',
+            activity: 'started',
+            childRunId: runId,
+            ...(tool?.prompt ? { text: tool.prompt } : {}),
+          },
+        });
       record({
         runId,
         event: {
           type: 'run.started',
           backend: 'agent.claudecode',
-          parentRunId: toolOwners.get(runId) ?? null,
+          parentRunId,
         },
       });
     }
@@ -64,7 +80,17 @@ export function claudeObservations(
           typeof block.id === 'string' &&
           typeof block.name === 'string'
         ) {
-          toolOwners.set(block.id, runId);
+          const input = block.input;
+          tools.set(block.id, {
+            runId,
+            ...((block.name === 'Agent' || block.name === 'Task') &&
+            input &&
+            typeof input === 'object' &&
+            !Array.isArray(input) &&
+            typeof input.prompt === 'string'
+              ? { prompt: input.prompt }
+              : {}),
+          });
           emit({
             type: 'tool.started',
             toolCallId: block.id,
@@ -82,15 +108,49 @@ export function claudeObservations(
             status: block.is_error ? 'failed' : 'succeeded',
           });
       }
-      if (text || thinking)
-        emit({
+      if (text || thinking) {
+        const phase =
+          event.type === 'assistant' &&
+          blocks.some((block) => block.type === 'tool_use')
+            ? 'commentary'
+            : runId !== 'main' &&
+                event.type === 'assistant' &&
+                message.stop_reason === 'end_turn' &&
+                text
+              ? 'final_answer'
+              : undefined;
+        const completed = {
           type: 'message.completed',
           messageId: `${typeof message.id === 'string' ? message.id : event.type}:${serial++}`,
           role: String(event.type),
           text,
           thinking,
-        });
+          ...(phase ? { phase } : {}),
+        } as const;
+        if (event.type === 'assistant' && text)
+          lastMessages.set(runId, completed);
+        emit(completed);
+      }
     } else if (event.type === 'result') {
+      const last = lastMessages.get(runId);
+      if (
+        event.is_error === false &&
+        event.subtype === 'success' &&
+        typeof event.result === 'string' &&
+        event.result.trim()
+      )
+        emit({
+          type: 'message.completed',
+          messageId:
+            last?.text === event.result ? last.messageId : `result:${serial++}`,
+          role: 'assistant',
+          text: event.result,
+          ...(last?.text === event.result && last.thinking
+            ? { thinking: last.thinking }
+            : {}),
+          phase: 'final_answer',
+        });
+      lastMessages.delete(runId);
       if (event.usage !== undefined)
         emit({
           type: 'usage.reported',

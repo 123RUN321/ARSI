@@ -210,6 +210,15 @@ test('instructions project the owned submission and only instruction files from 
       childRunId: 'lifecycle-only',
     },
   });
+  writer.record({
+    runId: 'main',
+    event: {
+      type: 'subagent.activity',
+      activity: 'started',
+      childRunId: 'recorded-delegation',
+      text: prompt,
+    },
+  });
   await writer.close();
   const query = new ObservationQueries(facts, artifacts, directory);
   const { parseCallInstructions } = await import(
@@ -299,6 +308,19 @@ test('instructions project the owned submission and only instruction files from 
     parentRunId: 'main',
     sequence: 5,
     message: null,
+  });
+  const recorded = await query.callInstructions(
+    'run-alpha',
+    'prompt-call',
+    'recorded-delegation',
+  );
+  assert.deepEqual(recorded.delegation, {
+    parentRunId: 'main',
+    sequence: 6,
+    message: {
+      text: prompt.replace('secret-fixture', '[REDACTED]'),
+      truncated: false,
+    },
   });
 
   await assert.rejects(

@@ -125,8 +125,10 @@ export async function createPiSession(
           ...(request.role ? { role: request.role } : {}),
         },
       });
-      const observe = observeNative(
-        piObservations(publish, request.runId),
+      const observations = piObservations(publish, request.runId);
+      const observe = observeNative(observations.observe, publish, signal);
+      const finishMessage = observeNative(
+        observations.finishMessage,
         publish,
         signal,
       );
@@ -361,6 +363,7 @@ export async function createPiSession(
                   .map((item) => item.text)
                   .join('')
               : '';
+          finishMessage(response);
           publish({
             runId: request.runId,
             event: {

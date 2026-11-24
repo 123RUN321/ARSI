@@ -7,6 +7,8 @@ export type AgentEvent =
       activity: 'started' | 'interacted' | 'interrupted' | 'completed';
       childRunId: string;
       agentPath?: string;
+      /** Readable message sent by the parent, when reported by the backend. */
+      text?: string;
     }
   | {
       type: 'run.started';
@@ -92,6 +94,7 @@ export const agentObservationSchema = recordSchema(
             },
             childRunId: text,
             agentPath: text,
+            text,
           },
           ['type', 'activity', 'childRunId'],
         ),

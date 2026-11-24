@@ -316,6 +316,19 @@ test('Pi uses the workspace instructions, default tools, and on-demand skill con
       status: 'completed',
       nativeStatus: 'stop',
     });
+    const final = records.items.find(
+      (item) => item.sequence === records.finalResponses[0]?.sequence,
+    )?.event;
+    assert.equal(final?.type, 'message.completed');
+    assert.equal(final.text, '{"ok":true}');
+    assert.equal(
+      records.items.filter(
+        ({ event }) =>
+          event.type === 'message.completed' &&
+          event.messageId === final.messageId,
+      ).length,
+      2,
+    );
     const first = JSON.stringify(fixture.requests[0]);
     assert.match(first, /WORKSPACE_INSTRUCTIONS/);
     assert.match(first, /WORKSPACE_SKILL_DESCRIPTION/);
@@ -692,6 +705,50 @@ test('Pi cancellation interrupts a native child model request', async () => {
     await assert.rejects(pending, /Parent cancelled/);
     await f.waitForResponseClose(1);
     assert.deepEqual(f.charges, [1, 1]);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Pi records delegation and final responses for both runs', async () => {
+  const f = await modelFixture([
+    {
+      tool: {
+        name: 'subagent',
+        arguments: '{"agent":"scout","task":"Inspect"}',
+      },
+    },
+    { content: '{"findings":"Observed"}' },
+    { content: '{"ok":true}' },
+  ]);
+  try {
+    await mkdir(join(f.directory, 'workspace/roles'));
+    await writeFile(
+      join(f.directory, 'workspace/roles/scout.md'),
+      'Inspect evidence.',
+    );
+    assert.deepEqual(await f.run(), { ok: true });
+    const directory = join(f.directory, 'call-0');
+    const records = await readAgentRecords(directory, 0, 100, true);
+    const delegation = records.items.find(
+      ({ runId, event }) =>
+        runId === 'main' && event.type === 'subagent.activity',
+    )?.event;
+    assert.equal(delegation?.type, 'subagent.activity');
+    const child = await readAgentRecords(
+      directory,
+      0,
+      100,
+      true,
+      delegation.childRunId,
+    );
+    assert.equal(child.submitted?.event.type, 'task.submitted');
+    assert.equal(JSON.parse(child.submitted.event.text).goal, 'Inspect');
+    assert.equal(child.delegation?.message, 'Inspect');
+    assert.deepEqual(
+      child.finalResponses.map(({ runId }) => runId),
+      [delegation.childRunId, 'main'],
+    );
   } finally {
     await f.close();
   }

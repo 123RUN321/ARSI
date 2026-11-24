@@ -64,4 +64,9 @@ test('DSH consumes committed text, thinking, tools, truncation and its native fi
   });
   assert(records.items.some((r) => r.event?.type === 'observation.gap'));
   assert(records.items.some((r) => r.event?.type === 'tool.completed'));
+  const final = records.items.find(
+    (item) => item.sequence === records.finalResponses[0]?.sequence,
+  )?.event;
+  assert.equal(final?.type, 'message.completed');
+  assert.equal(final.text, '{"answer":"ok"}');
 });

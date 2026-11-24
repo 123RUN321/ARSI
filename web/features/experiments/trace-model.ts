@@ -15,6 +15,7 @@ export interface TraceRow {
   sessionId?: string;
   turnId?: string;
   childRunId?: string;
+  delegationMessage?: string;
   thinking?: string;
   body?: string;
   args?: JsonValue;
@@ -227,6 +228,9 @@ export function traceRows(events: CallTrace['items']): TraceRow[] {
       row.title = `Subagent ${eventText(event.activity)}`;
       row.summary = eventText(event.agentPath);
       row.body = JSON.stringify(event, null, 2);
+      if (typeof event.text === 'string' && event.text)
+        row.delegationMessage = event.text;
+      if (record.payloadRef) row.payloadRefs = [record.payloadRef];
       rows.push(row);
     } else {
       row.body = JSON.stringify(event, null, 2);
