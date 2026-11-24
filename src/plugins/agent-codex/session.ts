@@ -65,7 +65,7 @@ export async function runSession(options: SessionOptions): Promise<JsonObject> {
       options.record({
         runId: 'main',
         event: {
-          type: 'observation.gap',
+          type: 'startup.retrying',
           reason: 'Retrying Codex startup before turn submission.',
         },
       });
@@ -215,6 +215,15 @@ async function runSessionAttempt(
           },
         });
         markSubmitted();
+        record({
+          runId: 'main',
+          native: { sessionId: threadId },
+          event: {
+            type: 'task.submitted',
+            text: prompt,
+            outputSchema: request.outputSchema,
+          },
+        });
         send({
           id: 3,
           method: 'turn/start',

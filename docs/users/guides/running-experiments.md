@@ -125,6 +125,8 @@ arsi dashboard --port <port>
 
 Run from an experiment workspace that already contains `.rsi/`. The web dashboard displays experiments, summaries, candidates, diffs, measurements, calls, Agent traces, results, and charts, as shown below.
 
+In **Call history**, select an Agent in **Agent trace** and expand **Inputs** to inspect its recorded task and output schema alongside instruction files from the saved workspace. Use **Final response** above the timeline to read the Agent’s recorded final reply. **Structured result** shows the output saved by the Runtime for the main Agent. **Activity** shows messages, tools, and delegation by default. Select **All events** to include lifecycle and usage records. Step numbers are local to each Agent. Scrolling near the end loads more events when available. **Load more** also works manually. The call status records the Runtime outcome, and the trace reports recording interruptions and known observation gaps.
+
 Measurement details show each recorded item's full identifier, subject kind, status, coverage, and metrics. Failed, cancelled, and unknown items show no valid score rather than a numeric result. Missing item evidence is reported explicitly; a successful zero score remains zero.
 Metrics that share a display label include their recorded metric names so distinct values remain identifiable.
 

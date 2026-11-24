@@ -110,20 +110,21 @@ export async function createPiSession(
         | Awaited<ReturnType<typeof createAgentSession>>['session']
         | undefined;
       let unsubscribe: (() => void) | undefined;
-      if (request.parentRunId !== null)
-        context.event.emit('rsi/agent-observation', {
-          runId: request.runId,
-          event: {
-            type: 'run.started',
-            backend: 'agent.pi',
-            parentRunId: request.parentRunId,
-          },
-        });
+      let executionFinished = false;
       const publish = (
         event: import('../../contracts/index.js').AgentObservation,
       ): void => {
         context.event.emit('rsi/agent-observation', event);
       };
+      publish({
+        runId: request.runId,
+        event: {
+          type: 'run.started',
+          backend: 'agent.pi',
+          parentRunId: request.parentRunId,
+          ...(request.role ? { role: request.role } : {}),
+        },
+      });
       const observe = observeNative(
         piObservations(publish, request.runId),
         publish,
@@ -330,6 +331,14 @@ export async function createPiSession(
             outputSchema: schema,
           });
           const start = session.messages.length;
+          publish({
+            runId: request.runId,
+            event: {
+              type: 'task.submitted',
+              text: prompt,
+              outputSchema: schema,
+            },
+          });
           await session.prompt(prompt, { expandPromptTemplates: false });
           await session.waitForIdle();
           signal.throwIfAborted();
@@ -352,14 +361,20 @@ export async function createPiSession(
                   .map((item) => item.text)
                   .join('')
               : '';
+          publish({
+            runId: request.runId,
+            event: {
+              type: 'run.finished',
+              status: message?.role === 'assistant' ? 'completed' : 'unknown',
+              ...(message?.role === 'assistant'
+                ? { nativeStatus: message.stopReason }
+                : {}),
+            },
+          });
+          executionFinished = true;
           const result = parseAgentResult(response);
           if (request.parentRunId !== null)
             validate(schema, result, 'Pi child output');
-          if (request.parentRunId !== null)
-            context.event.emit('rsi/agent-observation', {
-              runId: request.runId,
-              event: { type: 'run.finished', status: 'completed' },
-            });
           return object(result);
         } finally {
           signal.removeEventListener('abort', cancel);
@@ -367,8 +382,8 @@ export async function createPiSession(
       } catch (error) {
         const cause = signal.aborted ? signal.reason : error;
         const message = cause instanceof Error ? cause.message : String(cause);
-        if (request.parentRunId !== null)
-          context.event.emit('rsi/agent-observation', {
+        if (!executionFinished)
+          publish({
             runId: request.runId,
             event: {
               type: 'run.finished',

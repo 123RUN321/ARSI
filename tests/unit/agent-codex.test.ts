@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAgentCodex } from '../../src/plugins/agent-codex/service.js';
 import { agentFixture } from '../fixtures/agent-execution.js';
+import { object } from '../../src/shared/json.js';
 import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 
 test('Codex drives app-server, records commentary and tools, and validates the terminal answer', async (t) => {
@@ -57,8 +58,84 @@ test('Codex drives app-server, records commentary and tools, and validates the t
         },
       },
       {
+        method: 'item/completed',
+        params: {
+          threadId: 'child',
+          turnId: 'child-turn',
+          item: {
+            id: 'child-message',
+            type: 'agentMessage',
+            text: 'Child output',
+          },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'thread1',
+          item: {
+            id: 'delegate',
+            type: 'collabToolCall',
+            tool: 'spawnAgent',
+            senderThreadId: 'thread1',
+            receiverThreadIds: ['child'],
+            status: 'completed',
+          },
+        },
+      },
+      {
         method: 'turn/completed',
-        params: { threadId: 'thread1', turn: { status: 'completed' } },
+        params: {
+          threadId: 'child',
+          turn: { id: 'child-turn', status: 'completed' },
+        },
+      },
+      ...['item/started', 'item/completed'].map((method) => ({
+        method,
+        params: {
+          threadId: 'thread1',
+          item: {
+            id: 'lifecycle',
+            type: 'subAgentActivity',
+            kind: 'started',
+            agentThreadId: 'child',
+            agentPath: '/root/baseline',
+          },
+        },
+      })),
+      ...['item/started', 'item/completed'].map((method) => ({
+        method,
+        params: {
+          threadId: 'thread1',
+          item: {
+            id: 'wait-1',
+            type: 'collabAgentToolCall',
+            tool: 'wait',
+            senderThreadId: 'thread1',
+            receiverThreadIds: [],
+            startedAtMs: 1000,
+            ...(method === 'item/completed'
+              ? { completedAtMs: 1300, status: 'completed' }
+              : { status: 'inProgress' }),
+          },
+        },
+      })),
+      {
+        method: 'thread/started',
+        params: {
+          thread: {
+            id: 'declared-child',
+            parentThreadId: 'thread1',
+            agentRole: 'reviewer',
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: {
+          threadId: 'thread1',
+          turn: { id: 'main-turn', status: 'completed' },
+        },
       },
     ])
       await consume(JSON.stringify(message), send);
@@ -71,6 +148,87 @@ test('Codex drives app-server, records commentary and tools, and validates the t
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   assert.equal(sent.length, process.platform === 'win32' ? 4 : 3);
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  const submitted = object(object(sent.at(-1)).params);
+  assert.deepEqual(records.submitted?.event, {
+    type: 'task.submitted',
+    text: Array.isArray(submitted.input)
+      ? object(submitted.input[0]).text
+      : undefined,
+    outputSchema: submitted.outputSchema,
+  });
+  assert.equal(records.gaps, 0);
+  assert.deepEqual(
+    records.items
+      .filter((r) => r.type === 'subagent.activity')
+      .map((r) => [r.runId, r.event]),
+    [
+      [
+        'main',
+        {
+          type: 'subagent.activity',
+          activity: 'started',
+          childRunId: 'child',
+          agentPath: '/root/baseline',
+        },
+      ],
+    ],
+  );
+  const waits = records.items.filter(
+    (r) =>
+      (r.event.type === 'tool.started' || r.event.type === 'tool.completed') &&
+      r.event.toolCallId === 'wait-1',
+  );
+  assert.deepEqual(
+    waits.map((r) => [r.runId, r.type]),
+    [
+      ['main', 'tool.started'],
+      ['main', 'tool.completed'],
+    ],
+  );
+  assert.equal(
+    waits[1].event.type === 'tool.completed' && waits[1].event.durationMs,
+    300,
+  );
+  const finishes = records.items.filter((r) => r.type === 'run.finished');
+  assert.deepEqual(
+    finishes.map(({ runId, native, event }) => [runId, native?.turnId, event]),
+    [
+      [
+        'child',
+        'child-turn',
+        {
+          type: 'run.finished',
+          status: 'completed',
+          nativeStatus: 'completed',
+        },
+      ],
+      [
+        'main',
+        'main-turn',
+        {
+          type: 'run.finished',
+          status: 'completed',
+          nativeStatus: 'completed',
+        },
+      ],
+    ],
+  );
+  assert.deepEqual(
+    records.items.find((r) => r.runId === 'child' && r.type === 'run.linked')
+      ?.event,
+    { type: 'run.linked', parentRunId: 'main' },
+  );
+  assert.deepEqual(
+    records.items.find(
+      (r) => r.runId === 'declared-child' && r.type === 'run.started',
+    )?.event,
+    {
+      type: 'run.started',
+      backend: 'agent.codex',
+      parentRunId: 'main',
+      role: 'reviewer',
+    },
+  );
   assert(
     records.items.some(
       (r) =>

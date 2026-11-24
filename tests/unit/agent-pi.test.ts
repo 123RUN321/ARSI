@@ -17,6 +17,7 @@ import {
 import { piDefinition } from '../../src/plugins/agent-pi/index.js';
 import type { AgentPiConfig } from '../../src/plugins/agent-pi/schema.js';
 
+import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 import { Registry } from '../../src/runtime/registry/index.js';
 
 interface Reply {
@@ -296,6 +297,25 @@ test('Pi uses the workspace instructions, default tools, and on-demand skill con
       '---\nname: probe\ndescription: WORKSPACE_SKILL_DESCRIPTION\n---\nWORKSPACE_SKILL_BODY',
     );
     assert.deepEqual(await fixture.execute(project), { ok: true });
+    const records = await readAgentRecords(
+      join(fixture.directory, 'call-0'),
+      0,
+      100,
+      true,
+    );
+    assert.deepEqual(records.submitted?.event, {
+      type: 'task.submitted',
+      text: JSON.stringify({
+        goal: 'Inspect evidence',
+        outputSchema: { type: 'object' },
+      }),
+      outputSchema: { type: 'object' },
+    });
+    assert.deepEqual(records.items.at(-1)?.event, {
+      type: 'run.finished',
+      status: 'completed',
+      nativeStatus: 'stop',
+    });
     const first = JSON.stringify(fixture.requests[0]);
     assert.match(first, /WORKSPACE_INSTRUCTIONS/);
     assert.match(first, /WORKSPACE_SKILL_DESCRIPTION/);

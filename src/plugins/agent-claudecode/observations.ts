@@ -91,22 +91,23 @@ export function claudeObservations(
           thinking,
         });
     } else if (event.type === 'result') {
-      if (runId !== 'main') {
+      if (event.usage !== undefined)
         emit({
-          type: 'run.finished',
-          status:
-            event.is_error === false && event.subtype === 'success'
-              ? 'completed'
-              : 'failed',
+          type: 'usage.reported',
+          usageId: 'result',
+          scope: 'session',
+          mode: 'cumulative',
+          values: { usage: event.usage, models: event.modelUsage ?? null },
         });
-      }
-      if (event.usage === undefined) return;
       emit({
-        type: 'usage.reported',
-        usageId: 'result',
-        scope: 'session',
-        mode: 'cumulative',
-        values: { usage: event.usage, models: event.modelUsage ?? null },
+        type: 'run.finished',
+        ...(typeof event.subtype === 'string'
+          ? { nativeStatus: event.subtype }
+          : {}),
+        status:
+          event.is_error === false && event.subtype === 'success'
+            ? 'completed'
+            : 'failed',
       });
     }
   };

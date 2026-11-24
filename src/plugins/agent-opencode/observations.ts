@@ -81,13 +81,21 @@ export function openCodeObservations(
             : {}),
         });
       }
-    } else if (event.type === 'step_finish' && part.tokens !== undefined)
-      emit({
-        type: 'usage.reported',
-        usageId: String(part.id),
-        scope: 'step',
-        mode: 'incremental',
-        values: { tokens: part.tokens, cost: part.cost ?? null },
-      });
+    } else if (event.type === 'step_finish') {
+      if (part.tokens !== undefined)
+        emit({
+          type: 'usage.reported',
+          usageId: String(part.id),
+          scope: 'step',
+          mode: 'incremental',
+          values: { tokens: part.tokens, cost: part.cost ?? null },
+        });
+      if (part.reason === 'stop')
+        emit({
+          type: 'run.finished',
+          status: 'completed',
+          nativeStatus: part.reason,
+        });
+    }
   };
 }

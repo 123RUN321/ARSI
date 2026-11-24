@@ -2,7 +2,22 @@ import { recordSchema } from './measurement.js';
 import type { JsonObject, JsonValue } from '../json.js';
 
 export type AgentEvent =
-  | { type: 'run.started'; parentRunId: string | null; backend: string }
+  | {
+      type: 'subagent.activity';
+      activity: 'started' | 'interacted' | 'interrupted' | 'completed';
+      childRunId: string;
+      agentPath?: string;
+    }
+  | {
+      type: 'run.started';
+      parentRunId: string | null;
+      backend: string;
+      role?: string;
+      name?: string;
+    }
+  | { type: 'run.linked'; parentRunId: string; role?: string; name?: string }
+  | { type: 'task.submitted'; text: string; outputSchema: JsonObject }
+  | { type: 'startup.retrying'; reason: string }
   | {
       type: 'session.started';
       sessionId: string;
@@ -38,6 +53,7 @@ export type AgentEvent =
   | {
       type: 'run.finished';
       status: 'completed' | 'failed' | 'cancelled' | 'unknown';
+      nativeStatus?: string;
       error?: string;
     };
 
@@ -68,11 +84,42 @@ export const agentObservationSchema = recordSchema(
     native: recordSchema({ sessionId: text, turnId: text, itemId: text }, []),
     event: {
       oneOf: [
+        recordSchema(
+          {
+            type: { const: 'subagent.activity' },
+            activity: {
+              enum: ['started', 'interacted', 'interrupted', 'completed'],
+            },
+            childRunId: text,
+            agentPath: text,
+          },
+          ['type', 'activity', 'childRunId'],
+        ),
+        recordSchema(
+          {
+            type: { const: 'run.started' },
+            parentRunId: { type: ['string', 'null'] },
+            backend: text,
+            role: text,
+            name: text,
+          },
+          ['type', 'parentRunId', 'backend'],
+        ),
         recordSchema({
-          type: { const: 'run.started' },
-          parentRunId: { type: ['string', 'null'] },
-          backend: text,
+          type: { const: 'task.submitted' },
+          text,
+          outputSchema: { type: 'object' },
         }),
+        recordSchema(
+          {
+            type: { const: 'run.linked' },
+            parentRunId: text,
+            role: text,
+            name: text,
+          },
+          ['type', 'parentRunId'],
+        ),
+        recordSchema({ type: { const: 'startup.retrying' }, reason: text }),
         recordSchema(
           {
             type: { const: 'session.started' },
@@ -127,6 +174,7 @@ export const agentObservationSchema = recordSchema(
           {
             type: { const: 'run.finished' },
             status: { enum: ['completed', 'failed', 'cancelled', 'unknown'] },
+            nativeStatus: text,
             error: text,
           },
           ['type', 'status'],

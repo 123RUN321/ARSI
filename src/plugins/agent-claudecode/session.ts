@@ -40,14 +40,15 @@ export async function runSession(options: {
   ];
   if (config.model !== undefined) args.push('--model', config.model);
   if (config.effort !== undefined) args.push('--effort', config.effort);
+  const prompt = JSON.stringify({
+    goal: request.goal,
+    instruction:
+      'Read CLAUDE.md and the project instructions. Use native Skills and Agent delegation when appropriate. Return proposed changes through the requested result Schema; leave task input files unchanged. Return only the requested structured result.',
+  });
   await runClaudeProcess(
     config.executable,
     args,
-    JSON.stringify({
-      goal: request.goal,
-      instruction:
-        'Read CLAUDE.md and the project instructions. Use native Skills and Agent delegation when appropriate. Return proposed changes through the requested result Schema; leave task input files unchanged. Return only the requested structured result.',
-    }),
+    prompt,
     (line) => {
       const event = object(JSON.parse(line));
       observe(event);
@@ -83,6 +84,7 @@ export async function runSession(options: {
       }
     },
     options.launch,
+    { record, outputSchema: request.outputSchema },
   );
   if (!result) throw new Error('Claude Code returned no validated output');
   return result;

@@ -5,7 +5,9 @@ import { agentFixture } from '../fixtures/agent-execution.js';
 import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 
 test('DSH consumes committed text, thinking, tools, truncation and its native final result', async (t) => {
+  let submittedText: string | undefined;
   const f = await agentFixture(async (spec, consume) => {
+    submittedText = spec.input;
     assert(!spec.args.includes('--permission-mode'));
     const [body, reminder] = spec.input.split('\n\n');
     assert.deepEqual(JSON.parse(body), {
@@ -50,6 +52,16 @@ test('DSH consumes committed text, thinking, tools, truncation and its native fi
   );
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  assert.deepEqual(records.submitted?.event, {
+    type: 'task.submitted',
+    text: submittedText,
+    outputSchema: f.request.outputSchema,
+  });
+  assert.deepEqual(records.items.at(-1)?.event, {
+    type: 'run.finished',
+    status: 'completed',
+    nativeStatus: 'completed',
+  });
   assert(records.items.some((r) => r.event?.type === 'observation.gap'));
   assert(records.items.some((r) => r.event?.type === 'tool.completed'));
 });

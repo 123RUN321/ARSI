@@ -5,7 +5,9 @@ import { agentFixture } from '../fixtures/agent-execution.js';
 import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 
 test('OpenCode records its V2 parts and returns only the stopped final message', async (t) => {
-  const f = await agentFixture(async (_spec, consume) => {
+  let submittedText: string | undefined;
+  const f = await agentFixture(async (spec, consume) => {
+    submittedText = spec.input;
     for (const event of [
       {
         type: 'tool_use',
@@ -46,6 +48,16 @@ test('OpenCode records its V2 parts and returns only the stopped final message',
   );
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  assert.deepEqual(records.submitted?.event, {
+    type: 'task.submitted',
+    text: submittedText,
+    outputSchema: f.request.outputSchema,
+  });
+  assert.deepEqual(records.items.at(-1)?.event, {
+    type: 'run.finished',
+    status: 'completed',
+    nativeStatus: 'stop',
+  });
   assert(
     records.items.some(
       (r) =>

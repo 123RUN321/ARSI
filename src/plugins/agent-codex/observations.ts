@@ -9,7 +9,38 @@ export function codexObservations(
   record: (event: AgentObservation) => void,
 ): (message: JsonObject, mainThread: string) => void {
   const children = new Set<string>();
-  const parents = new Map<string, string>();
+  const activities = new Set<string>();
+  const relationships = new Map<
+    string,
+    { parentRunId: string; role?: string; name?: string }
+  >();
+  const linkChild = (
+    child: string,
+    parent: string,
+    mainThread: string,
+    identity: { role?: string; name?: string } = {},
+  ): void => {
+    if (!parent || child === mainThread || child === parent) return;
+    const existing = relationships.get(child);
+    if (
+      existing &&
+      (!identity.role || identity.role === existing.role) &&
+      (!identity.name || identity.name === existing.name)
+    )
+      return;
+    const relationship = {
+      parentRunId: parent === mainThread ? 'main' : parent,
+      ...existing,
+      ...identity,
+    };
+    relationships.set(child, relationship);
+    if (children.has(child))
+      record({
+        runId: child,
+        native: { sessionId: child },
+        event: { type: 'run.linked', ...relationship },
+      });
+  };
   return (message, mainThread) => {
     if (
       !message.params ||
@@ -18,22 +49,38 @@ export function codexObservations(
     )
       return;
     const params = object(message.params);
-    const thread =
-      typeof params.threadId === 'string' ? params.threadId : mainThread;
-    const runId =
-      thread && mainThread && thread !== mainThread ? thread : 'main';
-    if (
+    const started =
+      message.method === 'thread/started' ? object(params.thread) : {};
+    const item =
       params.item &&
       typeof params.item === 'object' &&
       !Array.isArray(params.item)
-    ) {
-      const relation = object(params.item);
-      if (relation.type === 'collabToolCall')
-        for (const key of ['newThreadId', 'receiverThreadId']) {
-          if (typeof relation[key] === 'string')
-            parents.set(relation[key], runId);
-        }
-    }
+        ? object(params.item)
+        : undefined;
+    const collaboration =
+      item?.type === 'collabAgentToolCall' || item?.type === 'collabToolCall';
+    const thread =
+      typeof started.id === 'string'
+        ? started.id
+        : collaboration && typeof item.senderThreadId === 'string'
+          ? item.senderThreadId
+          : typeof params.threadId === 'string'
+            ? params.threadId
+            : mainThread;
+    const runId =
+      thread && mainThread && thread !== mainThread ? thread : 'main';
+    if (
+      typeof started.id === 'string' &&
+      typeof started.parentThreadId === 'string'
+    )
+      linkChild(started.id, started.parentThreadId, mainThread, {
+        ...(typeof started.agentRole === 'string' && started.agentRole
+          ? { role: started.agentRole }
+          : {}),
+        ...(typeof started.agentNickname === 'string' && started.agentNickname
+          ? { name: started.agentNickname }
+          : {}),
+      });
     const native = {
       ...(thread ? { sessionId: thread } : {}),
       ...(typeof params.turnId === 'string' ? { turnId: params.turnId } : {}),
@@ -46,7 +93,8 @@ export function codexObservations(
         event: {
           type: 'run.started',
           backend: 'agent.codex',
-          parentRunId: parents.get(runId) ?? null,
+          parentRunId: null,
+          ...relationships.get(runId),
         },
       });
     }
@@ -74,17 +122,29 @@ export function codexObservations(
       });
       return;
     }
-    if (message.method === 'turn/completed' && runId !== 'main') {
+    if (message.method === 'turn/completed') {
       const turn = object(params.turn);
-      emit({
-        type: 'run.finished',
-        status:
-          turn.status === 'completed'
-            ? 'completed'
-            : turn.status === 'interrupted'
-              ? 'cancelled'
-              : 'failed',
-        ...(turn.error ? { error: JSON.stringify(turn.error) } : {}),
+      record({
+        runId,
+        native: {
+          ...native,
+          ...(typeof turn.id === 'string' ? { turnId: turn.id } : {}),
+        },
+        event: {
+          type: 'run.finished',
+          ...(typeof turn.status === 'string'
+            ? { nativeStatus: turn.status }
+            : {}),
+          status:
+            turn.status === 'completed'
+              ? 'completed'
+              : turn.status === 'interrupted'
+                ? 'cancelled'
+                : turn.status === 'failed'
+                  ? 'failed'
+                  : 'unknown',
+          ...(turn.error ? { error: JSON.stringify(turn.error) } : {}),
+        },
       });
       return;
     }
@@ -93,10 +153,39 @@ export function codexObservations(
       message.method !== 'item/completed'
     )
       return;
-    const item = object(params.item);
-    if (typeof item.id !== 'string') return;
+    if (typeof item?.id !== 'string') return;
     const completed = message.method === 'item/completed';
-    if (
+    if (item.type === 'subAgentActivity') {
+      const { kind, agentThreadId, agentPath } = item;
+      if (
+        typeof agentThreadId !== 'string' ||
+        (kind !== 'started' &&
+          kind !== 'interacted' &&
+          kind !== 'interrupted' &&
+          kind !== 'completed')
+      )
+        return;
+      const activityId = `${thread}:${item.id}`;
+      if (activities.has(activityId)) return;
+      activities.add(activityId);
+      if (kind === 'started') {
+        const name =
+          typeof agentPath === 'string'
+            ? agentPath.split('/').at(-1)
+            : undefined;
+        linkChild(agentThreadId, thread, mainThread, name ? { name } : {});
+      }
+      record({
+        runId,
+        native: { ...native, itemId: item.id },
+        event: {
+          type: 'subagent.activity',
+          activity: kind,
+          childRunId: agentThreadId,
+          ...(typeof agentPath === 'string' ? { agentPath } : {}),
+        },
+      });
+    } else if (
       item.type === 'agentMessage' &&
       completed &&
       typeof item.text === 'string'
@@ -121,16 +210,23 @@ export function codexObservations(
         thinking: text(item.summary) || text(item.content),
       });
     } else if (
+      collaboration ||
       [
         'commandExecution',
         'fileChange',
         'mcpToolCall',
         'dynamicToolCall',
-        'collabToolCall',
         'webSearch',
         'imageView',
       ].includes(String(item.type))
     ) {
+      if (
+        collaboration &&
+        item.tool === 'spawnAgent' &&
+        Array.isArray(item.receiverThreadIds)
+      )
+        for (const child of item.receiverThreadIds)
+          if (typeof child === 'string') linkChild(child, thread, mainThread);
       if (!completed)
         emit({
           type: 'tool.started',
@@ -138,10 +234,14 @@ export function codexObservations(
           name: typeof item.tool === 'string' ? item.tool : String(item.type),
           input: item,
         });
-      else
+      else {
+        const { startedAtMs, completedAtMs } = item;
         emit({
           type: 'tool.completed',
           toolCallId: item.id,
+          ...(collaboration && typeof item.tool === 'string'
+            ? { name: item.tool }
+            : {}),
           output: item,
           status:
             item.status === 'failed' || item.error
@@ -149,7 +249,13 @@ export function codexObservations(
               : item.status === 'completed'
                 ? 'succeeded'
                 : 'unknown',
+          ...(typeof startedAtMs === 'number' &&
+          typeof completedAtMs === 'number' &&
+          completedAtMs >= startedAtMs
+            ? { durationMs: completedAtMs - startedAtMs }
+            : {}),
         });
+      }
     }
   };
 }

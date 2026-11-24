@@ -6,13 +6,21 @@ import {
   openSync,
   writeFileSync,
 } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { constants } from 'node:fs';
 import type {
   AgentObservation,
   AgentRecord,
 } from '../../contracts/models/agent-record.js';
+import { readAgentCollaboration } from '../../shared/observation/agent-collaboration.js';
+import { atomic } from './index.js';
+
+interface AgentDelegation {
+  parentRunId: string;
+  sequence: number;
+  message: string | null;
+}
 
 /** One call owns one writer, stored separately from the editable project. */
 export class FileAgentRecorder {
@@ -70,6 +78,7 @@ export class FileAgentRecorder {
       if ('thinking' in event) event.thinking = '';
       if ('input' in event) event.input = null;
       if ('output' in event) event.output = null;
+      if ('outputSchema' in event) event.outputSchema = {};
     }
     const record: AgentRecord = {
       sequence: this.sequence + 1,
@@ -84,7 +93,7 @@ export class FileAgentRecorder {
     writeFileSync(this.descriptor, bytes);
     this.sequence++;
   }
-  close(): void {
+  async close(seal = true): Promise<void> {
     if (this.descriptor === undefined) return;
     const file = this.descriptor;
     this.descriptor = undefined;
@@ -93,6 +102,7 @@ export class FileAgentRecorder {
     } finally {
       closeSync(file);
     }
+    if (seal) await atomic(join(this.directory, 'seal.json'), this.sequence);
   }
 }
 
@@ -101,10 +111,15 @@ export async function readAgentRecords(
   after: number,
   limit: number,
   finished: boolean,
+  submittedRunId = 'main',
 ): Promise<{
   items: AgentRecord[];
   nextAfter: number;
   recording: 'open' | 'closed' | 'interrupted';
+  gaps: number;
+  submitted: AgentRecord | null;
+  delegation: AgentDelegation | null;
+  finalResponses: { runId: string; sequence: number }[];
   total: number;
 }> {
   if (
@@ -115,14 +130,29 @@ export async function readAgentRecords(
     limit > 1000
   )
     throw new Error('Invalid agent record cursor');
+  const directory = join(callDirectory, 'agent');
+  const sealedSequence = await readFile(join(directory, 'seal.json'), {
+    encoding: 'utf8',
+    flag: constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  })
+    .then((seal) => (/^\d+$/.test(seal) ? Number(seal) : NaN))
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
   const file = await open(
-    join(callDirectory, 'agent', 'events.jsonl'),
+    join(directory, 'events.jsonl'),
     constants.O_RDONLY | constants.O_NOFOLLOW,
   );
   const items: AgentRecord[] = [];
   let total = 0,
     tail = '',
-    interrupted = false;
+    interrupted = false,
+    gaps = 0;
+  let submitted: AgentRecord | null = null;
+  const pendingSpawns = new Map<string, AgentRecord>();
+  let delegation: AgentDelegation | null = null;
+  const finalResponses = new Map<string, number>();
   const stream = file.createReadStream({ autoClose: false, encoding: 'utf8' });
   try {
     for await (const chunk of stream) {
@@ -138,11 +168,69 @@ export async function readAgentRecords(
           interrupted = true;
           break;
         }
-        if (record.sequence !== total + 1) {
+        if (!record || record.sequence !== total + 1) {
           interrupted = true;
           break;
         }
         total = record.sequence;
+        if (
+          record.event?.type === 'message.completed' &&
+          record.event.phase === 'final_answer'
+        )
+          finalResponses.set(record.runId, record.sequence);
+        if (record.type === 'observation.gap') gaps++;
+        if (record.runId === submittedRunId && record.type === 'task.submitted')
+          submitted ??= record;
+        if (submittedRunId !== 'main' && record.runId !== submittedRunId) {
+          const { event } = record;
+          if (
+            event.type === 'subagent.activity' &&
+            event.activity === 'started' &&
+            event.childRunId === submittedRunId
+          ) {
+            delegation ??= {
+              parentRunId: record.runId,
+              sequence: record.sequence,
+              message: null,
+            };
+          }
+          if (event.type === 'tool.started' && event.name === 'spawnAgent') {
+            pendingSpawns.set(
+              JSON.stringify([record.runId, event.toolCallId]),
+              record,
+            );
+          } else if (event.type === 'tool.completed') {
+            const key = JSON.stringify([record.runId, event.toolCallId]);
+            const start = pendingSpawns.get(key);
+            pendingSpawns.delete(key);
+            if (
+              !delegation?.message &&
+              (start || event.name === 'spawnAgent')
+            ) {
+              const completed = await restoreAgentEvent(callDirectory, record);
+              const spawn =
+                completed.type === 'tool.completed'
+                  ? readAgentCollaboration(completed.output)
+                  : null;
+              if (
+                spawn?.tool === 'spawnAgent' &&
+                spawn.targets.includes(submittedRunId)
+              ) {
+                const started =
+                  start && (await restoreAgentEvent(callDirectory, start));
+                const request =
+                  started && started.type === 'tool.started'
+                    ? readAgentCollaboration(started.input)
+                    : null;
+                delegation = {
+                  parentRunId: record.runId,
+                  sequence: start?.sequence ?? record.sequence,
+                  message: request?.message ?? spawn.message,
+                };
+              }
+            }
+          }
+        }
         if (record.sequence > after && items.length < limit) items.push(record);
       }
       if (interrupted) break;
@@ -156,8 +244,34 @@ export async function readAgentRecords(
     items,
     total,
     nextAfter: items.at(-1)?.sequence ?? after,
-    recording: interrupted ? 'interrupted' : finished ? 'closed' : 'open',
+    recording:
+      interrupted ||
+      (sealedSequence === null ? finished : sealedSequence !== total)
+        ? 'interrupted'
+        : sealedSequence === null
+          ? 'open'
+          : 'closed',
+    gaps,
+    submitted,
+    delegation,
+    finalResponses: Array.from(finalResponses, ([runId, sequence]) => ({
+      runId,
+      sequence,
+    })),
   };
+}
+
+async function restoreAgentEvent(
+  callDirectory: string,
+  record: AgentRecord,
+): Promise<AgentRecord['event']> {
+  return record.payload
+    ? JSON.parse(
+        (await readAgentPayload(callDirectory, record.payload.ref)).toString(
+          'utf8',
+        ),
+      )
+    : record.event;
 }
 
 export async function readAgentPayload(
@@ -224,7 +338,7 @@ export async function readAgentTrace(callDirectory: string): Promise<string> {
         );
       output.push(JSON.stringify(record));
     }
-    return output.join('\n') + '\n';
+    return output.length ? output.join('\n') + '\n' : '';
   } finally {
     await file.close();
   }

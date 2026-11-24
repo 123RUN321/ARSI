@@ -36,10 +36,14 @@ export function managedAgentOperation(operation: Operation): Operation {
       const execution = (async (): Promise<JsonObject> => {
         let recorder: FileAgentRecorder | undefined;
         let recordingFailed = false;
+        try {
+          recorder = new FileAgentRecorder(context.directory);
+        } catch {
+          recordingFailed = true;
+        }
         const record = (observation: AgentObservation): void => {
-          if (recordingFailed) return;
+          if (recordingFailed || !recorder) return;
           try {
-            recorder ??= new FileAgentRecorder(context.directory);
             recorder.record(observation);
           } catch {
             // Optional observation must never cancel or change the Agent result.
@@ -82,14 +86,6 @@ export function managedAgentOperation(operation: Operation): Operation {
           event: { ...context.event, emit },
         });
         try {
-          record({
-            runId: 'main',
-            event: {
-              type: 'observation.gap',
-              reason:
-                'Native message, tool and child-session coverage depends on available backend observations.',
-            },
-          });
           const output = await operation.execute(input, scope);
           signal.throwIfAborted();
           let result: JsonObject;
@@ -105,7 +101,7 @@ export function managedAgentOperation(operation: Operation): Operation {
           return result;
         } finally {
           try {
-            recorder?.close();
+            await recorder?.close(!recordingFailed);
           } catch {
             // Closing optional telemetry cannot replace execution or cancellation.
           }

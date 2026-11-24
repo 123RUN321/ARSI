@@ -37,16 +37,6 @@ export const createAgentPi: OperationDefinition<
         task: PiTask,
         signal: AbortSignal,
       ): Promise<AgentOutput> {
-        if (task.parentRunId !== null)
-          context.event.emit('rsi/agent-observation', {
-            runId: task.runId,
-            event: {
-              type: 'message.completed',
-              messageId: 'task',
-              role: 'user',
-              text: task.goal,
-            },
-          });
         const session = await createPiSession(
           config,
           (role, goal, parent, childSignal) =>

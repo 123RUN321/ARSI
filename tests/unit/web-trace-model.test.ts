@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { traceRows } from '../../web/features/experiments/trace-model.js';
+import {
+  traceAgents,
+  traceMessageLabel,
+  traceRows,
+} from '../../web/features/experiments/trace-model.js';
 import type { AgentEvent } from '../../src/contracts/index.js';
 import type { CallTrace } from '../../src/contracts/observation.js';
 function event(
@@ -19,6 +23,151 @@ function event(
     payloadRef: null,
   };
 }
+test('interleaved Agent events keep independent step numbers and parent-facing delegation', () => {
+  const events = [
+    event(1, {
+      type: 'message.completed',
+      messageId: 'main-first',
+      role: 'assistant',
+      text: 'I will delegate.',
+      phase: 'commentary',
+    }),
+    event(2, {
+      type: 'subagent.activity',
+      activity: 'started',
+      childRunId: 'child',
+    }),
+    event(
+      3,
+      {
+        type: 'message.completed',
+        messageId: 'child-first',
+        role: 'assistant',
+        text: 'Checking.',
+      },
+      'child',
+    ),
+    event(4, {
+      type: 'usage.reported',
+      usageId: 'main-usage',
+      scope: 'session',
+      mode: 'cumulative',
+      values: {},
+    }),
+    event(
+      5,
+      {
+        type: 'message.completed',
+        messageId: 'child-final',
+        role: 'assistant',
+        text: 'Checked.',
+      },
+      'child',
+    ),
+    event(6, {
+      type: 'usage.reported',
+      usageId: 'main-usage',
+      scope: 'session',
+      mode: 'cumulative',
+      values: {},
+    }),
+    event(7, {
+      type: 'message.appended',
+      messageId: 'main-final',
+      text: 'Do',
+    }),
+    event(8, {
+      type: 'message.completed',
+      messageId: 'main-final',
+      role: 'assistant',
+      text: 'Done.',
+      phase: 'final_answer',
+    }),
+  ];
+  const rows = traceRows(events);
+  assert.deepEqual(
+    rows.filter((row) => row.runId === 'main').map((row) => row.step),
+    [1, 1, 1, 1, 2],
+  );
+  assert.deepEqual(
+    rows.filter((row) => row.runId === 'child').map((row) => row.step),
+    [1, 2],
+  );
+  assert.equal(rows[1].title, 'Subagent started');
+  assert.equal(rows[0].title, 'Progress update');
+  assert.equal(rows[1].childRunId, 'child');
+  assert.equal(rows.at(-1)?.title, 'Final response');
+  assert.equal(rows.at(-1)?.body, 'Done.');
+  assert.equal(rows.at(-1)?.id, '7');
+  const partial = traceRows(events.slice(0, -1)).at(-1)!;
+  assert.deepEqual(traceMessageLabel(partial, true, true), {
+    title: 'Message preview',
+    status: 'More events not loaded',
+  });
+  assert.deepEqual(traceMessageLabel(partial, false, false), {
+    title: 'Streaming message',
+    status: 'Streaming',
+  });
+  assert.deepEqual(traceMessageLabel(partial, false, true), {
+    title: 'Message preview',
+    status: 'Completion not observed',
+  });
+  assert.deepEqual(traceAgents(events.slice(0, 2)).get('child'), {
+    label: 'Subagent 1',
+    parent: 'main',
+  });
+});
+
+test('a completed collaboration call links to its recorded child', () => {
+  const recordedSpawn = event(1, {
+    type: 'tool.completed',
+    toolCallId: 'spawn',
+    name: 'spawnAgent',
+    status: 'succeeded',
+    output: {
+      type: 'collabAgentToolCall',
+      tool: 'spawnAgent',
+      receiverThreadIds: ['child'],
+    },
+  });
+  assert.equal(traceRows([recordedSpawn])[0].childRunId, 'child');
+  assert.deepEqual(traceAgents([recordedSpawn]).get('child'), {
+    label: 'Subagent 1',
+    parent: 'main',
+  });
+});
+test('Agent labels use recorded identity and keep unnamed children selectable', () => {
+  const agents = traceAgents([
+    event(
+      1,
+      {
+        type: 'run.started',
+        parentRunId: null,
+        backend: 'agent.codex',
+        name: 'baseline',
+      },
+      'child-a',
+    ),
+    event(
+      2,
+      { type: 'run.started', parentRunId: 'main', backend: 'agent.codex' },
+      'child-b',
+    ),
+    event(
+      3,
+      { type: 'run.linked', parentRunId: 'main', role: 'reviewer' },
+      'child-a',
+    ),
+  ]);
+  assert.deepEqual(
+    [...agents.values()],
+    [
+      { label: 'Main agent', parent: null },
+      { label: 'baseline · reviewer', parent: 'main' },
+      { label: 'Subagent 2', parent: 'main' },
+    ],
+  );
+});
 test('parallel tools pair by run and ID, and final messages replace their deltas', () => {
   const rows = traceRows([
     event(1, {

@@ -35,15 +35,16 @@ export async function runSession(options: {
   let sessionId: string | undefined;
   let finalMessage: string | undefined;
   let finalReason: string | undefined;
+  const prompt = JSON.stringify({
+    goal: request.goal,
+    instruction:
+      'Read AGENTS.md and the project instructions. Return proposed changes through the requested result Schema; leave task input files unchanged. Your final answer must be only a JSON object matching outputSchema, without Markdown or prose.',
+    outputSchema: request.outputSchema,
+  });
   await runNativeJsonProcess(
     config.executable,
     args,
-    JSON.stringify({
-      goal: request.goal,
-      instruction:
-        'Read AGENTS.md and the project instructions. Return proposed changes through the requested result Schema; leave task input files unchanged. Your final answer must be only a JSON object matching outputSchema, without Markdown or prose.',
-      outputSchema: request.outputSchema,
-    }),
+    prompt,
     (line) => {
       let event: JsonObject;
       try {
@@ -70,11 +71,25 @@ export async function runSession(options: {
         finalMessage =
           typeof part.messageID === 'string' ? part.messageID : undefined;
         finalReason = typeof part.reason === 'string' ? part.reason : undefined;
-      } else if (event.type === 'error')
+      } else if (event.type === 'error') {
+        record({
+          runId: 'main',
+          ...(sessionId ? { native: { sessionId } } : {}),
+          event: {
+            type: 'run.finished',
+            status: 'failed',
+            nativeStatus: 'error',
+          },
+        });
         throw new Error('OpenCode execution failed');
+      }
     },
     options.launch,
-    launchEnvironment(options.directory),
+    {
+      record,
+      outputSchema: request.outputSchema,
+      env: launchEnvironment(options.directory),
+    },
   );
   if (finalMessage === undefined || finalReason !== 'stop')
     throw new Error(

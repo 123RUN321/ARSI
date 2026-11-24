@@ -6,7 +6,9 @@ import { agentFixture } from '../fixtures/agent-execution.js';
 import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 
 test('Claude translates text, thinking and correlated tool results while returning structured output', async (t) => {
+  let submittedText: string | undefined;
   const f = await agentFixture(async (spec, consume) => {
+    submittedText = spec.input;
     assert(spec.args.includes('stream-json'));
     assert(spec.args.includes('--forward-subagent-text'));
     for (const message of [
@@ -52,6 +54,16 @@ test('Claude translates text, thinking and correlated tool results while returni
   );
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  assert.deepEqual(records.submitted?.event, {
+    type: 'task.submitted',
+    text: submittedText,
+    outputSchema: f.request.outputSchema,
+  });
+  assert.deepEqual(records.items.at(-1)?.event, {
+    type: 'run.finished',
+    status: 'completed',
+    nativeStatus: 'success',
+  });
   assert(
     records.items.some(
       (item) =>
@@ -94,5 +106,12 @@ for (const output of [undefined, null, [], 'text', { wrong: true }]) {
     );
     await assert.rejects(f.execute(agent), AgentOutputError);
     assert.equal(launches, 1);
+    const records = await readAgentRecords(f.context.directory, 0, 100, true);
+    assert.equal(records.recording, 'closed');
+    assert.deepEqual(records.items.at(-1)?.event, {
+      type: 'run.finished',
+      status: 'completed',
+      nativeStatus: 'success',
+    });
   });
 }
