@@ -21,12 +21,7 @@ export function formatDoctorSummary(
   if (failed.length) lines.push('', 'Failed checks');
   for (const check of failed) {
     lines.push(describeCheck(check));
-    if (check.missingResource) {
-      const { field, kind } = check.missingResource;
-      lines.push(
-        `  Fix: Restore the ${kind} or update ${field} to point to an available ${kind}.`,
-      );
-    } else if (check.id === 'recipe.validate') {
+    if (check.id === 'recipe.validate') {
       lines.push(
         `  Fix: Check ${displayPath} and correct the path or configuration named in the error.`,
       );
@@ -36,14 +31,10 @@ export function formatDoctorSummary(
       );
     }
     lines.push(...describeProbes(check));
-    const blocked = unchecked.filter(({ blockedBy }) => blockedBy === check.id);
-    if (blocked.length)
-      lines.push(`  Blocked: ${blocked.map(({ id }) => id).join(', ')}`);
   }
 
-  const unverified = unchecked.filter((check) => !check.blockedBy);
-  if (unverified.length) lines.push('', 'Unchecked checks');
-  for (const check of unverified) {
+  if (unchecked.length) lines.push('', 'Unchecked checks');
+  for (const check of unchecked) {
     lines.push(describeCheck(check), ...describeProbes(check));
   }
   return (
@@ -55,10 +46,6 @@ export function formatDoctorSummary(
 
 function describeCheck(check: DoctorCheck): string {
   const scope = check.pluginId ? `${check.id} (${check.pluginId})` : check.id;
-  if (check.missingResource) {
-    const { kind, reference } = check.missingResource;
-    return `- ${scope}: Missing ${kind} ${reference}`;
-  }
   return check.reason ? `- ${scope}: ${check.reason}` : `- ${scope}`;
 }
 

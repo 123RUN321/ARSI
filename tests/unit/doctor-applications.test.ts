@@ -164,13 +164,9 @@ test('doctor verifies a configured kernel entry with an editable helper and repo
     broken.checks.find((check) => check.id === 'acquire-instance')?.status,
     'unchecked',
   );
-  assert.deepEqual(
-    broken.checks.find(({ id }) => id === 'baseline')?.missingResource,
-    {
-      field: 'baseline.pkg/entry.py',
-      kind: 'file',
-      reference: join(baseline, 'pkg/entry.py'),
-    },
+  assert.match(
+    broken.checks.find(({ id }) => id === 'baseline')?.reason ?? '',
+    /Restore the file or correct baseline\.pkg\/entry\.py/,
   );
   assert.deepEqual(await readdir(runtime.workspaces.directory), []);
 });
@@ -210,15 +206,15 @@ test('doctor verifies bundle lifecycle and links missing Target input to checks 
     'unchecked',
   );
   for (const id of ['verify-bundle', 'acquire-instance']) {
-    assert.equal(
-      absent.checks.find((check) => check.id === id)?.blockedBy,
-      'baseline',
+    assert.match(
+      absent.checks.find((check) => check.id === id)?.reason ?? '',
+      /The baseline check failed/,
     );
   }
-  assert.equal(
-    absent.checks.find(({ id }) => id === 'baseline')?.missingResource
-      ?.reference,
-    join(baseline, 'workflow.yaml'),
+  assert.ok(
+    absent.checks
+      .find(({ id }) => id === 'baseline')
+      ?.reason?.includes(join(baseline, 'workflow.yaml')),
   );
   await writeFile(join(baseline, 'workflow.yaml'), 'workflow: {}\n');
   await writeFile(join(baseline, 'bundle.yaml'), 'kind: not-a-bundle\n');
@@ -281,10 +277,10 @@ test('doctor checks local and remote inference launch inputs without starting th
       ?.status,
     'failed',
   );
-  assert.equal(
+  assert.match(
     brokenRemote.checks.find(({ id }) => id === 'launch-prerequisites')
-      ?.missingResource?.field,
-    'remote.parametersFile',
+      ?.reason ?? '',
+    /Restore the file or correct remote\.parametersFile/,
   );
 });
 

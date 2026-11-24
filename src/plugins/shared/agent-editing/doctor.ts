@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
 import {
-  DoctorMissingResourceError,
+  missingInputError,
   runDoctorCheck,
 } from '../../../shared/doctor-check.js';
 import { parseConfig } from '../../../shared/schema.js';
@@ -50,7 +50,7 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
               : skillIndex >= 0
                 ? `skills.${skillIndex}`
                 : (checkedRole?.promptField ?? 'guidance');
-          throw new DoctorMissingResourceError(
+          throw missingInputError(
             {
               field,
               kind: path === config.guidance ? 'directory' : 'file',
@@ -71,7 +71,6 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
         {
           id: 'prepare-project',
           status: 'unchecked',
-          blockedBy: loaded.id,
           reason:
             'Editing inputs could not be loaded; project preparation did not run.',
         },

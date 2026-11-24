@@ -104,21 +104,22 @@ async function checkBinding(
   reportBuilder: DoctorReportBuilder,
 ): Promise<void> {
   const { binding, signal } = context;
-  let pathBlocker: string | undefined;
+  const failedPaths: string[] = [];
   for await (const check of checkDeclaredPaths(binding, signal)) {
     reportBuilder.addBindingCheck(binding, check);
-    if (check.status === 'failed') pathBlocker ??= check.id;
+    if (check.status === 'failed')
+      failedPaths.push(`${binding.name}.${check.id}`);
   }
   const failedPrerequisites: string[] = [];
   for await (const check of checkDeclaredBindings(context)) {
     reportBuilder.addBindingCheck(binding, check);
     if (check.status === 'failed') failedPrerequisites.push(check.id);
   }
-  if (pathBlocker) {
+  if (failedPaths.length) {
     reportBuilder.addBindingCheck(binding, {
       id: 'plugin',
       status: 'unchecked',
-      blockedBy: pathBlocker,
+      reason: `Plugin checks did not run because these path checks failed: ${failedPaths.join(', ')}.`,
     });
     return;
   }
@@ -129,7 +130,7 @@ async function checkBinding(
       failedPrerequisites: Object.freeze(failedPrerequisites),
     });
     signal.throwIfAborted();
-    reportBuilder.addBindingResult(binding, bindingResult, failedPrerequisites);
+    reportBuilder.addBindingResult(binding, bindingResult);
   } catch (error) {
     signal.throwIfAborted();
     reportBuilder.addBindingCheck(binding, {

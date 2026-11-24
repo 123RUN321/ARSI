@@ -9,7 +9,7 @@ import type {
   Operation,
 } from '../../../contracts/index.js';
 import {
-  DoctorMissingResourceError,
+  missingInputError,
   runDoctorCheck,
 } from '../../../shared/doctor-check.js';
 import { object, string } from '../../../shared/json.js';
@@ -36,10 +36,7 @@ export async function requirePath(
     await access(path, constants.R_OK);
   } catch (error) {
     if (missing(error))
-      throw new DoctorMissingResourceError(
-        { field, kind, reference: path },
-        error,
-      );
+      throw missingInputError({ field, kind, reference: path }, error);
     throw error;
   }
 }
@@ -79,7 +76,7 @@ export async function checkBaselineDirectory(
           );
         } catch (error) {
           if (missing(error))
-            throw new DoctorMissingResourceError(
+            throw missingInputError(
               {
                 field: 'baseline.artifactRef',
                 kind: 'artifact',
@@ -131,19 +128,18 @@ export async function checkFileApplication(
   const checks = [baseline.check];
   const result = { checks };
   if (!baseline.directory) {
-    const reason = 'Baseline or Target prerequisites failed.';
+    const reason =
+      'The baseline check failed. Correct the baseline or Target before rerunning this check.';
     checks.push(
       {
         id: verification,
         status: 'unchecked',
         reason,
-        blockedBy: baseline.check.id,
       },
       {
         id: 'acquire-instance',
         status: 'unchecked',
         reason,
-        blockedBy: baseline.check.id,
       },
     );
     return result;

@@ -1,6 +1,6 @@
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import {
-  DoctorMissingResourceError,
+  missingInputError,
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
@@ -27,7 +27,7 @@ export async function checkOperatorProposer(
       } catch (error) {
         const path = missingPath(error);
         if (path)
-          throw new DoctorMissingResourceError(
+          throw missingInputError(
             { field: 'task.directory', kind: 'file', reference: path },
             error,
           );
@@ -45,7 +45,7 @@ export async function checkOperatorProposer(
       } catch (error) {
         const path = missingPath(error);
         if (path)
-          throw new DoctorMissingResourceError(
+          throw missingInputError(
             {
               field: path.startsWith(config.promptsDirectory)
                 ? 'promptsDirectory'

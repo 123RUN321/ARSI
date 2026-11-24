@@ -174,12 +174,6 @@ function verifyReport(report: DoctorReport): void {
     new Set(report.checks.map((check) => check.id)).size,
     report.checks.length,
   );
-  for (const check of report.checks)
-    if (check.blockedBy)
-      assert.equal(
-        report.checks.find(({ id }) => id === check.blockedBy)?.status,
-        'failed',
-      );
   assert.ok(
     !JSON.stringify(report).includes('doctor-harness-fixture-key-never-print'),
   );
@@ -305,20 +299,14 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
         missing === 'baseline'
           ? 'application.resource.baseline.directory'
           : 'application.resource.target.schema';
-      const failures = report.checks.filter(
-        (check) =>
-          check.missingResource?.reference === resource ||
-          check.missingResource?.reference === directory,
+      const failure = report.checks.find((check) => check.id === resourceId);
+      assert.equal(failure?.status, 'failed');
+      assert.ok(failure.reason?.includes(resource));
+      const skipped = report.checks.find(
+        (check) => check.id === 'application.plugin',
       );
-      assert.deepEqual(
-        failures.map(({ id, status }) => [id, status]),
-        [[resourceId, 'failed']],
-      );
-      assert.equal(
-        report.checks.find((check) => check.id === 'application.plugin')
-          ?.blockedBy,
-        resourceId,
-      );
+      assert.equal(skipped?.status, 'unchecked');
+      assert.ok(skipped.reason?.includes(resourceId));
       assert.equal(
         report.checks.find((check) => check.id === independentChecks[name])
           ?.status,
@@ -330,18 +318,24 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
         'passed',
       );
       if (missing === 'baseline') {
-        assert.equal(
-          report.checks.find((check) => check.id === 'evaluator.sdk.check-0')
-            ?.blockedBy,
-          resourceId,
+        const sdkFailure = report.checks.find(
+          (check) => check.id === 'evaluator.sdk.check-0',
         );
-        if (name === 'dsh-gepa')
-          assert.equal(
-            report.checks.find(
-              (check) => check.id === 'evolutionProposer.baseline-modules',
-            )?.blockedBy,
-            resourceId,
+        assert.equal(sdkFailure?.status, 'failed');
+        assert.match(
+          sdkFailure.reason ?? '',
+          /correct application\.config\.baseline\.directory/,
+        );
+        if (name === 'dsh-gepa') {
+          const modules = report.checks.find(
+            (check) => check.id === 'evolutionProposer.baseline-modules',
           );
+          assert.equal(modules?.status, 'failed');
+          assert.match(
+            modules.reason ?? '',
+            /correct application\.config\.baseline\.directory/,
+          );
+        }
       }
       verifyReport(report);
     }

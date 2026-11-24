@@ -1,17 +1,23 @@
-import type {
-  DoctorResult,
-  JsonObject,
-  MissingResource,
-} from '../contracts/index.js';
+import type { DoctorResult, JsonObject } from '../contracts/index.js';
 import { errorText } from './errors.js';
 
-export class DoctorMissingResourceError extends Error {
-  constructor(
-    readonly resource: MissingResource,
-    cause: unknown,
-  ) {
-    super('Missing resource', { cause });
-  }
+export function missingInputReason(
+  field: string,
+  kind: string,
+  reference: string,
+): string {
+  return `Missing ${kind} ${reference}. Fix: Restore the ${kind} or correct ${field}.`;
+}
+
+export function missingInputError(
+  {
+    field,
+    kind,
+    reference,
+  }: { field: string; kind: string; reference: string },
+  cause: unknown,
+): Error {
+  return new Error(missingInputReason(field, kind, reference), { cause });
 }
 
 /** Run one probe with its own deadline. The action must release its work on cancellation. */
@@ -83,9 +89,6 @@ export async function runDoctorCheck(
     return {
       ...check,
       status: 'failed',
-      ...(error instanceof DoctorMissingResourceError
-        ? { missingResource: error.resource }
-        : {}),
       reason: reason
         ? `${reason}${cleanup}`
         : `${errorText(error)}${cleanup} Plugin availability is unknown unless established by another check.`,

@@ -6,7 +6,7 @@ import {
   type DoctorResult,
 } from '../../contracts/index.js';
 import {
-  DoctorMissingResourceError,
+  missingInputError,
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
@@ -35,8 +35,8 @@ export async function checkParetoEvolutionProposer(
         {
           id: 'baseline-modules',
           status: 'unchecked',
-          reason: 'The module configuration is invalid.',
-          blockedBy: modules.id,
+          reason:
+            'The modules check failed. Correct modules before checking their files in the baseline.',
         },
       ],
     };
@@ -84,7 +84,7 @@ export async function checkParetoEvolutionProposer(
           throw new Error(`Expected baseline directory: ${directory}`);
       } catch (error) {
         if (missingPath(error))
-          throw new DoctorMissingResourceError(
+          throw missingInputError(
             {
               field: 'application.config.baseline.directory',
               kind: 'directory',
@@ -103,7 +103,7 @@ export async function checkParetoEvolutionProposer(
           await readFile(path, { signal });
         } catch (error) {
           if (missingPath(error))
-            throw new DoctorMissingResourceError(
+            throw missingInputError(
               {
                 field: `modules.${module.id}.path`,
                 kind: 'file',

@@ -25,21 +25,24 @@ export async function* checkDeclaredBindings({
   );
   for (const [pointer, { reference, contracts }] of references) {
     const field = pointer.slice(1).replaceAll('/', '.');
+    const configField = `${binding.name}.config.${field}`;
     yield runDoctorCheck(
       `binding.${field}`,
       async () => {
         const [contract] = contracts;
         if (contracts.size > 1)
           throw new Error(
-            `${field}: conflicting binding contracts (${[...contracts].join(', ')})`,
+            `${configField} has conflicting binding contracts (${[...contracts].join(', ')}). Correct the plugin Schema to declare one contract for this field.`,
           );
         if (!Object.hasOwn(recipe.bindings, reference))
-          throw new Error(`${field}: binding ${reference} is not declared`);
+          throw new Error(
+            `${configField} refers to ${reference}, which is not declared. Use a declared binding implementing ${contract}.`,
+          );
         const target = recipe.bindings[reference]!;
         const actual = target.definition.contract.id;
         if (actual !== contract)
           throw new Error(
-            `${field}: binding ${reference} must implement ${contract}, but ${target.pluginId} implements ${actual}`,
+            `${configField} refers to ${reference}, which implements ${actual} through ${target.pluginId}. Use a binding implementing ${contract}.`,
           );
       },
       { signal },

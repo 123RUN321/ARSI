@@ -8,22 +8,13 @@ export interface DoctorCheck {
   binding?: string;
   pluginId?: string;
   status: 'passed' | 'failed' | 'unchecked';
+  /** Describe what failed or why the check was skipped, including available fixes. */
   reason?: string;
   /** Observations establish only the scope described by this check. */
   details?: JsonObject;
-  /** Input this failed check found missing. */
-  missingResource?: MissingResource;
-  /** ID of the failed check that prevented this unchecked check from running. */
-  blockedBy?: string;
 }
 
-export interface MissingResource {
-  field: string;
-  kind: string;
-  reference: string;
-}
-
-/** Check IDs and blockedBy references are local to the component binding. */
+/** Check IDs are local to the component binding. */
 export interface DoctorResult {
   checks: Omit<DoctorCheck, 'binding' | 'pluginId'>[];
 }

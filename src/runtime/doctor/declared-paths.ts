@@ -3,7 +3,7 @@ import { access, lstat, stat } from 'node:fs/promises';
 import { parse, sep } from 'node:path';
 import type { DoctorBinding, DoctorResult } from '../../contracts/index.js';
 import {
-  DoctorMissingResourceError,
+  missingInputError,
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
 import { configPathFields, isResourceUrl } from '../../shared/paths.js';
@@ -21,12 +21,13 @@ export async function* checkDeclaredPaths(
     const isUrl = isResourceUrl(reference);
     if (isUrl && !localOnly) continue;
     const configField = pointer.slice(1).replaceAll('/', '.');
+    const field = `${binding.name}.config.${configField}`;
     yield runDoctorCheck(
       `resource.${configField}`,
       async () => {
         if (isUrl)
           throw new Error(
-            `${configField}: expected a local ${kind}: ${reference}`,
+            `Set ${field} to a local ${kind} path. Current value is ${reference}.`,
           );
         let path = reference;
         if (localOnly && kind === 'directory') {
@@ -50,11 +51,10 @@ export async function* checkDeclaredPaths(
             'code' in error &&
             error.code === 'ENOENT'
           )
-            throw new DoctorMissingResourceError(
-              { field: configField, kind, reference },
-              error,
-            );
-          throw error;
+            throw missingInputError({ field, kind, reference }, error);
+          throw new Error(`Correct ${field} to point to a readable ${kind}.`, {
+            cause: error,
+          });
         }
       },
       { signal },

@@ -155,14 +155,13 @@ function verifyReport(report: DoctorReport): void {
     report.checks.length,
   );
   for (const check of report.checks) {
-    if (check.missingResource) assert.equal(check.status, 'failed');
-    if (check.blockedBy) {
-      assert.equal(check.status, 'unchecked');
-      assert.equal(
-        report.checks.find(({ id }) => id === check.blockedBy)?.status,
-        'failed',
-      );
-    }
+    assert.ok(
+      Object.keys(check).every((key) =>
+        ['id', 'status', 'binding', 'pluginId', 'reason', 'details'].includes(
+          key,
+        ),
+      ),
+    );
   }
 }
 
@@ -306,32 +305,28 @@ test('doctor checks declared paths and continues with component diagnostics', as
     const missing = await doctorRecipe(f.runtime, f.path);
     const failure = missing.checks.find(({ status }) => status === 'failed');
     assert.equal(failure?.id, 'application.resource.input');
-    assert.deepEqual(failure?.missingResource, {
-      field: 'application.config.input',
-      kind: 'file',
-      reference: join(f.root, 'input.txt'),
-    });
+    assert.ok(failure?.reason?.includes(join(f.root, 'input.txt')));
+    assert.match(
+      failure?.reason ?? '',
+      /Missing file.*Fix:.*application\.config\.input/,
+    );
     assert.deepEqual(
       missing.checks
         .filter(({ id }) => id.endsWith('.component'))
         .map(({ id }) => id),
       ['left.component', 'right.component'],
     );
-    assert.equal(
-      missing.checks.find(({ id }) => id === 'application.plugin')?.blockedBy,
-      'application.resource.input',
+    assert.match(
+      missing.checks.find(({ id }) => id === 'application.plugin')?.reason ??
+        '',
+      /application\.resource\.input/,
     );
     verifyReport(missing);
 
     await writeFile(join(f.root, 'input.txt'), 'fixture');
     const ready = await doctorRecipe(f.runtime, f.path);
     assert.equal(ready.recipeId, 'doctor-fixture');
-    assert.ok(
-      ready.checks.every(
-        ({ status, missingResource }) =>
-          status !== 'failed' && !missingResource,
-      ),
-    );
+    assert.ok(ready.checks.every(({ status }) => status !== 'failed'));
     assert.equal(
       ready.checks.find((check) => check.id === 'application.resource.input')
         ?.status,
@@ -386,7 +381,8 @@ test('doctor checks declared Agent references independently of plugin diagnostic
           {
             id: 'dependent',
             status: 'unchecked',
-            blockedBy: 'binding.conflictingRef',
+            reason:
+              'The binding.conflictingRef check failed. Correct conflictingRef before rerunning.',
           },
           { id: 'independent', status: 'passed' },
         ],
@@ -407,9 +403,10 @@ test('doctor checks declared Agent references independently of plugin diagnostic
       ?.status,
     'passed',
   );
-  assert.equal(
-    report.checks.find(({ id }) => id === 'application.dependent')?.blockedBy,
-    'application.binding.conflictingRef',
+  assert.match(
+    report.checks.find(({ id }) => id === 'application.dependent')?.reason ??
+      '',
+    /binding\.conflictingRef.*Correct conflictingRef/,
   );
   assert.equal(
     report.checks.find(({ id }) => id === 'application.independent')?.status,
@@ -418,7 +415,7 @@ test('doctor checks declared Agent references independently of plugin diagnostic
   verifyReport(report);
 });
 
-test('doctor exposes failed resource prerequisites with a canonical blocker', async (t) => {
+test('doctor explains every failed path that prevented plugin checks', async (t) => {
   const f = await fixture();
   t.after(f.dispose);
   const recipe = object(JSON.parse(await readFile(f.path, 'utf8')));
@@ -430,24 +427,24 @@ test('doctor exposes failed resource prerequisites with a canonical blocker', as
     'test.application': async () =>
       assert.fail('Invalid paths reached the binding'),
   });
-  for (const [config, failedField] of [
-    [{ baseline: link + '/' }, 'baseline'],
-    [{ baseline: link + '/.' }, 'baseline'],
-    [{ baseline: f.root + '/absent/../baseline' }, 'baseline'],
-    [{ baseline: './absent', input: './absent' }, 'input'],
+  for (const [config, failedFields] of [
+    [{ baseline: link + '/' }, ['baseline']],
+    [{ baseline: link + '/.' }, ['baseline']],
+    [{ baseline: f.root + '/absent/../baseline' }, ['baseline']],
+    [{ baseline: './absent', input: './absent' }, ['input', 'baseline']],
   ] as const) {
     object(recipe.application).config = config;
     await writeFile(f.path, JSON.stringify(recipe));
     const report = await doctorRecipe(f.runtime, f.path);
-    const blocker = `application.resource.${failedField}`;
-    assert.equal(
-      report.checks.find(({ id }) => id === blocker)?.status,
-      'failed',
-    );
-    assert.equal(
-      report.checks.find(({ id }) => id === 'application.plugin')?.blockedBy,
-      blocker,
-    );
+    const skipped = report.checks.find(({ id }) => id === 'application.plugin');
+    assert.equal(skipped?.status, 'unchecked');
+    for (const field of failedFields) {
+      const id = `application.resource.${field}`;
+      const failure = report.checks.find((check) => check.id === id);
+      assert.equal(failure?.status, 'failed');
+      assert.ok(failure.reason?.includes(`application.config.${field}`));
+      assert.ok(skipped.reason?.includes(id));
+    }
     assert.equal(
       report.checks.find(({ id }) => id === 'left.configuration')?.status,
       'passed',
@@ -492,9 +489,9 @@ test('doctor gates the inference factory on its script and probes the executable
       .map(({ id }) => id),
     ['application.resource.remote.script'],
   );
-  assert.equal(
-    report.checks.find(({ id }) => id === 'application.plugin')?.blockedBy,
-    'application.resource.remote.script',
+  assert.match(
+    report.checks.find(({ id }) => id === 'application.plugin')?.reason ?? '',
+    /application\.resource\.remote\.script/,
   );
   await writeFile(
     join(f.root, 'absent.py'),
@@ -506,11 +503,11 @@ test('doctor gates the inference factory on its script and probes the executable
       ?.status,
     'failed',
   );
-  assert.equal(
+  assert.match(
     executable.checks.find(
       ({ id }) => id === 'application.launch-prerequisites',
-    )?.blockedBy,
-    'application.remote-executable',
+    )?.reason ?? '',
+    /remote-executable.*remote\.executable/,
   );
   verifyReport(executable);
   verifyReport(report);
@@ -642,13 +639,17 @@ test('agent editor doctor uses declared path failures and still checks skill con
     );
     assert.equal(checks.get('editor.binding.agentRef')?.status, 'passed');
     if (failedId === 'editing-inputs') {
-      assert.equal(checks.get('editor.prepare-project')?.blockedBy, blocker);
-      assert.equal(
-        checks.get(blocker)?.missingResource?.reference,
-        join(f.root, 'skill', 'SKILL.md'),
+      assert.match(
+        checks.get('editor.prepare-project')?.reason ?? '',
+        /Editing inputs could not be loaded/,
+      );
+      assert.ok(
+        checks
+          .get(blocker)
+          ?.reason?.includes(join(f.root, 'skill', 'SKILL.md')),
       );
     } else {
-      assert.equal(checks.get('editor.plugin')?.blockedBy, blocker);
+      assert.ok(checks.get('editor.plugin')?.reason?.includes(blocker));
     }
     verifyReport(report);
   }
@@ -851,7 +852,6 @@ test('probe errors and deadlines preserve independent results, redact secrets an
       2,
     );
     assert.equal(released, 1);
-    assert.ok(report.checks.every(({ missingResource }) => !missingResource));
     assert.match(
       report.checks.find((check) => check.id === 'application.timeout')
         ?.reason ?? '',
@@ -998,16 +998,12 @@ test('doctor aggregates complete valid results and isolates callback errors by b
           {
             id: 'input',
             status: 'failed',
-            missingResource: {
-              field: 'input',
-              kind: 'file',
-              reference: 'missing.txt',
-            },
+            reason: 'Missing file missing.txt. Restore it or correct input.',
           },
           {
-            id: 'dependent',
+            id: binding.name === 'left' ? 'input' : 'dependent',
             status: 'unchecked',
-            blockedBy: binding.name === 'left' ? 'unknown' : 'input',
+            reason: 'The input check failed.',
           },
         ],
       }),
@@ -1024,13 +1020,17 @@ test('doctor aggregates complete valid results and isolates callback errors by b
       ],
     );
     assert.match(report.checks[1]?.reason ?? '', /Unexpected callback error/);
-    assert.deepEqual(
-      report.checks.find(({ id }) => id === 'right.input')?.missingResource,
-      { field: 'right.config.input', kind: 'file', reference: 'missing.txt' },
+    assert.match(
+      report.checks.find(({ id }) => id === 'left.script')?.reason ?? '',
+      /Duplicate doctor check ID/,
     );
-    assert.equal(
-      report.checks.find(({ id }) => id === 'right.dependent')?.blockedBy,
-      'right.input',
+    assert.match(
+      report.checks.find(({ id }) => id === 'right.input')?.reason ?? '',
+      /Missing file missing.txt/,
+    );
+    assert.match(
+      report.checks.find(({ id }) => id === 'right.dependent')?.reason ?? '',
+      /input check failed/,
     );
     verifyReport(report);
   } finally {
@@ -1161,7 +1161,10 @@ test('CLI doctor explains missing files, blocked work and network fixes in its d
     assert.match(summary, /application\.resource\.input/);
     assert.ok(summary.includes(join(f.root, 'input.txt')));
     assert.match(summary, /Fix:.*application\.config\.input/);
-    assert.match(summary, /Blocked:.*application\.plugin/);
+    assert.match(
+      summary,
+      /Unchecked checks[\s\S]*application\.plugin.*application\.resource\.input/,
+    );
     assert.match(summary, /Dataset download.*Connection timed out/);
     assert.match(summary, /Configure the download proxy/);
     assert.match(summary, /network\.proxy/);

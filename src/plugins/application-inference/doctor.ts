@@ -3,7 +3,7 @@ import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import {
-  DoctorMissingResourceError,
+  missingInputError,
   runDoctorCheck,
 } from '../../shared/doctor-check.js';
 import { object, string } from '../../shared/json.js';
@@ -24,8 +24,8 @@ export async function checkInferenceApplication(
     checks.push({
       id: 'launch-prerequisites',
       status: 'unchecked',
-      reason: 'Baseline or Target prerequisites failed.',
-      blockedBy: check.id,
+      reason:
+        'The baseline check failed. Correct the baseline or Target before checking the launch configuration.',
     });
     return { checks };
   }
@@ -50,7 +50,8 @@ export async function checkInferenceApplication(
       checks.push({
         id: 'launch-prerequisites',
         status: 'unchecked',
-        blockedBy: executableCheck.id,
+        reason:
+          'The remote-executable check failed. Install the interpreter or update remote.executable.',
       });
       return { checks };
     }
@@ -109,7 +110,7 @@ export async function checkInferenceApplication(
                       'code' in error &&
                       error.code === 'ENOENT'
                     )
-                      throw new DoctorMissingResourceError(
+                      throw missingInputError(
                         {
                           field: `start.argv.${index}`,
                           kind: 'path',

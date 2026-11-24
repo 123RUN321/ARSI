@@ -48,7 +48,7 @@ flowchart TD
    - Probes use the configuration produced by merging Policy defaults and Recipe overrides.
    - A loading error produces a failed diagnostic and stops component probes.
 3. **Check declared prerequisites.** For the Application, each effective binding and the configured Reflection implementation, doctor checks local files and directories marked with `x-rsi-path` for existence, type and readability. It checks that fields marked with `x-rsi-binding` name Recipe bindings that implement the declared contracts.
-4. **Run component checks.** If a declared local path fails validation, doctor marks the binding’s `plugin` check `unchecked`, links it to the failed path, and continues with the next binding. For bindings with valid paths, doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`.
+4. **Run component checks.** If a declared local path fails validation, doctor marks the binding’s `plugin` check `unchecked`, lists the failed path checks in its reason, and continues with the next binding. For bindings with valid paths, doctor creates a temporary instance, awaits its optional `rsi/doctor` reply, then disposes it. An initialization error fails that binding and other bindings continue. A missing handler leaves the `plugin` check `unchecked`.
 5. **Clean up and report.** RSI checks use isolated temporary storage, propagate cancellation, release the instances and processes they create, and remove temporary files. Checks can read existing artifacts as inputs. RSI keeps its captures and writes in the temporary Runtime.
 
 ### Reading the summary and JSON report
@@ -68,7 +68,7 @@ The report contains the following fields, including when configuration loading o
 | `recipeId` | Loaded Recipe ID, or `null` if loading did not succeed.                                    |
 | `checks`   | Individual results with `id` and `status`. A check may also include scope and evidence. |
 
-Use `checks` to count results by status or find failures. Optional fields include `binding`, `pluginId`, `reason` and `details`. A failure can carry a `missingResource` with its configuration `field`, resource `kind` and `reference`. An `unchecked` result can name its blocking failure in `blockedBy`. When multiple checks report the same missing resource, the report retains one failure and links the other checks to it.
+Use `checks` to count results by status or find failures. Optional fields include `binding`, `pluginId`, `reason` and `details`. Read `reason` for the error, available fixes or why a check was skipped. Declared path checks report each invalid field, including fields that refer to the same path.
 
 Component check IDs start with the binding name. In a full check, a binding named `agent` using Pi produces `agent.model-config` and `agent.model-access`. A different binding name changes the prefix.
 
@@ -143,15 +143,13 @@ Import `OperationDoctor<C>`, `DoctorContext<C>` and `DoctorResult` from `arsi/co
 - Each temporary instance owns its handler. The `doctor` command supplies each binding’s effective configuration.
 - When a component has no `rsi/doctor` subscription, the framework still runs the common checks and marks the component-specific `plugin` check as `unchecked`.
 
-| Type                 | Purpose                                                                                                                                                                                                                                                     |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | An asynchronous `rsi/doctor` handler that receives `DoctorContext<C>` and returns `Promise<DoctorResult>`.                                                                                                                                |
-| `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                                                        |
-| `DoctorResult`       | The component's results in `checks`. Attach `missingResource` to a failed check. An unchecked check can use `blockedBy` to reference a failed check by its local ID. The framework prefixes check IDs and references with the binding name. |
+| Type                 | Purpose                                                                                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OperationDoctor<C>` | An asynchronous `rsi/doctor` handler that receives `DoctorContext<C>` and returns `Promise<DoctorResult>`.                                                                                                                      |
+| `DoctorContext<C>`   | The argument provided by the framework. Use `context.binding.config` for the effective configuration, `context.signal` for cancellation and `context.directory` for temporary files.                                            |
+| `DoctorResult`       | The component's results in `checks`. For failures, use `reason` to identify the cause and what to fix. For skipped checks, explain the failed prerequisite in `reason`. The framework prefixes check IDs with the binding name. |
 
-For a binding whose declared paths pass, `context.failedPrerequisites` lists failed binding references with local IDs such as `binding.agentRef`. A handler can use those IDs in `blockedBy` when returning `unchecked` for a dependent check.
-
-Use a field relative to the binding configuration in `missingResource.field`, such as `inputFile`, and use the resolved path as the reference for a local resource. The report qualifies the field with the binding name and `config`.
+For a binding whose declared paths pass, `context.failedPrerequisites` lists failed binding references with local IDs such as `binding.agentRef`. When a dependent check is skipped, name the prerequisite in its `reason`.
 
 - `C` is the component configuration type. Here `schema.ts` exports `type CustomConfig = { inputFile: string }`, so TypeScript infers `context.binding.config.inputFile` as `string`.
 

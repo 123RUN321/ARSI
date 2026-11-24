@@ -141,14 +141,15 @@ for (const id of [
         ?.status,
       'unchecked',
     );
-    assert.equal(
-      brokenResult.checks.find(({ id }) => id === 'editing-inputs')
-        ?.missingResource?.reference,
-      join(f.root, 'missing.md'),
+    assert.ok(
+      brokenResult.checks
+        .find(({ id }) => id === 'editing-inputs')
+        ?.reason?.includes(join(f.root, 'missing.md')),
     );
-    assert.equal(
-      brokenResult.checks.find(({ id }) => id === 'prepare-project')?.blockedBy,
-      'editing-inputs',
+    assert.match(
+      brokenResult.checks.find(({ id }) => id === 'prepare-project')?.reason ??
+        '',
+      /Editing inputs could not be loaded/,
     );
   });
 }
@@ -161,11 +162,10 @@ test('editor checks diagnose missing guidance and reject duplicate roles and ski
     guidance: join(f.root, 'missing-guidance'),
   });
   const missingGuidanceResult = await runDoctor(missingGuidance);
-  const missingResource = missingGuidanceResult.checks.find(
+  const reason = missingGuidanceResult.checks.find(
     ({ id }) => id === 'editing-inputs',
-  )?.missingResource;
-  assert.equal(missingResource?.field, 'guidance');
-  assert.equal(missingResource?.kind, 'directory');
+  )?.reason;
+  assert.match(reason ?? '', /Missing directory.*correct guidance/);
 
   const role = { name: 'reviewer', description: 'Review', prompt: f.prompt };
   const duplicateRoles = f.probe('proposer.agent', {
@@ -262,10 +262,10 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
   });
   const missingResult = await runDoctor(missing);
   assert.equal(missingResult.checks[1]!.status, 'failed');
-  assert.equal(
-    missingResult.checks.find(({ id }) => id === 'baseline-modules')
-      ?.missingResource?.reference,
-    join(f.root, 'baseline/missing.md'),
+  assert.ok(
+    missingResult.checks
+      .find(({ id }) => id === 'baseline-modules')
+      ?.reason?.includes(join(f.root, 'baseline/missing.md')),
   );
 
   const artifact = f.probe('proposer.pareto-evolution', config);

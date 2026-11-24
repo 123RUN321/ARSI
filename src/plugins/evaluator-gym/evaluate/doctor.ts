@@ -24,11 +24,10 @@ export async function gymDoctor(
       {
         id: 'eval-service',
         status: 'unchecked',
-        ...(configuration.status === 'failed'
-          ? { blockedBy: configuration.id }
-          : {}),
         reason:
-          'Doctor does not contact Gym; start the Gym environment and wait for its adapters before submitting evaluations.',
+          configuration.status === 'failed'
+            ? 'Gym configuration failed validation. Correct baseUrl before using Gym.'
+            : 'Doctor does not contact Gym; start the Gym environment and wait for its adapters before submitting evaluations.',
       },
     ],
   };

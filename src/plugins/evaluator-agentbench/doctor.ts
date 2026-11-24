@@ -6,6 +6,7 @@ import type {
   JsonValue,
   OperationDoctor,
 } from '../../contracts/index.js';
+import { missingInputReason } from '../../shared/doctor-check.js';
 import { missingPath } from '../shared/doctor/checks.js';
 import { plain } from '../shared/evaluator-adapter/data.js';
 import type { SdkEvaluatorConfig } from '../shared/evaluator-adapter/configuration.js';
@@ -80,12 +81,18 @@ export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
     if (bundleCheck && typeof directory === 'string') {
       // Confirm absence without interpreting the SDK's human-readable detail.
       await access(directory).catch((error: unknown) => {
-        if (missingPath(error))
-          bundleCheck.missingResource = {
-            field: 'application.config.baseline.directory',
-            kind: 'directory',
-            reference: directory,
-          };
+        if (missingPath(error)) {
+          bundleCheck.reason = [
+            bundleCheck.reason,
+            missingInputReason(
+              'application.config.baseline.directory',
+              'directory',
+              directory,
+            ),
+          ]
+            .filter(Boolean)
+            .join(' ');
+        }
       });
     }
     checks.push(...sdk.checks);

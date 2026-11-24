@@ -279,19 +279,25 @@ export function register(registry){
       assert.equal(error.status, 1);
       const report = JSON.parse(String(error.stdout));
       assert.deepEqual(Object.keys(report).sort(), ['checks', 'recipeId']);
-      assert.deepEqual(
-        report.checks.find((check) => check.id === 'custom.resource.inputFile')
-          ?.missingResource,
-        {
-          field: 'custom.config.inputFile',
-          kind: 'file',
-          reference: inputPath,
-        },
+      const failed = report.checks.find(
+        (check) => check.id === 'custom.resource.inputFile',
       );
-      assert.equal(
-        report.checks.find((check) => check.id === 'custom.plugin')?.blockedBy,
-        'custom.resource.inputFile',
+      assert.equal(failed?.status, 'failed');
+      assert.ok(failed.reason.includes(inputPath));
+      assert.match(failed.reason, /correct custom\.config\.inputFile/);
+      const unchecked = report.checks.find(
+        (check) => check.id === 'custom.plugin',
       );
+      assert.equal(unchecked?.status, 'unchecked');
+      assert.match(unchecked.reason, /custom\.resource\.inputFile/);
+      for (const check of [failed, unchecked])
+        assert.deepEqual(Object.keys(check).sort(), [
+          'binding',
+          'id',
+          'pluginId',
+          'reason',
+          'status',
+        ]);
       return true;
     },
   );
@@ -922,8 +928,8 @@ export const checkCustom:OperationDoctor<Config>=async(context:DoctorContext<Con
  const path:string=context.binding.config.inputFile;
  const input=await runDoctorCheck('input',async signal=>{signal.throwIfAborted();void path;},{signal:context.signal});
  if(input.status==='failed')return{checks:[
-  {...input,missingResource:{field:'inputFile',kind:'file',reference:path}},
-  {id:'remote',status:'unchecked',blockedBy:input.id},
+  input,
+  {id:'remote',status:'unchecked',reason:'The input check failed. Restore the file named by inputFile.'},
  ]};
  const result:RootDoctorResult={checks:[input,{id:'remote',status:'unchecked',reason:'No remote probe.'}]};
  return result;

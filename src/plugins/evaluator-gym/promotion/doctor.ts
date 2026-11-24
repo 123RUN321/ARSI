@@ -24,11 +24,10 @@ export async function gymPromotionDoctor(
       {
         id: 'holdout-service',
         status: 'unchecked',
-        ...(configuration.status === 'failed'
-          ? { blockedBy: configuration.id }
-          : {}),
         reason:
-          'Doctor does not contact Gym or execute holdout; the configured profile must register the requested benchmark and adapter before release.',
+          configuration.status === 'failed'
+            ? 'Gym configuration failed validation. Correct baseUrl before using Gym.'
+            : 'Doctor does not contact Gym or execute holdout; the configured profile must register the requested benchmark and adapter before release.',
       },
     ],
   };
