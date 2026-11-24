@@ -1,15 +1,32 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useEffectEvent,
+  useRef,
+} from 'react';
 import type { JsonValue } from '../../../src/contracts/json.js';
+import { readAgentCollaboration } from '../../../src/shared/observation/agent-collaboration.js';
 import {
   parseCallTrace,
   parseAgentPayload,
 } from '../../api/observation-client';
 import { Feedback, Timestamp } from '../../components/observation-feedback';
 import { useObservation } from './use-observation';
-import { traceRows, eventText, type TraceRow } from './trace-model';
+import {
+  traceRows,
+  traceAgents,
+  traceMessageLabel,
+  eventText,
+  type TraceRow,
+} from './trace-model';
 import { scoreLabel } from './record-identifiers';
+import { TraceInputs } from './trace-inputs';
+import { TraceResults } from './trace-results';
 
-type Filter = 'All' | 'Model' | 'Tools' | 'Errors';
+type Filter = 'Activity' | 'Model' | 'Tools' | 'Errors' | 'All events';
+const traceBatchSize = 300;
+const rowsPerPage = 100;
 export function TraceInspector({
   id,
   callId,
@@ -19,9 +36,10 @@ export function TraceInspector({
   callId: string;
   finished: boolean;
 }): React.JSX.Element | null {
+  const callPath = `/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}`;
   const [offset, setOffset] = useState(0);
   const result = useObservation(
-    `/${encodeURIComponent(id)}/calls/${encodeURIComponent(callId)}/trace?offset=${offset}&limit=100`,
+    `${callPath}/trace?offset=${offset}&limit=${traceBatchSize}`,
     parseCallTrace,
     finished ? null : 4000,
     finished,
@@ -44,23 +62,49 @@ export function TraceInspector({
     [pages, payloads],
   );
   const rows = useMemo(() => traceRows(events), [events]);
-  const [run, setRun] = useState('all');
-  const runs = [...new Set(rows.map((row) => row.runId))];
-  const [filter, setFilter] = useState<Filter>('All');
+  const trace = pages[offset] ?? Object.values(pages).at(-1) ?? result.data;
+  const moreEvents = trace?.nextOffset != null;
+  const [run, setRun] = useState('main');
+  const agents = useMemo(() => traceAgents(events), [events]);
+  const agentOptions = Array.from(agents, ([id, agent]) => {
+    const parent =
+      agent.parent && agent.parent !== 'main'
+        ? agents.get(agent.parent)
+        : undefined;
+    return {
+      id,
+      label: parent ? `${parent.label} › ${agent.label}` : agent.label,
+    };
+  });
+  const agentEvents = events.filter((event) => event.runId === run);
+  const nativeFinishObserved = agentEvents.some(
+    (event) => event.type === 'run.finished',
+  );
+  const [filter, setFilter] = useState<Filter>('Activity');
   const [selection, setSelection] = useState<string | null>(null);
+  const [parentEvent, setParentEvent] = useState<number | null>(null);
+  const [parentEventUnavailable, setParentEventUnavailable] = useState(false);
   const [tab, setTab] = useState('Overview');
   const [page, setPage] = useState(0);
-  const [closed, setClosed] = useState(true);
+  const [inputsOpen, setInputsOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const visible = rows.filter(
     (r) =>
-      (run === 'all' || r.runId === run) &&
-      (filter === 'All' ||
+      r.runId === run &&
+      (filter === 'All events' ||
+        (filter === 'Activity' &&
+          (r.kind !== 'event' || r.childRunId !== undefined)) ||
         (filter === 'Model' && r.kind === 'model') ||
         (filter === 'Tools' && r.kind === 'tool') ||
         (filter === 'Errors' && r.status === 'Failed')),
   );
   const selected = visible.find((r) => r.id === selection) ?? visible[0];
-  const payloadRef = !closed
+  const runFinished = finished || nativeFinishObserved;
+  const selectedLabel =
+    selected && traceMessageLabel(selected, moreEvents, runFinished);
+  const linkedRun = selected?.childRunId;
+  const showEvent = detailOpen && !!selected;
+  const payloadRef = showEvent
     ? selected?.payloadRefs?.find((ref) => !Object.hasOwn(payloads, ref))
     : null;
   const payload = useObservation(
@@ -75,18 +119,74 @@ export function TraceInspector({
     if (payloadRef && data !== undefined)
       setPayloads((old) => ({ ...old, [payloadRef]: data }));
   }, [payloadRef, payload.data]);
-  const start = page * 50 < visible.length ? page * 50 : 0;
-  const windowRows = visible.slice(start, start + 50);
+  const start = page * rowsPerPage < visible.length ? page * rowsPerPage : 0;
+  const end = Math.min(start + rowsPerPage, visible.length);
+  const windowRows = visible.slice(start, end);
   const list = useRef<HTMLDivElement>(null);
+  const loadBoundary = useRef<HTMLDivElement>(null);
+  const agentSelector = useRef<HTMLDivElement>(null);
+  const parentEventIndex =
+    parentEvent === null
+      ? -1
+      : visible.findIndex((row) => row.id === String(parentEvent));
+  const loadedPage = pages[offset] ?? result.data;
+  const nextOffset = loadedPage?.nextOffset;
+  const watchForMore = moreEvents && end === visible.length;
+  const loadWhenVisible = useEffectEvent(() => {
+    if (nextOffset != null && !result.error) setOffset(nextOffset);
+  });
+  useEffect(() => {
+    const marker = loadBoundary.current;
+    if (!watchForMore || !marker || typeof IntersectionObserver === 'undefined')
+      return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) loadWhenVisible();
+      },
+      { root: list.current, rootMargin: '0px 0px 120px 0px' },
+    );
+    observer.observe(marker);
+    return () => observer.disconnect();
+    // A sparse filter can leave the marker in view without appending any rows.
+    // Wait for another intersection or an explicit load in that case.
+  }, [watchForMore, run, filter, end]);
+  useEffect(() => {
+    if (parentEvent === null) return;
+    if (parentEventIndex >= 0) {
+      setSelection(String(parentEvent));
+      setTab('Overview');
+      setDetailOpen(true);
+      setPage(Math.floor(parentEventIndex / rowsPerPage));
+      setParentEvent(null);
+      requestAnimationFrame(() =>
+        list.current
+          ?.querySelector<HTMLButtonElement>(`[data-event="${parentEvent}"]`)
+          ?.focus(),
+      );
+    } else if (loadedPage?.nextOffset != null) {
+      setOffset(loadedPage.nextOffset);
+    } else if (loadedPage || result.error) {
+      setParentEvent(null);
+      setParentEventUnavailable(true);
+    }
+  }, [parentEvent, parentEventIndex, loadedPage, result.error]);
   const choose = (row: TraceRow): void => {
+    setParentEvent(null);
+    setParentEventUnavailable(false);
     setSelection(row.id);
     setTab('Overview');
-    setClosed(false);
+    setDetailOpen(true);
+  };
+  const chooseAgent = (runId: string): void => {
+    setParentEvent(null);
+    setParentEventUnavailable(false);
+    setRun(runId);
+    setPage(0);
+    setSelection(null);
+    setDetailOpen(false);
   };
   if (result.error && !rows.length) return <Feedback {...result} />;
   if (!result.data && !rows.length) return <Feedback {...result} />;
-  if (!rows.length && (result.data?.unavailable || result.data?.total === 0))
-    return null;
   const tabs =
     selected?.kind === 'tool'
       ? ['Overview', 'Arguments', 'Result']
@@ -99,36 +199,55 @@ export function TraceInspector({
     const next = visible[i];
     if (next) {
       choose(next);
-      setPage(Math.floor(i / 50));
+      setPage(Math.floor(i / rowsPerPage));
     }
   };
   return (
     <section className="trace-inspector" aria-label="Agent trace">
-      <div className="inspector-toolbar">
-        <label>
-          Session{' '}
-          <select
-            aria-label="Agent session"
-            value={run}
-            onChange={(event) => {
-              setRun(event.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="all">All sessions</option>
-            {runs.map((runId) => (
-              <option key={runId} value={runId}>
-                {runId}
-              </option>
+      <div className="inspector-toolbar" ref={agentSelector}>
+        {agentOptions.length <= 4 ? (
+          <div className="inspector-agents" role="group" aria-label="Agents">
+            {agentOptions.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={run === id}
+                onClick={() => chooseAgent(id)}
+              >
+                {label}
+              </button>
             ))}
-          </select>
-        </label>
-        <div className="inspector-filters" aria-label="Event filters">
-          {(['All', 'Model', 'Tools', 'Errors'] as const).map((value) => (
+          </div>
+        ) : (
+          <label className="inspector-agent-select">
+            Agent
+            <select
+              value={run}
+              onChange={(event) => chooseAgent(event.target.value)}
+            >
+              {agentOptions.map(({ id, label }) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div
+          className="inspector-filters"
+          role="group"
+          aria-label="Event filters"
+        >
+          {(
+            ['Activity', 'Model', 'Tools', 'Errors', 'All events'] as const
+          ).map((value) => (
             <button
               key={value}
+              type="button"
               aria-pressed={filter === value}
               onClick={() => {
+                setParentEvent(null);
+                setParentEventUnavailable(false);
                 setFilter(value);
                 setPage(0);
                 setTab('Overview');
@@ -139,89 +258,174 @@ export function TraceInspector({
           ))}
         </div>
       </div>
+      <details
+        className="inspector-inputs"
+        open={inputsOpen}
+        onToggle={(event) => setInputsOpen(event.currentTarget.open)}
+      >
+        <summary>Inputs</summary>
+        {inputsOpen ? (
+          <div className="inspector-input-view">
+            <TraceInputs
+              key={run}
+              id={id}
+              callId={callId}
+              runId={run}
+              finished={finished}
+              onViewParentEvent={({ parentRunId, sequence }) => {
+                chooseAgent(parentRunId);
+                setFilter('Activity');
+                setInputsOpen(false);
+                setParentEvent(sequence);
+              }}
+            />
+          </div>
+        ) : null}
+      </details>
+      {trace && !trace.unavailable ? (
+        <TraceResults
+          key={run}
+          callPath={callPath}
+          sequence={
+            trace.finalResponses.find((item) => item.runId === run)?.sequence
+          }
+          finished={runFinished}
+          main={run === 'main'}
+        />
+      ) : null}
+      {parentEvent !== null || parentEventUnavailable ? (
+        <p className="trace-notice" role="status">
+          {parentEventUnavailable
+            ? 'Parent event could not be loaded.'
+            : 'Locating parent event…'}
+        </p>
+      ) : null}
       <Feedback {...result} loading={false} />
-      {result.data?.incomplete ? (
+      {trace?.unavailable ? (
+        <p className="trace-notice">{trace.unavailable}</p>
+      ) : null}
+      {trace?.recording === 'interrupted' ? (
         <p className="trace-notice">
-          Partial trace · Some recorded content is unavailable.
+          Recording was interrupted or could not be verified.
+        </p>
+      ) : trace?.incomplete ? (
+        <p className="trace-notice">
+          The trace contains an observation gap. See All events for details.
+        </p>
+      ) : null}
+      {finished &&
+      !moreEvents &&
+      !nativeFinishObserved &&
+      agentEvents.length > 0 ? (
+        <p className="trace-notice">
+          No run outcome was observed for this Agent.
         </p>
       ) : null}
       <div
-        className={`inspector-body ${closed || !selected ? 'inspector-no-detail' : ''}`}
+        className={`inspector-body ${showEvent ? '' : 'inspector-no-detail'}`}
       >
         <div
           className="inspector-events"
           ref={list}
           aria-label="Recorded events"
         >
-          {windowRows.map((row, i) => (
-            <React.Fragment key={row.id}>
-              {i === 0 || windowRows[i - 1]?.step !== row.step ? (
-                <div className="inspector-step">
-                  {row.step ? `Step ${row.step}` : 'Execution'}
-                </div>
-              ) : null}
-              <button
-                className="inspector-row"
-                aria-pressed={selected?.id === row.id && !closed}
-                onClick={() => choose(row)}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    const index =
-                      visible.findIndex((r) => r.id === row.id) +
-                      (e.key === 'ArrowDown' ? 1 : -1);
-                    const next = visible[index];
-                    if (next) {
-                      choose(next);
-                      setPage(Math.floor(index / 50));
-                      requestAnimationFrame(() =>
-                        list.current
-                          ?.querySelector<HTMLButtonElement>(
-                            `[data-event="${next.id}"]`,
-                          )
-                          ?.focus(),
-                      );
+          {windowRows.map((row, i) => {
+            const label = traceMessageLabel(row, moreEvents, runFinished);
+            return (
+              <React.Fragment key={row.id}>
+                {i === 0 || windowRows[i - 1]?.step !== row.step ? (
+                  <div className="inspector-step">
+                    {row.step ? `Step ${row.step}` : 'Execution'}
+                  </div>
+                ) : null}
+                <button
+                  className="inspector-row"
+                  aria-pressed={selected?.id === row.id && showEvent}
+                  onClick={() => choose(row)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      const index =
+                        visible.findIndex((r) => r.id === row.id) +
+                        (e.key === 'ArrowDown' ? 1 : -1);
+                      const next = visible[index];
+                      if (next) {
+                        choose(next);
+                        setPage(Math.floor(index / rowsPerPage));
+                        requestAnimationFrame(() =>
+                          list.current
+                            ?.querySelector<HTMLButtonElement>(
+                              `[data-event="${next.id}"]`,
+                            )
+                            ?.focus(),
+                        );
+                      }
                     }
-                  }
-                }}
-                data-event={row.id}
-                title={row.summary.slice(0, 300)}
-              >
-                <span className={`inspector-kind ${row.kind}`}>
-                  {row.kind === 'model'
-                    ? 'AI'
-                    : row.kind === 'tool'
-                      ? 'T'
-                      : '·'}
-                </span>
-                <span className="inspector-row-text">
-                  <strong>{row.title}</strong>
-                  <span>{row.summary.replace(/\s+/g, ' ').slice(0, 180)}</span>
-                </span>
-                <span
-                  className={row.status === 'Failed' ? 'error-text' : 'muted'}
+                  }}
+                  data-event={row.id}
+                  title={row.summary.slice(0, 300)}
                 >
-                  {row.status === 'Failed'
-                    ? 'Failed'
-                    : row.duration !== null
-                      ? `${scoreLabel(row.duration)} s`
-                      : ''}
-                </span>
-              </button>
-            </React.Fragment>
-          ))}
+                  <span className={`inspector-kind ${row.kind}`}>
+                    {row.kind === 'model'
+                      ? 'AI'
+                      : row.kind === 'tool'
+                        ? 'T'
+                        : '·'}
+                  </span>
+                  <span className="inspector-row-text">
+                    <strong>{label.title}</strong>
+                    <span>
+                      {row.childRunId
+                        ? (agents.get(row.childRunId)?.label ?? row.summary)
+                        : row.title === 'run.started' ||
+                            row.title === 'run.linked'
+                          ? agents.get(agents.get(row.runId)?.parent ?? '')
+                              ?.label
+                            ? `Parent: ${agents.get(agents.get(row.runId)?.parent ?? '')?.label}`
+                            : agents.get(row.runId)?.label
+                          : row.summary.replace(/\s+/g, ' ').slice(0, 180)}
+                    </span>
+                  </span>
+                  <span
+                    className={row.status === 'Failed' ? 'error-text' : 'muted'}
+                  >
+                    {row.status === 'Failed'
+                      ? 'Failed'
+                      : row.duration !== null
+                        ? `${scoreLabel(row.duration)} s`
+                        : row.status === 'Streaming'
+                          ? label.status
+                          : row.status === 'Running'
+                            ? moreEvents
+                              ? 'More events not loaded'
+                              : finished
+                                ? 'Completion not observed'
+                                : row.status
+                            : ''}
+                  </span>
+                </button>
+              </React.Fragment>
+            );
+          })}
           {!visible.length ? (
             <p className="empty-state">No matching events.</p>
           ) : null}
+          {watchForMore ? (
+            <div
+              className="trace-load-boundary"
+              ref={loadBoundary}
+              aria-hidden="true"
+            />
+          ) : null}
         </div>
-        {!closed && selected ? (
+        {showEvent && selected && selectedLabel ? (
           <aside className="inspector-detail" aria-label="Event details">
             {payloadRef && !payloads[payloadRef] ? (
               <Feedback {...payload} />
             ) : null}
             <header>
               <div>
-                <strong>{selected.title}</strong>
+                <strong>{selectedLabel.title}</strong>
                 <small>
                   {selected.step ? `Step ${selected.step}` : 'Execution'}
                 </small>
@@ -229,7 +433,7 @@ export function TraceInspector({
               <button
                 aria-label="Close event details"
                 onClick={() => {
-                  setClosed(true);
+                  setDetailOpen(false);
                   list.current
                     ?.querySelector<HTMLButtonElement>(
                       `[data-event="${selected.id}"]`,
@@ -252,10 +456,33 @@ export function TraceInspector({
               ))}
             </div>
             <div className="inspector-detail-content">
+              {linkedRun && agents.has(linkedRun) ? (
+                <button
+                  className="quiet-button"
+                  onClick={() => {
+                    chooseAgent(linkedRun);
+                    requestAnimationFrame(() =>
+                      agentSelector.current
+                        ?.querySelector<HTMLElement>(
+                          '.inspector-agents [aria-pressed="true"], .inspector-agent-select select',
+                        )
+                        ?.focus(),
+                    );
+                  }}
+                >
+                  View {agents.get(linkedRun)?.label}
+                </button>
+              ) : null}
               <EventContent
-                row={selected}
+                row={
+                  selectedLabel === selected
+                    ? selected
+                    : { ...selected, ...selectedLabel }
+                }
                 tab={activeTab}
                 onNavigate={setTab}
+                agentLabel={(runId) => agents.get(runId)?.label ?? runId}
+                payloadPending={!!payloadRef && !payload.error}
               />
             </div>
             <footer>
@@ -278,27 +505,30 @@ export function TraceInspector({
       <div className="inspector-pagination">
         <span>
           {visible.length
-            ? `${start + 1}–${Math.min(start + 50, visible.length)} of ${visible.length} loaded events`
-            : '0 matching events'}
+            ? `${start + 1}–${end} of ${visible.length} rows`
+            : '0 matching rows'}
+          {trace && !trace.unavailable
+            ? ` · Loaded ${events.length} of ${trace.total} call events`
+            : ''}
         </span>
         <div>
-          {visible.length > 50 ? (
+          {visible.length > rowsPerPage ? (
             <>
               <button
                 disabled={start === 0}
                 onClick={() => {
                   setPage(Math.max(0, page - 1));
-                  const row = visible[Math.max(0, start - 50)];
+                  const row = visible[Math.max(0, start - rowsPerPage)];
                   if (row) choose(row);
                 }}
               >
                 Previous
               </button>
               <button
-                disabled={start + 50 >= visible.length}
+                disabled={end >= visible.length}
                 onClick={() => {
                   setPage(page + 1);
-                  const row = visible[start + 50];
+                  const row = visible[end];
                   if (row) choose(row);
                 }}
               >
@@ -306,13 +536,14 @@ export function TraceInspector({
               </button>
             </>
           ) : null}
-          {result.data?.nextOffset !== null &&
-          result.data?.nextOffset !== undefined ? (
+          {moreEvents ? (
             <button
-              onClick={() => setOffset(result.data!.nextOffset!)}
-              disabled={result.loading}
+              onClick={() => {
+                if (nextOffset != null) setOffset(nextOffset);
+              }}
+              disabled={nextOffset == null || result.loading}
             >
-              Load more
+              {result.loading ? 'Loading more…' : 'Load more'}
             </button>
           ) : null}
         </div>
@@ -324,11 +555,27 @@ function EventContent({
   row,
   tab,
   onNavigate,
+  agentLabel,
+  payloadPending,
 }: {
   row: TraceRow;
   tab: string;
   onNavigate: (tab: string) => void;
+  agentLabel: (runId: string) => string;
+  payloadPending: boolean;
 }): React.JSX.Element {
+  const request = readAgentCollaboration(row.args);
+  const outcome = readAgentCollaboration(row.result);
+  const collaboration = outcome ?? request;
+  const spawn =
+    collaboration?.tool === 'spawnAgent' || row.title === 'Subagent started';
+  const message = row.delegationMessage ?? request?.message ?? outcome?.message;
+  const targets = outcome?.targets.length
+    ? outcome.targets
+    : (request?.targets ?? []);
+  const states = outcome?.states.length
+    ? outcome.states
+    : (request?.states ?? []);
   const body =
     eventText(row.result) ||
     (row.result !== undefined
@@ -350,13 +597,68 @@ function EventContent({
               </dd>
             </>
           ) : null}
+          {row.sessionId ? (
+            <>
+              <dt>Backend session</dt>
+              <dd>{row.sessionId}</dd>
+            </>
+          ) : null}
+          {row.turnId ? (
+            <>
+              <dt>Backend turn</dt>
+              <dd>{row.turnId}</dd>
+            </>
+          ) : null}
           {row.duration !== null ? (
             <>
               <dt>Duration</dt>
               <dd>{scoreLabel(row.duration)} s</dd>
             </>
           ) : null}
+          {spawn || collaboration?.tool === 'wait' ? (
+            <>
+              <dt>{spawn ? 'Delegated to' : 'Wait targets'}</dt>
+              <dd>
+                {row.childRunId
+                  ? agentLabel(row.childRunId)
+                  : targets.map(agentLabel).join(', ') ||
+                    (payloadPending ? 'Loading…' : 'Not reported')}
+              </dd>
+            </>
+          ) : null}
+          {collaboration?.tool === 'wait' ? (
+            <>
+              <dt>Reported states</dt>
+              <dd>
+                {states.length ? (
+                  <ul className="trace-reported-states">
+                    {states.map(({ runId, status }) => (
+                      <li key={runId}>
+                        {agentLabel(runId)} · {status}
+                      </li>
+                    ))}
+                  </ul>
+                ) : payloadPending ? (
+                  'Loading…'
+                ) : (
+                  'Not reported'
+                )}
+              </dd>
+            </>
+          ) : null}
         </dl>
+      ) : null}
+      {tab === 'Overview' && spawn ? (
+        <>
+          <h4>Delegation message</h4>
+          {message ? (
+            <pre tabIndex={0}>{message}</pre>
+          ) : (
+            <p className="muted">
+              {payloadPending ? 'Loading…' : 'Delegation message unavailable.'}
+            </p>
+          )}
+        </>
       ) : null}
       {tab === 'Overview' ? (
         <div className="overview-previews">
@@ -418,7 +720,7 @@ function EventContent({
           ) : null}
           {row.body ? (
             <>
-              <h4>{row.kind === 'model' ? 'Response' : 'Content'}</h4>
+              <h4>{row.kind === 'model' ? row.title : 'Content'}</h4>
               <p>{row.body}</p>
             </>
           ) : null}

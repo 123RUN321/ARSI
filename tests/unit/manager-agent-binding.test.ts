@@ -90,10 +90,7 @@ test('Manager invokes exact Agent bindings and never falls back to an implementa
           true,
         );
         assert.equal(records.recording, 'closed');
-        assert.deepEqual(
-          records.items.map((item) => item.type),
-          ['observation.gap'],
-        );
+        assert.deepEqual(records.items, []);
       }
       assert.equal(executions, 3);
       return {};

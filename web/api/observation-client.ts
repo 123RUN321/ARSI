@@ -319,6 +319,19 @@ export function parseCallTrace(raw: unknown): CallTrace {
     total: data.total,
     nextOffset: data.nextOffset,
     incomplete: data.incomplete,
+    finalResponses: array(data.finalResponses, (raw) => {
+      const response = record(raw);
+      return {
+        runId: text(response.runId),
+        sequence: number(response.sequence),
+      };
+    }),
+    recording: choice(data.recording, [
+      'open',
+      'closed',
+      'interrupted',
+      'unavailable',
+    ]),
     unavailable: nullable(data.unavailable),
     items: data.items.map((raw) => {
       const item = record(raw);
@@ -338,7 +351,25 @@ export function parseCallTrace(raw: unknown): CallTrace {
 }
 
 export function parseCallInstructions(raw: unknown): CallInstructions {
-  return { prompt: preview(record(raw).prompt) };
+  const data = record(raw);
+  const delegation = data.delegation === null ? null : record(data.delegation);
+  return {
+    submittedTask: preview(data.submittedTask),
+    delegation: delegation
+      ? {
+          parentRunId: text(delegation.parentRunId),
+          sequence: number(delegation.sequence),
+          message: preview(delegation.message),
+        }
+      : null,
+    outputSchema: preview(data.outputSchema),
+    workspaceInstructions: array(data.workspaceInstructions, (entry) => {
+      const file = record(entry);
+      const content = preview(file.content);
+      if (!content) throw new Error('Invalid workspace instructions');
+      return { path: text(file.path), content };
+    }),
+  };
 }
 
 function choice<T extends string>(value: unknown, values: readonly T[]): T {

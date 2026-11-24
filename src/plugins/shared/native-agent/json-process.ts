@@ -1,4 +1,8 @@
-import type { AgentProcessLauncher } from '../../../contracts/index.js';
+import type {
+  AgentObservation,
+  AgentProcessLauncher,
+  JsonObject,
+} from '../../../contracts/index.js';
 import { nativeAgentCommand } from './executable.js';
 
 export async function runNativeJsonProcess(
@@ -7,15 +11,27 @@ export async function runNativeJsonProcess(
   input: string,
   onLine: (line: string) => void,
   launch: AgentProcessLauncher,
-  env?: NodeJS.ProcessEnv,
+  options: {
+    record: (event: AgentObservation) => void;
+    outputSchema: JsonObject;
+    env?: NodeJS.ProcessEnv;
+  },
 ): Promise<void> {
   const command = await nativeAgentCommand(executable);
+  options.record({
+    runId: 'main',
+    event: {
+      type: 'task.submitted',
+      text: input,
+      outputSchema: options.outputSchema,
+    },
+  });
   await launch(
     {
       executable: command.command,
       args: [...command.args, ...args],
       input,
-      ...(env ? { env } : {}),
+      ...(options.env ? { env: options.env } : {}),
     },
     onLine,
   );

@@ -37,9 +37,20 @@ export function dshObservations(
         messageId,
         role: 'assistant',
         text: event.type === 'text' ? event.text : '',
-        ...(event.type === 'thinking' ? { thinking: event.text } : {}),
+        ...(event.type === 'thinking'
+          ? { thinking: event.text }
+          : { phase: 'commentary' }),
       });
-    } else if (event.type === 'final' && typeof event.text === 'string') {
+    } else if (
+      event.type === 'final' &&
+      sessionId !== undefined &&
+      event.sessionId === sessionId &&
+      typeof event.text === 'string' &&
+      event.reason &&
+      typeof event.reason === 'object' &&
+      !Array.isArray(event.reason) &&
+      event.reason.kind === 'completed'
+    ) {
       emit({
         type: 'message.completed',
         messageId:

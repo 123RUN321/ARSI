@@ -115,7 +115,9 @@ export interface CallTrace
     payloadRef: string | null;
   }> {
   unavailable: string | null;
+  recording: 'open' | 'closed' | 'interrupted' | 'unavailable';
   incomplete: boolean;
+  finalResponses: { runId: string; sequence: number }[];
 }
 
 export interface ObservationSource {
@@ -123,5 +125,12 @@ export interface ObservationSource {
 }
 
 export interface CallInstructions {
-  prompt: JsonPreview | null;
+  submittedTask: JsonPreview | null;
+  delegation: {
+    parentRunId: string;
+    sequence: number;
+    message: JsonPreview | null;
+  } | null;
+  outputSchema: JsonPreview | null;
+  workspaceInstructions: { path: string; content: JsonPreview }[];
 }

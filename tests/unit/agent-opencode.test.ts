@@ -5,7 +5,9 @@ import { agentFixture } from '../fixtures/agent-execution.js';
 import { readAgentRecords } from '../../src/runtime/storage/agent-records.js';
 
 test('OpenCode records its V2 parts and returns only the stopped final message', async (t) => {
-  const f = await agentFixture(async (_spec, consume) => {
+  let submittedText: string | undefined;
+  const f = await agentFixture(async (spec, consume) => {
+    submittedText = spec.input;
     for (const event of [
       {
         type: 'tool_use',
@@ -24,7 +26,22 @@ test('OpenCode records its V2 parts and returns only the stopped final message',
       {
         type: 'text',
         sessionID: 's1',
-        part: { id: 'text1', messageID: 'm1', text: '{"answer":"ok"}' },
+        part: { id: 'text1', messageID: 'm1', text: '{"answer":' },
+      },
+      {
+        type: 'text',
+        sessionID: 'child',
+        part: { id: 'child-text', messageID: 'm1', text: 'Child reply' },
+      },
+      {
+        type: 'step_finish',
+        sessionID: 'child',
+        part: { id: 'child-finish', messageID: 'm1', reason: 'stop' },
+      },
+      {
+        type: 'text',
+        sessionID: 's1',
+        part: { id: 'text2', messageID: 'm1', text: '"ok"}' },
       },
       {
         type: 'step_finish',
@@ -46,6 +63,35 @@ test('OpenCode records its V2 parts and returns only the stopped final message',
   );
   assert.deepEqual(await f.execute(agent), { answer: 'ok' });
   const records = await readAgentRecords(f.context.directory, 0, 100, true);
+  assert.deepEqual(records.submitted?.event, {
+    type: 'task.submitted',
+    text: submittedText,
+    outputSchema: f.request.outputSchema,
+  });
+  assert.deepEqual(records.items.at(-1)?.event, {
+    type: 'run.finished',
+    status: 'completed',
+    nativeStatus: 'stop',
+  });
+  const final = records.items.find(
+    (item) =>
+      item.sequence ===
+      records.finalResponses.find(({ runId }) => runId === 'main')?.sequence,
+  );
+  assert.deepEqual(final?.event, {
+    type: 'message.completed',
+    messageId: 'm1',
+    role: 'assistant',
+    text: '{"answer":"ok"}',
+    phase: 'final_answer',
+  });
+  const childFinal = records.items.find(
+    (item) =>
+      item.sequence ===
+      records.finalResponses.find(({ runId }) => runId === 'child')?.sequence,
+  )?.event;
+  assert.equal(childFinal?.type, 'message.completed');
+  assert.equal(childFinal.text, 'Child reply');
   assert(
     records.items.some(
       (r) =>

@@ -152,7 +152,10 @@ export function registerObservationRoutes(
     },
     (request) => queries.callDetail(request.params.id, request.params.callId),
   );
-  app.get<{ Params: { id: string; callId: string } }>(
+  app.get<{
+    Params: { id: string; callId: string };
+    Querystring: { runId?: string };
+  }>(
     '/api/observation/experiments/:id/calls/:callId/instructions',
     {
       schema: {
@@ -161,10 +164,21 @@ export function registerObservationRoutes(
           properties: { id, callId: id },
           required: ['id', 'callId'],
         },
+        querystring: {
+          type: 'object',
+          properties: {
+            runId: { type: 'string', minLength: 1, maxLength: 256 },
+          },
+          additionalProperties: false,
+        },
       },
     },
     (request) =>
-      queries.callInstructions(request.params.id, request.params.callId),
+      queries.callInstructions(
+        request.params.id,
+        request.params.callId,
+        request.query.runId,
+      ),
   );
   app.get<{ Params: { id: string; callId: string }; Querystring: Window }>(
     '/api/observation/experiments/:id/calls/:callId/trace',
@@ -175,7 +189,13 @@ export function registerObservationRoutes(
           properties: { id, callId: id },
           required: ['id', 'callId'],
         },
-        querystring: pagination,
+        querystring: {
+          ...pagination,
+          properties: {
+            ...pagination.properties,
+            limit: { ...pagination.properties.limit, maximum: 300 },
+          },
+        },
       },
     },
     (request) =>

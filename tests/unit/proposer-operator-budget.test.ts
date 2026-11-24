@@ -386,8 +386,9 @@ test('operator stage completes tool continuations and delegated review beyond 24
     records.items.some(
       (item) =>
         item.runId !== 'main' &&
-        item.event?.type === 'message.completed' &&
-        item.event.text === 'Review the authorized source',
+        item.event?.type === 'task.submitted' &&
+        object(JSON.parse(item.event.text)).goal ===
+          'Review the authorized source',
     ),
   );
 });
