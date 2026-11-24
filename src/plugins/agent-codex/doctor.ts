@@ -1,7 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { failed, passed, runDoctorProbe } from '../../shared/doctor-check.js';
+import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
 import { object, string } from '../../shared/json.js';
 import { projectMarker } from '../shared/agent-editing/project.js';
 import { executablePath } from '../shared/doctor/executable.js';
@@ -15,64 +14,58 @@ interface CodexDiagnostics {
   supportsNetworkOnly: boolean;
 }
 
-export async function checkCodexAgent(
-  context: DoctorContext,
-): Promise<DoctorResult> {
-  const options = { signal: context.signal };
-  const executable = await runDoctorProbe(
-    'executable',
-    (signal) => inspectCodexExecutable(context, signal),
-    options,
-  );
-  const command = executable.value;
-  if (!command)
-    return failed(
-      executable.check.id,
-      executable.check.reason,
-      executable.check.details,
-    );
-  if (!command.supportsDoctor) {
-    return {
-      checks: [
-        executable.check,
-        {
-          id: 'doctor',
-          status: 'unchecked',
-          reason:
-            'The configured Codex CLI does not advertise doctor with JSON output; install a version that supports it.',
-        },
-        {
-          id: 'model-access',
-          status: 'unchecked',
-          reason:
-            'Proposal-side model access was not checked because this Codex CLI does not support a machine-readable doctor report.',
-        },
-      ],
-    };
-  }
-  const diagnosis = await runDoctorProbe(
-    'doctor',
-    (signal) => runCodexDiagnostics(context, command, signal),
-    options,
-  );
-  if (!diagnosis.value)
-    return failed(diagnosis.check.id, diagnosis.check.reason, {
-      modelList: 'unchecked',
-      providerReachability: 'unchecked',
-    });
-  return {
-    checks: [
-      executable.check,
-      ...passed('doctor', diagnosis.value.reason, diagnosis.value.details)
-        .checks,
-      {
-        id: 'model-access',
-        status: 'unchecked',
-        reason:
-          'Codex doctor does not establish that a valid model list contains the configured model; proposal-side model availability remains unchecked.',
-      },
-    ],
+export function checkCodexAgent(context: DoctorContext): DoctorStep[] {
+  let command: CodexDiagnostics | undefined;
+  let diagnosis: Awaited<ReturnType<typeof runCodexDiagnostics>> | undefined;
+  const isExecutableAvailable = async (
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    command = await inspectCodexExecutable(context, signal);
+    return true;
   };
+  const isDoctorHealthy = async (signal: AbortSignal): Promise<boolean> => {
+    if (!command) return false;
+    diagnosis = await runCodexDiagnostics(context, command, signal);
+    return true;
+  };
+
+  return [
+    {
+      id: 'executable',
+      check: isExecutableAvailable,
+      reason:
+        'The proposal-side Codex executable could not provide CLI help; check agent.codex.executable and the Codex installation.',
+    },
+    {
+      id: 'doctor',
+      get check() {
+        return command?.supportsDoctor ? isDoctorHealthy : undefined;
+      },
+      get reason() {
+        return command?.supportsDoctor
+          ? 'Proposal-side Codex doctor could not complete its native health checks.'
+          : 'The configured Codex CLI does not advertise doctor with JSON output; install a version that supports it.';
+      },
+      get details() {
+        return command?.supportsDoctor
+          ? {
+              modelList: 'unchecked',
+              providerReachability: 'unchecked',
+              ...diagnosis?.details,
+              ...(diagnosis ? { observation: diagnosis.reason } : {}),
+            }
+          : undefined;
+      },
+    },
+    {
+      id: 'model-access',
+      get reason() {
+        return command?.supportsDoctor
+          ? 'Codex doctor does not establish that a valid model list contains the configured model; proposal-side model availability remains unchecked.'
+          : 'Proposal-side model access was not checked because this Codex CLI does not support a machine-readable doctor report.';
+      },
+    },
+  ];
 }
 
 async function inspectCodexExecutable(

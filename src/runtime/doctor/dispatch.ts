@@ -2,6 +2,7 @@ import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
 import { errorText } from '../../shared/errors.js';
 import { withBindingInstance } from '../manager/instances.js';
 import type { Registry } from '../registry/index.js';
+import { runDoctorSteps } from './steps.js';
 
 export async function diagnoseBinding(
   registry: Registry,
@@ -14,8 +15,14 @@ export async function diagnoseBinding(
       { plugin: binding.pluginId, config: binding.config },
       context.runtime.extend({ bindingId: binding.name, signal, directory }),
       'rsi/doctor',
-      (target, event, runtime) =>
-        target.serial(target, event, { ...context, runtime }),
+      async (target, event, runtime) => {
+        const steps = await target.serial(target, event, {
+          ...context,
+          runtime,
+        });
+        if (!steps) throw new Error('Doctor returned no check definitions.');
+        return runDoctorSteps(steps, signal);
+      },
     );
     return (
       result ?? {

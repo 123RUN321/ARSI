@@ -3,73 +3,59 @@ import { join } from 'node:path';
 import {
   parseFileTree,
   type DoctorContext,
-  type DoctorResult,
+  type DoctorStep,
 } from '../../contracts/index.js';
-import {
-  failed,
-  passed,
-  missingInputError,
-  runDoctorCheck,
-} from '../../shared/doctor-check.js';
-import { errorText } from '../../shared/errors.js';
+import { missingInputError } from '../../shared/doctor-check.js';
 import { parseConfig } from '../../shared/schema.js';
 import { missingPath } from '../shared/doctor/checks.js';
 import { configSchema, type ParetoEvolutionConfig } from './schema.js';
 import { validateModules } from './service.js';
 
-export async function checkParetoEvolutionProposer(
+export function checkParetoEvolutionProposer(
   context: DoctorContext,
-): Promise<DoctorResult> {
+): DoctorStep[] {
   context.signal.throwIfAborted();
   const config = parseConfig<ParetoEvolutionConfig>(
     configSchema,
     context.binding.config,
     `${context.binding.name}.config`,
   );
-  try {
-    validateModules(config.modules);
-  } catch (error) {
-    context.signal.throwIfAborted();
-    return failed(
-      'modules',
-      `Correct modules, including unique identities and safe paths. ${errorText(error)}`,
-    );
-  }
-
   const baseline = context.recipe.application.config.baseline;
   const { artifactRef, directory } =
     baseline && typeof baseline === 'object' && !Array.isArray(baseline)
       ? baseline
       : {};
-  if (typeof artifactRef === 'string') {
-    const files = await runDoctorCheck(
-      'baseline-modules',
-      (signal) => checkArtifactModules(context, config, artifactRef, signal),
-      { signal: context.signal },
-    );
-    if (files.status === 'failed')
-      return failed(files.id, files.reason, files.details);
-    return passed('baseline-modules');
+  function areModulesValid(signal: AbortSignal): boolean {
+    signal.throwIfAborted();
+    validateModules(config.modules);
+    return true;
   }
-  if (typeof directory !== 'string' || !directory)
-    return {
-      checks: [
-        {
-          id: 'baseline-modules',
-          status: 'unchecked',
-          reason: 'The Application does not expose a local baseline directory.',
-        },
-      ],
-    };
-
-  const files = await runDoctorCheck(
-    'baseline-modules',
-    (signal) => checkDirectoryModules(config, directory, signal),
-    { signal: context.signal },
-  );
-  if (files.status === 'failed')
-    return failed(files.id, files.reason, files.details);
-  return passed('baseline-modules');
+  async function areBaselineModulesAvailable(
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (typeof artifactRef === 'string')
+      await checkArtifactModules(context, config, artifactRef, signal);
+    else if (typeof directory === 'string' && directory)
+      await checkDirectoryModules(config, directory, signal);
+    return true;
+  }
+  const hasBaseline =
+    typeof artifactRef === 'string' ||
+    (typeof directory === 'string' && directory.length > 0);
+  return [
+    {
+      id: 'modules',
+      check: areModulesValid,
+      reason: 'Correct modules, including unique identities and safe paths.',
+    },
+    {
+      id: 'baseline-modules',
+      check: hasBaseline ? areBaselineModulesAvailable : undefined,
+      reason: hasBaseline
+        ? 'Restore the baseline module files or correct their configured paths.'
+        : 'The Application does not expose a local baseline directory or artifact.',
+    },
+  ];
 }
 
 async function checkArtifactModules(

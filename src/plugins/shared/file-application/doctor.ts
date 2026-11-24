@@ -5,17 +5,11 @@ import { join, resolve } from 'node:path';
 import type {
   Candidate,
   DoctorContext,
-  DoctorResult,
+  DoctorStep,
   Operation,
   RuntimeContext,
 } from '../../../contracts/index.js';
-import {
-  failed,
-  passed,
-  missingInputError,
-  runDoctorCheck,
-  runDoctorProbe,
-} from '../../../shared/doctor-check.js';
+import { missingInputError } from '../../../shared/doctor-check.js';
 import { object, string } from '../../../shared/json.js';
 import { parseConfig } from '../../../shared/schema.js';
 import { requireReadablePath } from '../doctor/checks.js';
@@ -29,22 +23,7 @@ function missing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
-export async function checkBaselineDirectory(
-  context: DoctorContext,
-  entryFile?: string,
-): Promise<{
-  check: DoctorResult['checks'][number];
-  directory?: string;
-}> {
-  const { check, value: directory } = await runDoctorProbe(
-    'baseline',
-    (signal) => readBaselineDirectory(context, entryFile, signal),
-    { signal: context.signal },
-  );
-  return { check, directory };
-}
-
-async function readBaselineDirectory(
+export async function readBaselineDirectory(
   context: DoctorContext,
   entryFile: string | undefined,
   signal: AbortSignal,
@@ -98,7 +77,7 @@ async function readBaselineDirectory(
   return directory;
 }
 
-export async function checkFileApplication(
+export function checkFileApplication(
   context: DoctorContext,
   application: Operation,
   {
@@ -106,47 +85,54 @@ export async function checkFileApplication(
     capability,
     entryFile,
   }: { verification: string; capability: string; entryFile: string },
-): Promise<DoctorResult> {
-  const baseline = await checkBaselineDirectory(context, entryFile);
-  if (baseline.check.status === 'failed')
-    return failed(
-      baseline.check.id,
-      baseline.check.reason,
-      baseline.check.details,
-    );
-
+): DoctorStep[] {
   const runtime = createApplicationProbeRuntime(context);
-  const initialization = await runDoctorProbe(
-    verification,
-    (signal) => initializeApplication(application, runtime.extend({ signal })),
-    { signal: context.signal },
-  );
-  const candidateRef = initialization.value;
-  if (!candidateRef)
-    return failed(
-      initialization.check.id,
-      initialization.check.reason,
-      initialization.check.details,
-    );
+  let candidateRef: string;
 
-  const instance = await runDoctorCheck(
-    'acquire-instance',
-    (signal) =>
-      verifyApplicationInstance(
-        application,
-        runtime.extend({ signal }),
-        candidateRef,
-        capability,
-        entryFile,
-      ),
-    { signal: context.signal },
-  );
-  if (instance.status === 'failed')
-    return failed(instance.id, instance.reason, instance.details);
-  return passed(
-    'acquire-instance',
-    'Baseline, initialization, instance contents and resource release were verified.',
-  );
+  async function isBaselineAvailable(signal: AbortSignal): Promise<boolean> {
+    await readBaselineDirectory(context, entryFile, signal);
+    return true;
+  }
+
+  async function verifyInitialization(signal: AbortSignal): Promise<boolean> {
+    candidateRef = await initializeApplication(
+      application,
+      runtime.extend({ signal }),
+    );
+    return true;
+  }
+
+  async function verifyInstance(signal: AbortSignal): Promise<boolean> {
+    await verifyApplicationInstance(
+      application,
+      runtime.extend({ signal }),
+      candidateRef,
+      capability,
+      entryFile,
+    );
+    return true;
+  }
+
+  return [
+    {
+      id: 'baseline',
+      check: isBaselineAvailable,
+      reason:
+        'Restore the baseline input files or correct the Target and baseline configuration.',
+    },
+    {
+      id: verification,
+      check: verifyInitialization,
+      reason:
+        'Correct the baseline contents so the Application can initialize a candidate.',
+    },
+    {
+      id: 'acquire-instance',
+      check: verifyInstance,
+      reason:
+        'Check Application instance contents and reconcile resources whose release failed.',
+    },
+  ];
 }
 
 function createApplicationProbeRuntime(context: DoctorContext): RuntimeContext {

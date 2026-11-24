@@ -14,12 +14,28 @@ import { RuntimeContext, type JsonObject } from '../../src/contracts/index.js';
 import { Registry } from '../../src/runtime/registry/index.js';
 import { registerBuiltins } from '../../src/runtime/builtins.js';
 import { Recipe } from '../../src/runtime/loaders/recipe.js';
-import { createAgentbenchDoctor } from '../../src/plugins/evaluator-agentbench/doctor.js';
-import { createInferencebenchDoctor } from '../../src/plugins/evaluator-inferencebench/doctor.js';
-import { createOperatorbenchDoctor } from '../../src/plugins/evaluator-operatorbench/doctor.js';
+import { createAgentbenchDoctor as defineAgentbenchDoctor } from '../../src/plugins/evaluator-agentbench/doctor.js';
+import { createInferencebenchDoctor as defineInferencebenchDoctor } from '../../src/plugins/evaluator-inferencebench/doctor.js';
+import { createOperatorbenchDoctor as defineOperatorbenchDoctor } from '../../src/plugins/evaluator-operatorbench/doctor.js';
 import type { SdkDoctorRunner } from '../../src/plugins/shared/evaluator-adapter/doctor-sdk.js';
 import { object } from '../../src/shared/json.js';
-import type { DoctorContext } from '../../src/contracts/index.js';
+import type {
+  DoctorContext,
+  OperationDoctor,
+} from '../../src/contracts/index.js';
+
+import { runDoctorSteps } from '../../src/runtime/doctor/steps.js';
+
+function executeDoctor(doctor: OperationDoctor) {
+  return async (context: DoctorContext) =>
+    runDoctorSteps(await doctor(context), context.signal);
+}
+const createAgentbenchDoctor = (run?: SdkDoctorRunner) =>
+  executeDoctor(defineAgentbenchDoctor(run));
+const createInferencebenchDoctor = (run?: SdkDoctorRunner) =>
+  executeDoctor(defineInferencebenchDoctor(run));
+const createOperatorbenchDoctor = (run?: SdkDoctorRunner) =>
+  executeDoctor(defineOperatorbenchDoctor(run));
 
 const nativeReport = () => ({
   checks: [
@@ -152,7 +168,13 @@ test('agentbench delegates effective task and service configuration to SDK docto
     );
     return nativeReport();
   };
-  const { checks } = await createAgentbenchDoctor(runner)(ctx);
+  const steps = await defineAgentbenchDoctor(runner)(ctx);
+  assert.equal(calls, 0);
+  await assert.rejects(
+    readFile(join(ctx.directory, 'evaluator.json')),
+    /ENOENT/,
+  );
+  const { checks } = await runDoctorSteps(steps, ctx.signal);
   assert.equal(calls, 1);
   assert.equal(
     checks.find((check) => check.id === 'configuration')?.status,
@@ -163,8 +185,12 @@ test('agentbench delegates effective task and service configuration to SDK docto
     'passed',
   );
   assert.equal(
-    checks.find((check) => check.id === 'sdk.check-0')?.status,
+    checks.find((check) => check.id === 'sdk.coverage')?.status,
     'passed',
+  );
+  assert.deepEqual(
+    checks.find((check) => check.id === 'sdk-doctor')?.details,
+    nativeReport(),
   );
   assert.equal(
     checks.find((check) => check.id === 'sdk.network')?.status,
@@ -215,13 +241,16 @@ test('SDK diagnostics stop at the first failure and retain unsupported scope on 
     },
   };
   const { checks } = await createAgentbenchDoctor(async () => report)(ctx);
-  assert.equal(checks.length, 1);
-  assert.equal(
-    checks.find((check) => check.id === 'sdk.check-0')?.status,
-    'failed',
+  assert.deepEqual(
+    checks.map(({ status }) => status),
+    ['passed', 'failed', 'unchecked', 'unchecked', 'unchecked', 'unchecked'],
+  );
+  assert.deepEqual(
+    checks.find((check) => check.id === 'sdk-doctor')?.details,
+    report,
   );
   assert.match(
-    checks.find((check) => check.id === 'sdk.check-0')?.reason ?? '',
+    checks.find((check) => check.id === 'sdk-doctor')?.reason ?? '',
     /rejected its API key/,
   );
   const success = await createAgentbenchDoctor(async () => ({
@@ -229,8 +258,12 @@ test('SDK diagnostics stop at the first failure and retain unsupported scope on 
     checks: report.checks.filter((check) => check.status !== 'failed'),
   }))(ctx);
   assert.equal(
-    success.checks.find((check) => check.id === 'sdk.check-0')?.status,
+    success.checks.find((check) => check.id === 'sdk.coverage')?.status,
     'unchecked',
+  );
+  assert.match(
+    success.checks.find((check) => check.id === 'sdk.coverage')?.reason ?? '',
+    /Disk capacity.*execution-node image store/,
   );
   const network = success.checks.find((check) => check.id === 'sdk.network');
   assert.equal(network?.status, 'unchecked');
@@ -310,15 +343,16 @@ test('invalid SDK reports fail instead of producing successful readiness', async
   ]) {
     const ctx = f.context(agentConfig());
     const { checks } = await createAgentbenchDoctor(async () => report)(ctx);
-    assert.ok(
-      checks.some((check) => check.status === 'failed'),
-      JSON.stringify(checks),
+    const delegated = checks.find((check) => check.id === 'sdk-doctor');
+    assert.equal(delegated?.status, 'failed', JSON.stringify(checks));
+    assert.equal(delegated?.details, undefined);
+    assert.equal(
+      checks.find((check) => check.id === 'sdk.coverage')?.status,
+      'unchecked',
     );
-    assert.ok(
-      !checks.some(
-        (check) =>
-          check.id.startsWith('sdk.check-') && check.status === 'passed',
-      ),
+    assert.equal(
+      checks.find((check) => check.id === 'sdk.network')?.status,
+      'unchecked',
     );
   }
 });

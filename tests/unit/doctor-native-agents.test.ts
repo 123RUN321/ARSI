@@ -1,11 +1,21 @@
 import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRuntime } from '../../src/runtime/context.js';
 import type { DoctorContext } from '../../src/contracts/index.js';
+import { checkDshAgent } from '../../src/plugins/agent-dsh/doctor.js';
+import { checkClaudeCodeAgent } from '../../src/plugins/agent-claudecode/doctor.js';
+import { checkCodexAgent } from '../../src/plugins/agent-codex/doctor.js';
 import { isNativeAgentCompatible } from '../../src/plugins/shared/doctor/native-agent.js';
 
 const flags =
@@ -23,6 +33,7 @@ for (const pluginId of ['agent.dsh', 'agent.claudecode']) {
       await rm(root, { recursive: true, force: true });
     });
     const executable = join(root, 'cli.cjs');
+    const calls = join(root, 'calls');
     const binding = {
       name: 'agent',
       pluginId,
@@ -49,11 +60,17 @@ for (const pluginId of ['agent.dsh', 'agent.claudecode']) {
     await writeFile(
       executable,
       `const assert = require('node:assert/strict');
+require('node:fs').appendFileSync(${JSON.stringify(calls)}, 'called');
 const args = process.argv.slice(2);
 if (args.includes('--dump-config')) console.log('- id: fixture');
 else if (args.includes('auth')) { assert.deepEqual(args, ['auth', 'status', args.includes('--help') ? '--help' : '--json']); console.log(args.includes('--help') ? '--json' : JSON.stringify({loggedIn:true})); }
 else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.stringify(flags)}); }`,
     );
+    const define =
+      pluginId === 'agent.dsh' ? checkDshAgent : checkClaudeCodeAgent;
+    assert.ok(Array.isArray(define(context)));
+    assert.ok(Array.isArray(checkCodexAgent(context)));
+    await assert.rejects(readFile(calls), { code: 'ENOENT' });
     const diagnose = () => diagnoseBinding(runtime.registry, context);
     assert.equal(
       await isNativeAgentCompatible(
@@ -92,8 +109,12 @@ else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.strin
         'failed',
       );
       assert.ok(!JSON.stringify(report).includes('invalid-native-secret'));
-      assert.equal(report.checks.length, 1);
-      assert.equal(report.checks.at(-1)?.status, 'failed');
+      assert.deepEqual(
+        report.checks.map((check) => check.status),
+        pluginId === 'agent.dsh'
+          ? ['passed', 'failed', 'unchecked', 'unchecked']
+          : ['passed', 'unchecked', 'failed', 'unchecked'],
+      );
     }
 
     await writeFile(executable, 'console.log("--permission-mode");');
@@ -108,7 +129,10 @@ else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.strin
       false,
     );
     report = await diagnose();
-    assert.equal(report.checks[0].status, 'failed');
+    assert.deepEqual(
+      report.checks.map((check) => check.status),
+      ['failed', 'unchecked', 'unchecked', 'unchecked'],
+    );
     assert.match(report.checks[0].reason ?? '', /required CLI options/);
 
     await writeFile(
@@ -132,7 +156,7 @@ else { assert.deepEqual(args, ${JSON.stringify(args)}); console.log(${JSON.strin
       binding.config.executable = link;
       report = await diagnose();
       assert.equal(
-        report.checks[0].id,
+        report.checks.find((check) => check.status === 'failed')?.id,
         pluginId === 'agent.dsh' ? 'profile-config' : 'authentication',
       );
     }

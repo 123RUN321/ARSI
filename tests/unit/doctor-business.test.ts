@@ -17,15 +17,35 @@ import type {
   JsonObject,
 } from '../../src/contracts/index.js';
 import { createRuntime } from '../../src/runtime/context.js';
-import type { Registry } from '../../src/runtime/registry/index.js';
+import { Registry } from '../../src/runtime/registry/index.js';
 import { Recipe } from '../../src/runtime/loaders/recipe.js';
 import { Policy } from '../../src/runtime/policy/index.js';
-import { checkOptunaDependencies } from '../../src/plugins/proposer-optuna/doctor.js';
+import { optunaProposerDefinition } from '../../src/plugins/proposer-optuna/index.js';
+import { createOptunaProposer } from '../../src/plugins/proposer-optuna/service.js';
+import { parseOptunaConfig } from '../../src/plugins/proposer-optuna/schema.js';
+import type { OptunaWorker } from '../../src/plugins/proposer-optuna/worker.js';
 
 type Probe = DoctorContext & { recipe: Recipe; registry: Registry };
 
 function runDoctor(context: Probe): Promise<DoctorResult> {
   return diagnoseBinding(context.registry, context);
+}
+
+async function runOptunaDoctor(
+  context: Probe,
+  worker: OptunaWorker,
+): Promise<DoctorResult> {
+  const registry = new Registry();
+  registry.registerOperation({
+    ...optunaProposerDefinition,
+    create: (config, runtime) =>
+      createOptunaProposer(parseOptunaConfig(config), runtime, worker),
+  });
+  try {
+    return await diagnoseBinding(registry, { ...context, registry });
+  } finally {
+    await registry.dispose();
+  }
 }
 
 async function fixture(t: TestContext): Promise<{
@@ -113,7 +133,7 @@ for (const id of [
     const workingResult = await runDoctor(working);
     assert.deepEqual(
       workingResult.checks.map((check) => check.status),
-      ['passed'],
+      ['passed', 'passed'],
     );
     const projects = await readdir(join(f.root, 'probe/agent-projects'));
     const instructions = await readFile(
@@ -143,7 +163,7 @@ for (const id of [
     assert.equal(
       brokenResult.checks.find((check) => check.id === 'prepare-project')
         ?.status,
-      undefined,
+      'unchecked',
     );
     assert.ok(
       brokenResult.checks
@@ -244,7 +264,7 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
   const workingResult = await runDoctor(working);
   assert.deepEqual(
     workingResult.checks.map((check) => check.status),
-    ['passed'],
+    ['passed', 'passed'],
   );
   for (const modules of [
     [config.modules[0]!, config.modules[0]!],
@@ -253,15 +273,18 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
     const broken = f.probe('proposer.pareto-evolution', { ...config, modules });
     const brokenResult = await runDoctor(broken);
     assert.equal(brokenResult.checks[0]!.status, 'failed');
-    assert.equal(brokenResult.checks.length, 1);
+    assert.equal(brokenResult.checks.length, 2);
+    assert.equal(brokenResult.checks[1]!.status, 'unchecked');
   }
   const missing = f.probe('proposer.pareto-evolution', {
     ...config,
     modules: [{ id: 'missing', path: 'missing.md' }],
   });
   const missingResult = await runDoctor(missing);
-  assert.equal(missingResult.checks.length, 1);
-  assert.equal(missingResult.checks[0]!.status, 'failed');
+  assert.deepEqual(
+    missingResult.checks.map((check) => check.status),
+    ['passed', 'failed'],
+  );
   assert.ok(
     missingResult.checks
       .find(({ id }) => id === 'baseline-modules')
@@ -286,7 +309,7 @@ test('proposer.pareto-evolution checks module identities and the real baseline f
   const artifactResult = await runDoctor(artifact);
   assert.deepEqual(
     artifactResult.checks.map((check) => check.status),
-    ['passed'],
+    ['passed', 'passed'],
   );
 });
 
@@ -300,7 +323,7 @@ test('proposer.optuna requests only the dependency check and rejects wrong depen
     ],
   };
   const working = f.probe('proposer.optuna', config);
-  const workingResult = await checkOptunaDependencies(
+  const workingResult = await runOptunaDoctor(
     working,
     async (_config, request) => {
       assert.equal(request.action, 'check');
@@ -312,12 +335,9 @@ test('proposer.optuna requests only the dependency check and rejects wrong depen
   );
   assert.equal(workingResult.checks[0]!.status, 'passed');
   const incompatible = f.probe('proposer.optuna', config);
-  const incompatibleResult = await checkOptunaDependencies(
-    incompatible,
-    async () => ({
-      environment: { python: '3.13.1', optuna: '4.4.0', numpy: '2.2.6' },
-    }),
-  );
+  const incompatibleResult = await runOptunaDoctor(incompatible, async () => ({
+    environment: { python: '3.13.1', optuna: '4.4.0', numpy: '2.2.6' },
+  }));
   assert.equal(incompatibleResult.checks[0]!.status, 'failed');
   const missing = f.probe('proposer.optuna', {
     ...config,
@@ -393,17 +413,23 @@ test('proposer.operator loads task, stage prompts and knowledge without retrieva
   const workingResult = await runDoctor(working);
   assert.deepEqual(
     workingResult.checks.map((check) => check.status),
-    ['passed'],
+    ['passed', 'passed', 'unchecked'],
   );
   await rm(join(prompts, 'repair.md'));
   const missingPrompt = f.probe('proposer.operator', config);
   const missingPromptResult = await runDoctor(missingPrompt);
-  assert.match(missingPromptResult.checks.at(-1)!.reason!, /repair.md/);
+  assert.match(
+    missingPromptResult.checks.find(({ id }) => id === 'operator-resources')!
+      .reason!,
+    /repair.md/,
+  );
+  assert.equal(missingPromptResult.checks.at(-1)!.status, 'unchecked');
   await writeFile(manifest, '{}');
   const invalidManifest = f.probe('proposer.operator', config);
   const invalidManifestResult = await runDoctor(invalidManifest);
   assert.match(
-    invalidManifestResult.checks.at(-1)!.reason!,
+    invalidManifestResult.checks.find(({ id }) => id === 'operator-resources')!
+      .reason!,
     /Invalid external operator knowledge manifest/,
   );
 });

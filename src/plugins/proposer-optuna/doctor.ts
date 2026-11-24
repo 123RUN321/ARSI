@@ -1,5 +1,4 @@
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { failed, passed, runDoctorCheck } from '../../shared/doctor-check.js';
+import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
 import { object } from '../../shared/json.js';
 import { parseOptunaConfig } from './schema.js';
 import {
@@ -8,31 +7,35 @@ import {
   type OptunaWorker,
 } from './worker.js';
 
-export async function checkOptunaDependencies(
+export function checkOptunaDependencies(
   context: DoctorContext,
   worker: OptunaWorker = runOptunaWorker,
-): Promise<DoctorResult> {
+): DoctorStep[] {
   context.signal.throwIfAborted();
   const config = parseOptunaConfig(context.binding.config);
-  const dependencies = await runDoctorCheck(
-    'python-dependencies',
-    async (signal) => {
-      const result = await worker(
-        config,
-        {
-          action: 'check',
-          sampler: object(config.sampler),
-          constraintHandling: config.constraintHandling,
-          searchSpace: config.searchSpace,
-          history: [],
-        },
-        signal,
-      );
-      validateOptunaWorkerResponse(result, 'check');
+  async function arePythonDependenciesAvailable(
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const result = await worker(
+      config,
+      {
+        action: 'check',
+        sampler: object(config.sampler),
+        constraintHandling: config.constraintHandling,
+        searchSpace: config.searchSpace,
+        history: [],
+      },
+      signal,
+    );
+    validateOptunaWorkerResponse(result, 'check');
+    return true;
+  }
+  return [
+    {
+      id: 'python-dependencies',
+      check: arePythonDependenciesAvailable,
+      reason:
+        'Install the required Python, Optuna and NumPy versions in the configured Python environment.',
     },
-    { signal: context.signal },
-  );
-  if (dependencies.status === 'failed')
-    return failed(dependencies.id, dependencies.reason, dependencies.details);
-  return passed('python-dependencies');
+  ];
 }

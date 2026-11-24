@@ -22,6 +22,15 @@ export interface DoctorResult {
   }[];
 }
 
+export interface DoctorStep {
+  id: string;
+  check?: (signal: AbortSignal) => boolean | Promise<boolean>;
+  reason: string;
+  details?: JsonObject;
+  /** null delegates time limits to a native diagnostic workflow. */
+  timeoutMs?: number | null;
+}
+
 export interface DoctorReport {
   recipeId: string | null;
   checks: DoctorCheck[];
@@ -64,4 +73,4 @@ export interface DoctorContext<C extends JsonObject = JsonObject> {
 /** A handler for the binding instance’s `rsi/doctor` event. */
 export type OperationDoctor<C extends JsonObject = JsonObject> = (
   context: DoctorContext<C>,
-) => DoctorResult | Promise<DoctorResult>;
+) => DoctorStep[] | Promise<DoctorStep[]>;

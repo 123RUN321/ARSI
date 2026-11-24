@@ -1,13 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DoctorContext, DoctorResult } from '../../../contracts/index.js';
-import {
-  failed,
-  passed,
-  missingInputError,
-  runDoctorCheck,
-  runDoctorProbe,
-} from '../../../shared/doctor-check.js';
+import type { DoctorContext, DoctorStep } from '../../../contracts/index.js';
+import { missingInputError } from '../../../shared/doctor-check.js';
 import { parseConfig } from '../../../shared/schema.js';
 import { missingPath } from '../doctor/checks.js';
 import { loadAgentPrompt } from './index.js';
@@ -16,10 +10,10 @@ import type { AgentEditingConfig } from './schema.js';
 
 type CheckedRole = { role: AgentRole; promptField: string };
 
-export async function checkAgentEditor<C extends AgentEditingConfig>(
+export function checkAgentEditor<C extends AgentEditingConfig>(
   context: DoctorContext,
   checkedRoles: (config: C) => readonly CheckedRole[] = () => [],
-): Promise<DoctorResult> {
+): DoctorStep[] {
   context.signal.throwIfAborted();
   const config = parseConfig<C>(
     context.binding.definition.configSchema,
@@ -28,33 +22,39 @@ export async function checkAgentEditor<C extends AgentEditingConfig>(
   );
   const skills = config.skills ?? [];
   const roles = checkedRoles(config);
-  const options = { signal: context.signal };
-  const inputs = await runDoctorProbe(
-    'editing-inputs',
-    (signal) => readEditingInputs(config, roles, signal),
-    options,
-  );
-  const prompt = inputs.value;
-  if (prompt === undefined)
-    return failed(inputs.check.id, inputs.check.reason, inputs.check.details);
-  const prepared = await runDoctorCheck(
-    'prepare-project',
-    async (signal) => {
-      signal.throwIfAborted();
-      await prepareAgentProject(
-        context.runtime.extend({ signal }),
-        prompt,
-        {},
-        skills,
-        roles.map(({ role }) => role),
-      );
-      signal.throwIfAborted();
+  let prompt: string;
+  async function areEditingInputsReadable(
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    prompt = await readEditingInputs(config, roles, signal);
+    return true;
+  }
+  async function isProjectPrepared(signal: AbortSignal): Promise<boolean> {
+    signal.throwIfAborted();
+    await prepareAgentProject(
+      context.runtime.extend({ signal }),
+      prompt,
+      {},
+      skills,
+      roles.map(({ role }) => role),
+    );
+    signal.throwIfAborted();
+    return true;
+  }
+  return [
+    {
+      id: 'editing-inputs',
+      check: areEditingInputsReadable,
+      reason:
+        'Restore the configured prompt, guidance, skills and role prompt files.',
     },
-    options,
-  );
-  if (prepared.status === 'failed')
-    return failed(prepared.id, prepared.reason, prepared.details);
-  return passed('prepare-project');
+    {
+      id: 'prepare-project',
+      check: isProjectPrepared,
+      reason:
+        'Correct the editing project configuration, including unique roles and skill names.',
+    },
+  ];
 }
 
 async function readEditingInputs(

@@ -1,18 +1,13 @@
 import { constants } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import {
-  failed,
-  passed,
-  missingInputError,
-  runDoctorCheck,
-} from '../../shared/doctor-check.js';
+import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
+import { missingInputError } from '../../shared/doctor-check.js';
 import { object, string } from '../../shared/json.js';
 import { requireReadablePath } from '../shared/doctor/checks.js';
 import { executablePath } from '../shared/doctor/executable.js';
 import { runCommand } from '../shared/doctor/process.js';
-import { checkBaselineDirectory } from '../shared/file-application/doctor.js';
+import { readBaselineDirectory } from '../shared/file-application/doctor.js';
 import { safePath } from '../shared/file-application/target.js';
 import type {
   InferenceConfig,
@@ -20,49 +15,69 @@ import type {
   RemoteInferenceConfig,
 } from './schema.js';
 
-export async function checkInferenceApplication(
+export function checkInferenceApplication(
   context: DoctorContext<InferenceConfig>,
-): Promise<DoctorResult> {
-  const baseline = await checkBaselineDirectory(context);
-  const directory = baseline.directory;
-  if (!directory)
-    return failed(
-      baseline.check.id,
-      baseline.check.reason,
-      baseline.check.details,
-    );
-
+): DoctorStep[] {
   const config = context.binding.config;
-  const options = { signal: context.signal };
-  if ('remote' in config) {
-    const interpreter = await runDoctorCheck(
-      'remote-executable',
-      (signal) => checkRemoteInterpreter(config.remote, signal),
-      options,
-    );
-    if (interpreter.status === 'failed')
-      return failed(interpreter.id, interpreter.reason, interpreter.details);
+  const apiKeyEnv = config.credentials?.apiKeyEnv;
+  let directory: string;
+
+  async function isBaselineAvailable(signal: AbortSignal): Promise<boolean> {
+    directory = await readBaselineDirectory(context, undefined, signal);
+    return true;
   }
 
-  const launch = await runDoctorCheck(
-    'launch-prerequisites',
-    async (signal) => {
-      if ('remote' in config)
-        await checkRemoteParameters(config.remote, directory, signal);
-      else await checkLocalLaunch(config, directory);
-      signal.throwIfAborted();
+  async function isInterpreterAvailable(signal: AbortSignal): Promise<boolean> {
+    if ('remote' in config) await checkRemoteInterpreter(config.remote, signal);
+    return true;
+  }
+
+  async function areLaunchPrerequisitesAvailable(
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if ('remote' in config)
+      await checkRemoteParameters(config.remote, directory, signal);
+    else await checkLocalLaunch(config, directory);
+    signal.throwIfAborted();
+    return true;
+  }
+
+  function credentialsAvailable(): boolean {
+    return apiKeyEnv === undefined || Boolean(process.env[apiKeyEnv]?.trim());
+  }
+
+  return [
+    {
+      id: 'baseline',
+      check: isBaselineAvailable,
+      reason:
+        'Restore the baseline input files or correct the Target and baseline configuration.',
     },
-    options,
-  );
-  if (launch.status === 'failed')
-    return failed(launch.id, launch.reason, launch.details);
-  const apiKeyEnv = config.credentials?.apiKeyEnv;
-  if (apiKeyEnv !== undefined && !process.env[apiKeyEnv]?.trim())
-    return failed(
-      'credentials',
-      `credentials.apiKeyEnv references missing or empty environment variable ${apiKeyEnv}. Set that variable before running the experiment.`,
-    );
-  return passed('launch-prerequisites');
+    ...('remote' in config
+      ? [
+          {
+            id: 'remote-executable',
+            check: isInterpreterAvailable,
+            reason:
+              'Install or correct remote.executable so its version can be checked.',
+          },
+        ]
+      : []),
+    {
+      id: 'launch-prerequisites',
+      check: areLaunchPrerequisitesAvailable,
+      reason:
+        'Correct the inference launch configuration and restore its required files.',
+    },
+    {
+      id: 'credentials',
+      check: credentialsAvailable,
+      reason:
+        apiKeyEnv === undefined
+          ? 'No API key environment variable is required.'
+          : `credentials.apiKeyEnv references missing or empty environment variable ${apiKeyEnv}. Set that variable before running the experiment.`,
+    },
+  ];
 }
 
 async function checkRemoteInterpreter(

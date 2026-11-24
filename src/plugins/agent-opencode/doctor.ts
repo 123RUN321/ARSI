@@ -2,72 +2,52 @@ import { object } from '../../shared/json.js';
 import { launchEnvironment } from './session.js';
 import type {
   DoctorContext,
-  DoctorResult,
+  DoctorStep,
   JsonValue,
 } from '../../contracts/index.js';
-import { failed, passed, runDoctorProbe } from '../../shared/doctor-check.js';
 import {
   isNativeAgentCompatible,
   runNativeAgentCommand,
 } from '../shared/doctor/native-agent.js';
 
-export async function checkOpenCodeAgent(
-  context: DoctorContext,
-): Promise<DoctorResult> {
-  const executable = await runDoctorProbe(
-    'executable',
-    (signal) =>
-      isNativeAgentCompatible(
-        context,
-        'opencode',
-        ['run', '--help'],
-        ['--standalone', '--format', '--model', '--archived'],
-        signal,
-      ),
-    { signal: context.signal },
-  );
-  if (!executable.value)
-    return failed(
-      'executable',
-      executable.check.reason ??
-        `The CLI lacks required CLI options. Check ${context.binding.name}.config.executable and upgrade the native CLI.`,
+export function checkOpenCodeAgent(context: DoctorContext): DoctorStep[] {
+  const isExecutableCompatible = (signal: AbortSignal): Promise<boolean> =>
+    isNativeAgentCompatible(
+      context,
+      'opencode',
+      ['run', '--help'],
+      ['--standalone', '--format', '--model', '--archived'],
+      signal,
     );
-  const version = await runDoctorProbe(
-    'version',
-    (signal) => isOpenCodeVersionSupported(context, signal),
-    { signal: context.signal },
-  );
-  if (!version.value)
-    return failed(
-      'version',
-      version.check.reason ??
+  const isVersionSupported = (signal: AbortSignal): Promise<boolean> =>
+    isOpenCodeVersionSupported(context, signal);
+  const isConfigurationValid = (signal: AbortSignal): Promise<boolean> =>
+    isOpenCodeConfigurationValid(context, signal);
+
+  return [
+    {
+      id: 'executable',
+      check: isExecutableCompatible,
+      reason: `The CLI lacks required CLI options. Check ${context.binding.name}.config.executable and upgrade the native CLI.`,
+    },
+    {
+      id: 'version',
+      check: isVersionSupported,
+      reason:
         'Install OpenCode V2 using the official @opencode/cli package and correct executable.',
-    );
-  const configuration = await runDoctorProbe(
-    'configuration',
-    (signal) => isOpenCodeConfigurationValid(context, signal),
-    { signal: context.signal },
-  );
-  if (!configuration.value)
-    return failed(
-      'configuration',
-      configuration.check.reason ??
+    },
+    {
+      id: 'configuration',
+      check: isConfigurationValid,
+      reason:
         'OpenCode could not load its native configuration. Check executable, upgrade the native CLI and repair its configuration.',
-    );
-  const modelAccess: DoctorResult['checks'][number] = {
-    id: 'model-access',
-    status: 'unchecked',
-    reason:
-      'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
-  };
-  return {
-    checks: [
-      ...passed('executable').checks,
-      ...passed('version').checks,
-      ...passed('configuration').checks,
-      modelAccess,
-    ],
-  };
+    },
+    {
+      id: 'model-access',
+      reason:
+        'Native preflight does not establish model-service reachability or model availability. Verify model access in the native client before running RSI.',
+    },
+  ];
 }
 
 async function isOpenCodeVersionSupported(

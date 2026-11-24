@@ -1,65 +1,44 @@
 import { join } from 'node:path';
 import type {
   DoctorContext,
-  DoctorResult,
+  DoctorStep,
   JsonValue,
   OperationDoctor,
 } from '../../contracts/index.js';
-import { failed } from '../../shared/doctor-check.js';
 import { plain } from '../shared/evaluator-adapter/data.js';
 import type { SdkEvaluatorConfig } from '../shared/evaluator-adapter/configuration.js';
-import { checkSdkDoctor } from '../shared/evaluator-adapter/doctor.js';
+import { sdkDoctorSteps } from '../shared/evaluator-adapter/doctor.js';
 import type { SdkDoctorRunner } from '../shared/evaluator-adapter/doctor-sdk.js';
 import { prepareEvaluationConfig } from './service.js';
 
 export function createAgentbenchDoctor(run?: SdkDoctorRunner): OperationDoctor {
-  return async (context) => {
-    const sdk = await checkSdkDoctor(context, prepareAgentbenchConfig, run);
-    const failure = sdk.checks.find((check) => check.status === 'failed');
-    if (failure) {
-      const baseline = plain(context.recipe.application.config.baseline);
-      if (
-        failure.details?.sdkName === 'AgentBundle path' &&
-        typeof baseline.directory === 'string'
-      )
-        return failed(
-          failure.id,
-          `${failure.reason} Fix: Restore a readable AgentBundle at ${baseline.directory} or correct application.config.baseline.directory.`,
-          failure.details,
-        );
-      return sdk;
-    }
+  return (context) => {
     const baseline = plain(context.recipe.application.config.baseline);
-    const instanceScope: DoctorResult['checks'] =
+    const instanceScope: DoctorStep[] =
       typeof baseline.directory !== 'string' &&
       typeof baseline.artifactRef !== 'string'
         ? [
             {
               id: 'application-instance',
-              status: 'unchecked',
               reason:
                 'The Application supplies its instance during execution; SDK doctor uses a temporary path without establishing instance readiness.',
             },
           ]
         : [];
-    return {
-      checks: [
-        ...instanceScope,
-        ...sdk.checks,
-        {
-          id: 'model-access',
-          status: 'unchecked',
-          reason:
-            'The installed Evaluator SDK doctor does not query model lists, so evaluation model availability is unchecked.',
-        },
-        {
-          id: 'docker-disk-capacity',
-          status: 'unchecked',
-          reason:
-            'The installed Evaluator SDK doctor does not measure disk capacity, so evaluation storage sufficiency is unchecked.',
-        },
-      ],
-    };
+    return [
+      ...instanceScope,
+      ...sdkDoctorSteps(context, prepareAgentbenchConfig, run),
+      {
+        id: 'model-access',
+        reason:
+          'The installed Evaluator SDK doctor does not query model lists, so evaluation model availability is unchecked.',
+      },
+      {
+        id: 'docker-disk-capacity',
+        reason:
+          'The installed Evaluator SDK doctor does not measure disk capacity, so evaluation storage sufficiency is unchecked.',
+      },
+    ];
   };
 }
 

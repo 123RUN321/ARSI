@@ -2,111 +2,118 @@ import { lstat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   DoctorContext,
-  DoctorResult,
+  DoctorStep,
   JsonObject,
 } from '../../../contracts/index.js';
-import {
-  failed,
-  passed,
-  runDoctorProbe,
-} from '../../../shared/doctor-check.js';
-import { errorText } from '../../../shared/errors.js';
 import { object, string } from '../../../shared/json.js';
 import {
   evaluatorNetworkConfigPath,
   type SdkEvaluatorConfig,
 } from './configuration.js';
-import { sdkDoctor, type SdkDoctorRunner } from './doctor-sdk.js';
+import {
+  sdkDoctor,
+  type SdkDoctorOptions,
+  type SdkDoctorRunner,
+} from './doctor-sdk.js';
 
-export async function checkSdkDoctor(
+export function sdkDoctorSteps(
   context: DoctorContext,
   prepareConfig: (
     context: DoctorContext,
     env: NodeJS.ProcessEnv,
   ) => SdkEvaluatorConfig | Promise<SdkEvaluatorConfig>,
   run: SdkDoctorRunner = sdkDoctor,
-): Promise<DoctorResult> {
-  const configuration = await runDoctorProbe(
-    'configuration',
-    async (signal) => {
-      const env = { ...process.env };
-      const config = await prepareConfig(context, env);
-      const configPath = join(context.directory, 'evaluator.json');
-      await writeFile(configPath, JSON.stringify(config), {
-        mode: 0o600,
-        signal,
-      });
-      return {
-        configPath,
-        networkConfigPath: await networkConfigPath(context.directory, signal),
-        env,
-      };
-    },
-    { signal: context.signal },
-  );
-  const options = configuration.value;
-  if (!options)
-    return failed(
-      configuration.check.id,
-      configuration.check.reason,
-      configuration.check.details,
-    );
-  let result: SdkReport;
-  try {
+): DoctorStep[] {
+  let options: SdkDoctorOptions;
+  let report: SdkReport;
+
+  async function isConfigurationReady(signal: AbortSignal): Promise<boolean> {
+    const env = { ...process.env };
+    const config = await prepareConfig({ ...context, signal }, env);
+    const configPath = join(context.directory, 'evaluator.json');
+    await writeFile(configPath, JSON.stringify(config), {
+      mode: 0o600,
+      signal,
+    });
+    options = {
+      configPath,
+      networkConfigPath: await networkConfigPath(context.directory, signal),
+      env,
+      signal,
+    };
+    return true;
+  }
+
+  async function isSdkReady(signal: AbortSignal): Promise<boolean> {
     // The SDK owns the complete diagnostic workflow and its per-probe limits.
-    result = parseSdkDoctorReport(
-      await run({ ...options, signal: context.signal }),
-    );
-    context.signal.throwIfAborted();
-  } catch (error) {
-    context.signal.throwIfAborted();
-    return failed(
-      'sdk-doctor',
-      `Evaluator SDK doctor could not complete. Check ${context.binding.name}.config, the installed SDK and its resources. ${errorText(error)}`,
-    );
+    report = parseSdkDoctorReport(await run({ ...options, signal }));
+    signal.throwIfAborted();
+    return !report.checks.some((check) => check.status === 'failed');
   }
-  for (const [index, check] of result.checks.entries()) {
-    if (check.status === 'failed')
-      return failed(
-        `sdk.check-${index}`,
-        `${check.name}: ${check.detail} Correct ${context.binding.name}.config and the SDK prerequisites named by this check.`,
-        {
-          sdkName: check.name,
-          sdkStatus: check.status,
-        },
-      );
+
+  function isNetworkReady(): boolean {
+    return report.network.status === 'passed';
   }
-  const networkStatus = string(result.network.status);
-  if (networkStatus === 'failed')
-    return failed(
-      'sdk.network',
-      'Evaluator SDK network probes failed. Correct the download or proxy configuration named in the SDK guidance.',
-      result.network,
-    );
-  return {
-    checks: [
-      configuration.check,
-      ...passed(
-        'sdk-doctor',
-        'Evaluator SDK doctor returned its diagnostic report.',
-      ).checks,
-      ...result.checks.map((check, index) => ({
-        id: `sdk.check-${index}`,
-        status: doctorStatus(check.status),
-        reason: `${check.name}: ${check.detail}`,
-        details: { sdkName: check.name, sdkStatus: check.status },
-      })),
-      {
-        id: 'sdk.network',
-        status: doctorStatus(networkStatus),
-        reason:
-          networkStatus === 'passed'
-            ? 'Evaluator SDK network probes passed; see the SDK probe evidence for their scope.'
-            : 'Evaluator SDK network probes did not all pass; inspect the SDK probe evidence and guidance.',
-        details: result.network,
+
+  return [
+    {
+      id: 'configuration',
+      check: isConfigurationReady,
+      reason: `Correct ${context.binding.name}.config and restore the Application inputs required by this Evaluator.`,
+    },
+    {
+      id: 'sdk-doctor',
+      check: isSdkReady,
+      timeoutMs: null,
+      get reason() {
+        const failures =
+          report?.checks.filter((check) => check.status === 'failed') ?? [];
+        return (
+          `Check ${context.binding.name}.config, the installed SDK and its prerequisites. ` +
+          failures.map((check) => `${check.name}: ${check.detail}`).join(' ') +
+          (failures.some((check) => check.name === 'AgentBundle path')
+            ? ' Restore the AgentBundle or correct application.config.baseline.directory.'
+            : '')
+        );
       },
-    ],
-  };
+      get details() {
+        return report
+          ? { checks: report.checks, network: report.network }
+          : undefined;
+      },
+    },
+    {
+      id: 'sdk.coverage',
+      get check() {
+        return report?.checks.some((check) => check.status === 'not-checked')
+          ? undefined
+          : () => true;
+      },
+      get reason() {
+        return (
+          (report?.checks
+            .filter((check) => check.status === 'not-checked')
+            .map((check) => `${check.name}: ${check.detail}`)
+            .join(' ') ??
+            '') ||
+          'SDK prerequisite coverage was not established.'
+        );
+      },
+    },
+    {
+      id: 'sdk.network',
+      get check() {
+        return ['passed', 'failed'].includes(String(report?.network.status))
+          ? isNetworkReady
+          : undefined;
+      },
+      reason:
+        'SDK network readiness was not established. Inspect the probe evidence and correct the download or proxy fields named in its guidance.',
+      get details() {
+        return report?.network;
+      },
+    },
+  ];
 }
 
 async function networkConfigPath(
@@ -178,10 +185,4 @@ function parseSdkDoctorReport(value: unknown): SdkReport {
       );
   }
   return { checks, network };
-}
-
-function doctorStatus(
-  status: string,
-): DoctorResult['checks'][number]['status'] {
-  return status === 'passed' || status === 'failed' ? status : 'unchecked';
 }

@@ -53,7 +53,7 @@ flowchart TD
 
 ### 阅读摘要和 JSON 报告
 
-每个绑定遇到首个前提或插件检查错误后立即返回，其他绑定继续检查。摘要会说明失败插件的后续检查未完成，数量只统计实际输出的检查项。
+插件返回有序检查定义数组，声明时不执行检查。框架逐项执行，首项失败后停止该绑定，保留此前通过项，并将后续已声明项标为 `unchecked`；其他绑定继续检查。数量按报告中的实际输出项统计，包括未执行项。声明前提失败时不会创建插件实例，组件专用诊断整体标为 `unchecked`。
 
 `doctor` 默认向 stdout 输出可读摘要。摘要给出各状态的数量，解释失败项和未检查项，并显示已有的修复建议。遇到缺失文件时，摘要会指出路径和需要修改的配置字段。失败的绑定还会提示：修复后需要重新执行尚未完成的检查。
 
@@ -72,7 +72,7 @@ arsi doctor my-experiment/recipe.yaml --json
 
 从 `checks` 筛选失败项或按状态计数。可选字段包括 `binding`、`pluginId`、`reason` 和 `details`。通过 `reason` 查看失败原因、未检查的原因和可用的修复建议。
 
-组件检查 ID 以绑定名开头。名为 `agent` 的 Pi 绑定在模型配置无效时返回 `agent.model-config`，否则在探测模型服务后返回 `agent.model-access`。更换绑定名后，前缀也随之变化。
+组件检查 ID 以绑定名开头。名为 `agent` 的 Pi 绑定依次输出 `agent.model-config`、`agent.model-access`；模型配置失败时，第二项记为 `unchecked`。更换绑定名后，前缀也随之变化。
 
 | 状态        | 如何理解                                                                           |
 | ----------- | ---------------------------------------------------------------------------------- |
@@ -125,7 +125,7 @@ arsi doctor my-experiment/recipe.yaml --json
 
 三个 Evaluator 都通过各自的配置适配器调用已安装的 Evaluator SDK doctor。配置与输出路径位于隔离的临时目录。
 
-SDK 在一次调用内完成自己的诊断流程。RSI 校验返回的报告，报告其中的首个失败，并停止该 Evaluator 后续的 RSI 检查；这不会中止 SDK 调用内部的单项探测。没有失败时，RSI 保留 SDK 的结果及未覆盖的诊断范围。
+SDK 在一次调用内完成自己的诊断流程，RSI 将其作为 `sdk-doctor` 检查项执行并校验协议。原生前提失败时该项失败，完整原生检查与网络证据保留在 `details` 中，后续 RSI 项标为 `unchecked`。`sdk.coverage` 和 `sdk.network` 分别表达前提覆盖范围及网络结论；这不会逐项中止 SDK 内部探测。
 
 | 实现                       | 实际检查                                                                                        |
 | -------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -134,7 +134,7 @@ SDK 在一次调用内完成自己的诊断流程。RSI 校验返回的报告，
 | `evaluator.operatorbench`  | 1. 读取算子任务，使用首个用例准备评测配置。<br>2. 将评测配置交给 SDK 检查。                     |
 
 - SDK 根据配置检查 Docker、Python、声明的本地输入及 Ray 连接前提。**网络诊断会实际下载临时资源，Docker 路径还会测试镜像获取和 `FROM`、`RUN` 构建。** SDK 负责清理探测资源，已下载的基础镜像可能留在缓存中。
-- SDK 的 `not-checked` 和网络汇总的 `incomplete` 映射为 `unchecked`。SDK 可以因覆盖不完整而返回退出码 `1`。收到有效报告后，RSI 根据检查结果决定自己的退出码。
+- 原生前提出现 `not-checked` 时，`sdk.coverage` 记为 `unchecked`；网络汇总为 `incomplete` 时，`sdk.network` 记为 `unchecked`。SDK 可以因覆盖不完整而返回退出码 `1`。收到有效报告后，RSI 根据检查结果决定自己的退出码。
 
 ## 4. 自定义组件如何接入 doctor
 
@@ -142,16 +142,19 @@ SDK 在一次调用内完成自己的诊断流程。RSI 校验返回的报告，
 
 ### 编写诊断事件处理器
 
-从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorResult`。
+现有返回 `{ checks: [...] }` 的处理器需要迁移为定义数组。插件处理器不再调用 `failed`、`passed` 或 `runDoctorCheck`，这些导出已删除。CLI JSON 报告仍为 `{ recipeId, checks }`。
+
+从 `arsi/contracts` 或 `arsi` 导入 `OperationDoctor<C>`、`DoctorContext<C>` 和 `DoctorStep`。
 
 - 处理器由临时插件实例持有。`doctor` 命令为每个绑定传入其生效配置。
 - 组件未订阅 `rsi/doctor` 时，框架仍执行通用检查，并将组件专用的 `plugin` 项标为 `unchecked`。
 
-| 类型                 | 用途                                                                                                                                                                             |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationDoctor<C>` | `rsi/doctor` 处理器，返回 `DoctorResult` 或 `Promise<DoctorResult>`。                                                                                                            |
-| `DoctorContext<C>`   | 框架传给回调的参数。常用的是 `context.binding.config` 读取生效配置，`context.signal` 响应取消，`context.directory` 存放临时文件。                                                |
-| `DoctorResult`       | 组件通过 `checks` 返回检查结果。遇到首个错误立即返回 `failed`，在 `reason` 中说明原因、配置字段和修复方法。用 `unchecked` 表达实际诊断范围的限制。框架为检查 ID 添加绑定名前缀。 |
+| 类型                 | 用途                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `OperationDoctor<C>` | 返回 `DoctorStep[]`；只有声明本身需要 I/O 时才返回定义数组的 Promise。                                                      |
+| `DoctorContext<C>`   | 生效配置、隔离 Runtime、临时目录及命令取消信号。                                                                            |
+| `DoctorStep`         | 包含 `id`、惰性布尔判断 `check(signal)` 和失败原因/修复提示 `reason`。不支持的诊断省略 `check`，可通过 `details` 保存证据。 |
+| `DoctorResult`       | 框架执行后通过 `checks` 汇总的结果，由框架生成，插件处理器不返回它。                                                        |
 
 框架在调用处理器前检查绑定引用。引用无效时，该绑定立即停止检查。
 
@@ -161,39 +164,39 @@ SDK 在一次调用内完成自己的诊断流程。RSI 校验返回的报告，
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { failed, passed, runDoctorCheck } from 'arsi';
-import type { OperationDoctor } from 'arsi/contracts';
+import type { DoctorContext, DoctorStep } from 'arsi/contracts';
 import type { CustomConfig } from './schema.js';
 
-export const checkCustom: OperationDoctor<CustomConfig> = async (context) => {
-  const inputContent = await runDoctorCheck(
-    'input-content',
-    async (signal) => {
-      const text = await readFile(context.binding.config.inputFile, {
-        encoding: 'utf8',
-        signal,
-      });
-      if (!text.trim())
-        throw new Error(
-          'inputFile is empty; add the required text or correct inputFile.',
-        );
+export function doctor(context: DoctorContext<CustomConfig>): DoctorStep[] {
+  async function isInputReady(signal: AbortSignal): Promise<boolean> {
+    const text = await readFile(context.binding.config.inputFile, {
+      encoding: 'utf8',
+      signal,
+    });
+    return Boolean(text.trim());
+  }
+
+  return [
+    {
+      id: 'input-content',
+      check: isInputReady,
+      reason:
+        'inputFile is empty or unreadable; restore its contents or correct inputFile.',
     },
-    { signal: context.signal },
-  );
-  if (inputContent.status === 'failed')
-    return failed(inputContent.id, inputContent.reason);
-  return passed('input-content');
-};
+    {
+      id: 'remote-service',
+      reason: 'This component does not diagnose the remote service.',
+    },
+  ];
+}
 ```
 
-- `failed` 和 `passed` 是从 `arsi` 导出的普通结果构造函数。简单条件保持同步，失败立即返回；文件、进程和网络操作显式使用 `await`。不支持的诊断使用 `unchecked`。
-- 判断函数按其验证的事实命名，例如 `isHttpUrl`、`isNativeAgentCompatible`，并返回布尔值。处理器负责失败说明。超时与取消继续由探测层处理，并保留其超时或执行失败的错误原因。
-- 上例中的 `runDoctorCheck` 设置截止时间、传递取消信号，并将探测错误转换为检查结果。资源清理仍须在失败或取消后执行。
+处理器主体定义判断函数，最后返回有序定义数组。纯判断保持同步，实际 I/O 才使用 `async`。框架为每项 `check` 传入受时限约束的信号；I/O 应使用这个信号，避免闭包引用命令级信号而绕过时限。返回 false 时使用定义的 `reason`，异常或超时还会附上诊断信息。失败或取消后仍须清理资源。可选 `timeoutMs` 覆盖默认单项时限；内置原生 SDK 流程使用 `null` 保留其自身计时器。
 
-在 `service.ts` 中导入 `checkCustom`，从 `arsi/contracts` 导入 `RuntimeContext` 类型，将工厂参数标注为 `ctx: RuntimeContext<CustomConfig>`，再在工厂内订阅。扩展入口照常调用 `registry.registerOperation(customDefinition)`。
+在 `service.ts` 中导入 `doctor`，从 `arsi/contracts` 导入 `RuntimeContext` 类型，将工厂参数标注为 `ctx: RuntimeContext<CustomConfig>`，再在工厂内订阅。扩展入口照常调用 `registry.registerOperation(customDefinition)`。
 
 ```ts
-ctx.event.on('rsi/doctor', checkCustom);
+ctx.event.on('rsi/doctor', doctor);
 ```
 
 构建扩展后，通过 CLI 加载它的 `index.mjs`。
@@ -208,7 +211,7 @@ doctor 按顺序检查各个绑定。命令总耗时取决于各项检查与清�
 
 | 操作或检查 ID                                       | 时限                                               | 计时范围                                                                             |
 | --------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 通用 `runDoctorCheck` 检查                          | 默认每项 60 秒                                     | 本地路径、SDK 配置准备、Application 验证与获取各自计时，同一项内的多个操作共用时限。 |
+| 框架检查执行                                        | 默认每项 60 秒                                     | 本地路径、SDK 配置准备、Application 验证与获取各自计时，同一项内的多个操作共用时限。 |
 | `agent.codex` 的 `executable`、`doctor`             | 各 60 秒                                           | CLI 帮助与原生 doctor 帮助共用 `executable` 时限，原生 JSON 诊断另算一项。           |
 | `agent.claudecode` / `agent.dsh` / `agent.opencode` | 每项 60 秒                                         | CLI 兼容性、Claude 认证及 DSH/OpenCode 配置。                                        |
 | Pi 的 `model-access` HTTP 请求                      | 每次请求 10 秒                                     | 包含 HTTP 请求和完整响应正文读取，位于外层 60 秒检查内。                             |
@@ -218,6 +221,6 @@ doctor 按顺序检查各个绑定。命令总耗时取决于各项检查与清�
 
 嵌套时限以先到期者为准。Pi 请求自己的 10 秒包含在外层 60 秒中，不能额外相加。CLI 没有 doctor 专用的超时参数，这些时限也不取自 Recipe 的实验预算。Pi/Codex/Claude Code/DSH 的 `config.timeoutMs` 用于真实 Agent 执行，参见[配置 Recipe、Target 与组件](configuration_zh.md)。
 
-RSI 检查超时会记为 `failed`，表示探测未完成。取消探测后，`runDoctorCheck` 最多再等待 **15 秒**使其结束。若检查超时且等待结束时探测仍未完成，同一检查项的原因会说明清理无法确认。最后清理 Runtime 和临时目录还需要额外时间。
+RSI 检查超时会记为 `failed`，表示探测未完成。取消探测后，执行器最多再等待 **15 秒**使其结束。若检查超时且等待结束时探测仍未完成，同一检查项的原因会说明清理无法确认。最后清理 Runtime 和临时目录还需要额外时间。
 
 Evaluator 取消时，RSI 请求 SDK 结束探测并清理资源。SDK 最长有 60 秒响应。超时或取消消息无法送达时，RSI 开始强制终止进程树，此时 Docker daemon 所有资源的清理状态仍为未知。当前固定 SDK 给删除探测镜像的操作 30 秒。下载的基础镜像可能留在缓存中。

@@ -144,7 +144,11 @@ test('doctor verifies a configured kernel entry with an editable helper and repo
   const working = await run('application.kernel', settings);
   assert.deepEqual(
     working.checks.map(({ id, status }) => ({ id, status })),
-    [{ id: 'acquire-instance', status: 'passed' }],
+    [
+      { id: 'baseline', status: 'passed' },
+      { id: 'verify-source', status: 'passed' },
+      { id: 'acquire-instance', status: 'passed' },
+    ],
   );
   assert.deepEqual(await readdir(runtime.workspaces.directory), []);
   assert.deepEqual(await runtime.facts.list('experiments'), []);
@@ -157,7 +161,7 @@ test('doctor verifies a configured kernel entry with an editable helper and repo
   );
   assert.equal(
     broken.checks.find((check) => check.id === 'acquire-instance')?.status,
-    undefined,
+    'unchecked',
   );
   assert.match(
     broken.checks.find(({ id }) => id === 'baseline')?.reason ?? '',
@@ -185,9 +189,13 @@ test('doctor verifies bundle lifecycle and links missing Target input to checks 
     baseline: { directory: baseline },
   };
   const working = await run('application.agentbundle', config);
-  assert.ok(
-    working.checks.every((check) => check.status === 'passed'),
-    JSON.stringify(working),
+  assert.deepEqual(
+    working.checks.map(({ id, status }) => ({ id, status })),
+    [
+      { id: 'baseline', status: 'passed' },
+      { id: 'verify-bundle', status: 'passed' },
+      { id: 'acquire-instance', status: 'passed' },
+    ],
   );
   assert.deepEqual(await readdir(runtime.workspaces.directory), []);
   await rm(join(baseline, 'workflow.yaml'));
@@ -198,7 +206,7 @@ test('doctor verifies bundle lifecycle and links missing Target input to checks 
   );
   assert.equal(
     absent.checks.find((check) => check.id === 'verify-bundle')?.status,
-    undefined,
+    'unchecked',
   );
   assert.ok(
     absent.checks
@@ -224,10 +232,15 @@ test('doctor checks local and remote inference launch inputs without starting th
     },
     endpoint: { model: 'fixture' },
   };
-  assert.ok(
-    (await run('application.inference', local)).checks.every(
-      (check) => check.status === 'passed',
+  assert.deepEqual(
+    (await run('application.inference', local)).checks.map(
+      ({ id, status }) => ({ id, status }),
     ),
+    [
+      { id: 'baseline', status: 'passed' },
+      { id: 'launch-prerequisites', status: 'passed' },
+      { id: 'credentials', status: 'passed' },
+    ],
   );
   const brokenLocal = await run('application.inference', {
     ...local,
@@ -246,10 +259,16 @@ test('doctor checks local and remote inference launch inputs without starting th
     remote: { script, executable: process.execPath },
     endpoint: { model: 'fixture', origin: 'http://localhost:8080' },
   };
-  assert.ok(
-    (await run('application.inference', remote)).checks.every(
-      (check) => check.status === 'passed',
+  assert.deepEqual(
+    (await run('application.inference', remote)).checks.map(
+      ({ id, status }) => ({ id, status }),
     ),
+    [
+      { id: 'baseline', status: 'passed' },
+      { id: 'remote-executable', status: 'passed' },
+      { id: 'launch-prerequisites', status: 'passed' },
+      { id: 'credentials', status: 'passed' },
+    ],
   );
   const invalidOrigin = await run('application.inference', {
     ...remote,
@@ -316,7 +335,10 @@ test('doctor resolves Pi model references and token limits without inference or 
     'passed',
   );
   assert.match(
-    working.checks.find((check) => check.id === 'model-access')?.reason ?? '',
+    String(
+      working.checks.find((check) => check.id === 'model-access')?.details
+        ?.observation ?? '',
+    ),
     /Proposal.*fixture/,
   );
   assert.deepEqual(requests, [
@@ -347,7 +369,7 @@ test('doctor resolves Pi model references and token limits without inference or 
   assert.ok(!JSON.stringify(absent).includes('fixture-secret-never-print'));
   assert.equal(
     absent.checks.find((check) => check.id === 'model-access')?.status,
-    undefined,
+    'unchecked',
   );
   assert.equal(
     requests.length,
@@ -396,7 +418,10 @@ else throw new Error('No model inference or session may start');
     'passed',
   );
   assert.match(
-    result.checks.find((check) => check.id === 'doctor')?.reason ?? '',
+    String(
+      result.checks.find((check) => check.id === 'doctor')?.details
+        ?.observation ?? '',
+    ),
     /reached the configured model service/,
   );
   assert.equal(
@@ -517,7 +542,10 @@ else process.stdout.write(JSON.stringify({ schemaVersion: 1, overallStatus: 'ok'
   );
   const result = await run('agent.codex', { executable });
   assert.match(
-    result.checks.find((check) => check.id === 'doctor')?.reason ?? '',
+    String(
+      result.checks.find((check) => check.id === 'doctor')?.details
+        ?.observation ?? '',
+    ),
     /native health checks/,
   );
   assert.equal(
@@ -594,7 +622,7 @@ test('doctor releases an application lease after its probe deadline while the co
     /timed out/i,
   );
   assert.equal(controller.signal.aborted, false);
-  assert.equal(result.checks.length, 1);
+  assert.equal(result.checks.length, 3);
   assert.deepEqual(await readdir(runtime.workspaces.directory), []);
   assert.ok(
     (await runtime.facts.list('instances')).every(
@@ -615,11 +643,17 @@ test('doctor retains release failure and unconfirmed cleanup in its first failed
     ...config,
     entryFile: 'input.py',
   });
-  assert.equal(result.checks.length, 1);
-  assert.equal(result.checks[0].id, 'acquire-instance');
-  assert.equal(result.checks[0].status, 'failed');
-  assert.match(result.checks[0].reason ?? '', /release-probe-fixture/);
-  assert.match(result.checks[0].reason ?? '', /release was not confirmed/);
+  assert.equal(result.checks.length, 3);
+  assert.deepEqual(
+    result.checks.map(({ id, status }) => ({ id, status })),
+    [
+      { id: 'baseline', status: 'passed' },
+      { id: 'verify-source', status: 'passed' },
+      { id: 'acquire-instance', status: 'failed' },
+    ],
+  );
+  assert.match(result.checks[2].reason ?? '', /release-probe-fixture/);
+  assert.match(result.checks[2].reason ?? '', /release was not confirmed/);
   assert.ok(
     (await runtime.facts.list('instances')).every(
       (instance) => instance.status === 'released',

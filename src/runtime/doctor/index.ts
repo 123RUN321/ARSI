@@ -9,10 +9,11 @@ import { errorText } from '../../shared/errors.js';
 import type { Runtime } from '../context.js';
 import { Recipe } from '../loaders/recipe.js';
 import type { Registry } from '../registry/index.js';
-import { checkDeclaredBindings } from './declared-bindings.js';
+import { bindingReferenceSteps } from './declared-bindings.js';
 import { diagnoseBinding } from './dispatch.js';
-import { checkDeclaredPaths } from './declared-paths.js';
+import { declaredPathSteps } from './declared-paths.js';
 import { openProbeRuntime } from './probe-runtime.js';
+import { runDoctorSteps } from './steps.js';
 import { createFailureReport, DoctorReportBuilder } from './report.js';
 
 export { diagnoseBinding };
@@ -103,13 +104,19 @@ async function checkBinding(
   reportBuilder: DoctorReportBuilder,
 ): Promise<void> {
   const { binding, signal } = context;
-  for await (const check of checkDeclaredPaths(binding, signal)) {
-    reportBuilder.addBindingCheck(binding, check);
-    if (check.status === 'failed') return;
-  }
-  for (const check of checkDeclaredBindings(context)) {
-    reportBuilder.addBindingCheck(binding, check);
-    if (check.status === 'failed') return;
+  const prerequisites = await runDoctorSteps(
+    [...declaredPathSteps(binding), ...bindingReferenceSteps(context)],
+    signal,
+  );
+  reportBuilder.addBindingResult(binding, prerequisites);
+  if (prerequisites.checks.some((check) => check.status === 'failed')) {
+    reportBuilder.addBindingCheck(binding, {
+      id: 'plugin',
+      status: 'unchecked',
+      reason:
+        'Plugin diagnostics were not executed because a declared prerequisite failed. Fix it and rerun doctor.',
+    });
+    return;
   }
 
   try {

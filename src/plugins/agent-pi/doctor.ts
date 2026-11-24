@@ -1,49 +1,53 @@
-import type { DoctorContext, DoctorResult } from '../../contracts/index.js';
-import { failed, passed, runDoctorProbe } from '../../shared/doctor-check.js';
-import { errorText } from '../../shared/errors.js';
+import type { DoctorContext, DoctorStep } from '../../contracts/index.js';
 import { isHttpUrl } from '../shared/doctor/checks.js';
-import { probeModelAccess } from './model-access.js';
+import { probeModelAccess, type ModelAccessResult } from './model-access.js';
 import { resolveModelConfig } from './session.js';
 import type { AgentPiConfig } from './schema.js';
 
-export async function checkPiAgent(
+export function checkPiAgent(
   context: DoctorContext<AgentPiConfig>,
-): Promise<DoctorResult> {
+): DoctorStep[] {
   context.signal.throwIfAborted();
-  const config = context.binding.config;
   let model: ReturnType<typeof resolveModelConfig>;
-  try {
-    model = resolveModelConfig(config);
-  } catch (error) {
-    context.signal.throwIfAborted();
-    return failed(
-      'model-config',
-      `Correct model, base_url or api_key and their environment variables. ${errorText(error)}`,
-    );
+  let access: ModelAccessResult | undefined;
+  function isModelConfigurationValid(signal: AbortSignal): boolean {
+    signal.throwIfAborted();
+    model = resolveModelConfig(context.binding.config);
+    return isHttpUrl(model.base_url);
   }
-  if (!isHttpUrl(model.base_url))
-    return failed(
-      'model-config',
-      'agent.pi base_url must resolve to a credential-free HTTP(S) endpoint. Correct base_url or its environment variable.',
+  async function isModelAccessible(signal: AbortSignal): Promise<boolean> {
+    access = await probeModelAccess(
+      {
+        side: 'Proposal',
+        model: model.model,
+        baseUrl: model.base_url,
+        apiKey: model.api_key,
+      },
+      signal,
     );
-
-  const access = await runDoctorProbe(
-    'model-access',
-    (signal) =>
-      probeModelAccess(
-        {
-          side: 'Proposal',
-          model: model.model,
-          baseUrl: model.base_url,
-          apiKey: model.api_key,
-        },
-        signal,
-      ),
-    { signal: context.signal },
-  );
-  if (!access.value)
-    return failed(access.check.id, access.check.reason, access.check.details);
-  if (access.value.status === 'failed')
-    return failed('model-access', access.value.reason, access.value.details);
-  return passed('model-access', access.value.reason, access.value.details);
+    return access.status === 'passed';
+  }
+  return [
+    {
+      id: 'model-config',
+      check: isModelConfigurationValid,
+      reason:
+        'Correct model, base_url or api_key and their environment variables; base_url must resolve to a credential-free HTTP(S) endpoint.',
+    },
+    {
+      id: 'model-access',
+      check: isModelAccessible,
+      get reason() {
+        return (
+          access?.reason ??
+          'Check the configured model service and access credentials.'
+        );
+      },
+      get details() {
+        return access
+          ? { ...access.details, observation: access.reason }
+          : undefined;
+      },
+    },
+  ];
 }

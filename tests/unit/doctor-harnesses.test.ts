@@ -201,11 +201,14 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       ),
     );
     for (const id of [
+      'application.baseline',
+      'application.verify-bundle',
       'application.acquire-instance',
+      'agent.model-config',
       'agent.model-access',
       'evaluator.configuration',
       'evaluator.sdk-doctor',
-      'evaluator.sdk.check-0',
+      'evaluator.sdk.coverage',
       'evaluator.sdk.network',
       independentChecks[name],
     ])
@@ -303,7 +306,8 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       const skipped = report.checks.find(
         (check) => check.id === 'application.plugin',
       );
-      assert.equal(skipped, undefined);
+      assert.equal(skipped?.status, 'unchecked');
+      assert.match(skipped.reason ?? '', /declared prerequisite failed/);
       assert.equal(
         report.checks.find((check) => check.id === independentChecks[name])
           ?.status,
@@ -312,13 +316,22 @@ for (const name of ['dsh-harness2', 'dsh-wikiskill', 'dsh-gepa'] as const) {
       assert.equal(
         report.checks.find((check) => check.id === 'evaluator.sdk-doctor')
           ?.status,
-        missing === 'baseline' ? undefined : 'passed',
+        missing === 'baseline' ? 'failed' : 'passed',
       );
       if (missing === 'baseline') {
         const sdkFailure = report.checks.find(
-          (check) => check.id === 'evaluator.sdk.check-0',
+          (check) => check.id === 'evaluator.sdk-doctor',
         );
         assert.equal(sdkFailure?.status, 'failed');
+        assert.match(
+          JSON.stringify(sdkFailure.details),
+          /The SDK could not access the configured AgentBundle path/,
+        );
+        assert.equal(
+          report.checks.find((check) => check.id === 'evaluator.sdk.network')
+            ?.status,
+          'unchecked',
+        );
         assert.match(
           sdkFailure.reason ?? '',
           /correct application\.config\.baseline\.directory/,
@@ -428,7 +441,7 @@ test('proposal success does not hide an evaluation key failure for the same mode
     JSON.stringify(report),
   );
   const failed = report.checks.find(
-    (check) => check.id === 'evaluator.sdk.check-0',
+    (check) => check.id === 'evaluator.sdk-doctor',
   );
   assert.equal(failed?.status, 'failed');
   assert.match(failed?.reason ?? '', /Evaluation.*API key/);

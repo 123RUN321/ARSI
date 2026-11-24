@@ -36,14 +36,14 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 
 `OperationDefinition<I, O, C>` describes a plugin definition. Its three type parameters are input, output, and configuration; see the [interface definition](../../../src/contracts/operation.ts).
 
-| Field                  | Meaning                                                       | How to fill it in                                                                                     |
-| ---------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `id`                   | Unique plugin implementation ID used by bindings.             | Required, for example `proposer.keep-parent`; must not duplicate a registered plugin or Policy ID.    |
-| `description`          | Describe the plugin's purpose.                                | Optional short description.                                                                           |
-| `contract`             | Declare the public contract the plugin follows.               | Required imported contract object, such as `proposerContract`.                                        |
-| `configSchema`         | Validate this implementation's configuration.                 | Required JSON Schema; declare an object Schema even when there are no settings.                       |
-| `create`               | Create a plugin instance from configuration.                  | Required async function `create(config, context)` returning an object with `execute` and `dispose`.   |
-| `implementationDigest` | Record the implementation version for experiment provenance.  | Optional digest covering the actual implementation code; update it when the code changes.             |
+| Field                  | Meaning                                                      | How to fill it in                                                                                   |
+| ---------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `id`                   | Unique plugin implementation ID used by bindings.            | Required, for example `proposer.keep-parent`; must not duplicate a registered plugin or Policy ID.  |
+| `description`          | Describe the plugin's purpose.                               | Optional short description.                                                                         |
+| `contract`             | Declare the public contract the plugin follows.              | Required imported contract object, such as `proposerContract`.                                      |
+| `configSchema`         | Validate this implementation's configuration.                | Required JSON Schema; declare an object Schema even when there are no settings.                     |
+| `create`               | Create a plugin instance from configuration.                 | Required async function `create(config, context)` returning an object with `execute` and `dispose`. |
+| `implementationDigest` | Record the implementation version for experiment provenance. | Optional digest covering the actual implementation code; update it when the code changes.           |
 
 - Without `implementationDigest`, Registry generates a digest from the `create` function text, contract, and configuration Schema.
 
@@ -51,9 +51,9 @@ The Policy's `require` specifies the contract, and the binding selects a plugin 
 
 Register the plugin with `registry.registerOperation(definition)`. In `create(config, ctx)`, subscribe with `ctx.event.on` to either or both events as needed. Both commands create a temporary instance, including for cleanup previews. Defer changes to reusable resources until the cleanup handler receives `dryRun: false`. See [Plugin diagnostics and resource cleanup](runtime-events.md#plugin-diagnostics-and-resource-cleanup).
 
-| Capability | Registration                                 | Handler result                                                     |
-| ---------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| `doctor`   | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorResult` with diagnostics for the binding.                   |
+| Capability | Registration                                    | Handler result                                                      |
+| ---------- | ----------------------------------------------- | ------------------------------------------------------------------- |
+| `doctor`   | `ctx.event.on('rsi/doctor', checkEnvironment)`  | `DoctorStep[]` with ordered check definitions.                      |
 | `cleanup`  | `ctx.event.on('rsi/cleanup', cleanupResources)` | `CleanupResult[]` with cleanup or preview results, or `[]` if none. |
 
 ### configSchema
@@ -77,7 +77,7 @@ The table lists common rule fields used when writing `configSchema`:
 | `items` / `minItems` / `uniqueItems` | Specify array element types, minimum length, and whether duplicates are allowed. | `items: { type: 'string' }, minItems: 1, uniqueItems: true`.                       |
 | `oneOf`                              | Define structures where exactly one must match.                                  | An array of Schemas, often used to distinguish inputs and outputs by `action`.     |
 | `x-rsi-path`                         | Mark a configuration field as a file or directory path.                          | Set `'x-rsi-path': 'file'` or `'directory'` on a string field.                     |
-| `x-rsi-binding`                      | Declare the contract required by a binding reference.                            | Set `'x-rsi-binding': 'contract.agent'` on a field that names an Agent binding. |
+| `x-rsi-binding`                      | Declare the contract required by a binding reference.                            | Set `'x-rsi-binding': 'contract.agent'` on a field that names an Agent binding.    |
 
 Runtime merges Policy and Recipe configuration, fills defaults, validates it, and passes the result to `create`.
 
@@ -292,7 +292,7 @@ arsi doctor my-experiment/recipe.yaml --plugin-dir ./my-extension
 arsi run my-experiment/recipe.yaml --id custom-run --plugin-dir ./my-extension
 ```
 
-`doctor` checks contracts, bindings and configuration, then dispatches `rsi/doctor` to each selected binding with a handler. It incorporates the returned `DoctorResult` into the report.
+`doctor` checks contracts, bindings and configuration, then dispatches `rsi/doctor` to each selected binding with a handler. It executes the returned check definitions and incorporates their results into the report.
 
 ## Use RuntimeContext
 

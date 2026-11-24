@@ -1,3 +1,4 @@
+import { checkOpenCodeAgent } from '../../src/plugins/agent-opencode/doctor.js';
 import { diagnoseBinding } from '../../src/runtime/doctor/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -59,11 +60,17 @@ test('OpenCode doctor composes native configuration and rejects V1 without claim
       `const args=process.argv.slice(2);require('node:fs').appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n');console.log(args.includes('--help')?'--standalone --format --agent --model --archived':args.includes('--version')?${JSON.stringify(version)}:${JSON.stringify(body)});`,
     );
     await writeFile(calls, '');
+    assert.ok(Array.isArray(checkOpenCodeAgent(context)));
+    assert.equal(await readFile(calls, 'utf8'), '');
     const report = await diagnose();
     assert.equal(report.checks.find((c) => c.id === failed)?.status, 'failed');
     assert(!JSON.stringify(report).includes('native-secret-invalid-json'));
-    assert.equal(report.checks.length, 1);
-    assert.equal(report.checks.at(-1)?.status, 'failed');
+    assert.deepEqual(
+      report.checks.map((check) => check.status),
+      failed === 'version'
+        ? ['passed', 'failed', 'unchecked', 'unchecked']
+        : ['passed', 'passed', 'failed', 'unchecked'],
+    );
     if (failed === 'version')
       assert.ok(!(await readFile(calls, 'utf8')).includes('debug'));
   }

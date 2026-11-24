@@ -1,19 +1,14 @@
 import { constants } from 'node:fs';
 import { access, lstat, stat } from 'node:fs/promises';
 import { parse, sep } from 'node:path';
-import type { DoctorBinding, DoctorResult } from '../../contracts/index.js';
-import {
-  missingInputError,
-  runDoctorCheck,
-} from '../../shared/doctor-check.js';
+import type { DoctorBinding, DoctorStep } from '../../contracts/index.js';
+import { missingInputError } from '../../shared/doctor-check.js';
 import { configPathFields, isResourceUrl } from '../../shared/paths.js';
 
 const directorySuffix = sep === '\\' ? /(?:[\\/]\.?)+$/ : /(?:\/\.?)+$/;
 
-export async function* checkDeclaredPaths(
-  binding: DoctorBinding,
-  signal: AbortSignal,
-): AsyncGenerator<DoctorResult['checks'][number]> {
+export function declaredPathSteps(binding: DoctorBinding): DoctorStep[] {
+  const steps: DoctorStep[] = [];
   for (const { pointer, kind, reference, localOnly } of configPathFields(
     binding.definition.configSchema,
     binding.config,
@@ -22,9 +17,10 @@ export async function* checkDeclaredPaths(
     if (isUrl && !localOnly) continue;
     const configField = pointer.slice(1).replaceAll('/', '.');
     const field = `${binding.name}.config.${configField}`;
-    yield runDoctorCheck(
-      `resource.${configField}`,
-      async () => {
+    steps.push({
+      id: `resource.${configField}`,
+      reason: `Correct ${field} to point to a readable ${kind}.`,
+      check: async () => {
         if (isUrl)
           throw new Error(
             `Set ${field} to a local ${kind} path. Current value is ${reference}.`,
@@ -56,8 +52,9 @@ export async function* checkDeclaredPaths(
             cause: error,
           });
         }
+        return true;
       },
-      { signal },
-    );
+    });
   }
+  return steps;
 }

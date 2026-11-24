@@ -13,6 +13,7 @@ export type {
   DoctorRegistry,
   DoctorReport,
   DoctorResult,
+  DoctorStep,
   OperationDoctor,
 } from './doctor.js';
 export type {

@@ -110,7 +110,18 @@ test('gym doctor identifies the field to fix when the service URL is invalid', a
     const report = await diagnoseBinding(registry, context);
     assert.equal(report.checks[0].status, 'failed');
     assert.match(report.checks[0].reason ?? '', /baseUrl.*valid URL/);
-    assert.equal(report.checks.length, 1);
+    assert.equal(report.checks.length, 2);
+    assert.equal(report.checks[1].status, 'unchecked');
+    assert.match(report.checks[1].reason ?? '', /configuration failed/);
+    const configured = await diagnoseBinding(registry, {
+      ...context,
+      binding: { ...binding, config },
+    });
+    assert.deepEqual(
+      configured.checks.map(({ status }) => status),
+      ['passed', 'unchecked'],
+    );
+    assert.match(configured.checks[1].reason ?? '', /does not contact Gym/);
     const controller = new AbortController();
     controller.abort(new Error('stop synchronous doctor'));
     const cancelled = { ...context, signal: controller.signal };
