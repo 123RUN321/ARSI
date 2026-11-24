@@ -3,14 +3,14 @@ import type {
   DoctorRule,
   Operation,
 } from '../../contracts/index.js';
-import { checkFileApplication } from '../shared/file-application/doctor.js';
+import { fileApplicationDoctorRules } from '../shared/file-application/doctor.js';
 import { kernelSourcePath } from './schema.js';
 
 export function checkKernelApplication(
   context: DoctorContext,
   operation: Operation,
 ): DoctorRule[] {
-  return checkFileApplication(context, operation, {
+  return fileApplicationDoctorRules(context, operation, {
     verification: 'verify-source',
     capability: 'kernel-source',
     entryFile: kernelSourcePath(context.binding.config.entryFile),

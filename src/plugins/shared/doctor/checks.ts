@@ -15,15 +15,15 @@ export function missingPath(error: unknown): string | undefined {
   return missingPath(error.cause);
 }
 
-export function checkOperationConfiguration(): DoctorRule[] {
-  function checkConfiguration(signal: AbortSignal): boolean {
+export function configurationDoctorRules(): DoctorRule[] {
+  function isConfigurationValid(signal: AbortSignal): boolean {
     signal.throwIfAborted();
     return true;
   }
   return [
     {
       id: 'configuration',
-      check: checkConfiguration,
+      check: isConfigurationValid,
       reason: 'Correct the operation configuration.',
     },
   ];

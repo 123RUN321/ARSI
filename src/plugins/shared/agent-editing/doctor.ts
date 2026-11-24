@@ -10,7 +10,7 @@ import type { AgentEditingConfig } from './schema.js';
 
 type CheckedRole = { role: AgentRole; promptField: string };
 
-export function checkAgentEditor<C extends AgentEditingConfig>(
+export function agentEditorDoctorRules<C extends AgentEditingConfig>(
   context: DoctorContext,
   checkedRoles: (config: C) => readonly CheckedRole[] = () => [],
 ): DoctorRule[] {

@@ -77,7 +77,7 @@ export async function readBaselineDirectory(
   return directory;
 }
 
-export function checkFileApplication(
+export function fileApplicationDoctorRules(
   context: DoctorContext,
   application: Operation,
   {

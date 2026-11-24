@@ -8,14 +8,14 @@ import { string } from '../../shared/json.js';
 import { editResource } from '../shared/agent-editing/index.js';
 import { buildComparisonContext } from './comparison.js';
 import { errorText } from '../../shared/errors.js';
-import { checkAgentEditor } from '../shared/agent-editing/doctor.js';
+import { agentEditorDoctorRules } from '../shared/agent-editing/doctor.js';
 
 export const createMemoryAgent: OperationDefinition<
   MemoryInput,
   MemoryOutput,
   AgentEditingConfig
 >['create'] = async (config, ctx) => {
-  ctx.event?.on('rsi/doctor', (request) => checkAgentEditor(request));
+  ctx.event?.on('rsi/doctor', (request) => agentEditorDoctorRules(request));
   return {
     async execute(input, context) {
       try {
