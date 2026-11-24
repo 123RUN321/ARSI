@@ -13,7 +13,7 @@
 | `emit`      | 发布事件后继续执行，不等待异步监听完成。                       | `rsi/candidate-recorded`：候选保存后通知插件更新统计。                            |
 | `parallel`  | 并发执行监听，并等待异步监听完成。                             | `rsi/experiment-finished`：等待监听刷新日志、释放本地资源。                       |
 | `serial`    | 按顺序执行监听，前一个完成后再执行下一个；抛错会阻止后续流程。 | `rsi/before-experiment`：依次执行实验启动前的检查。                               |
-| `waterfall` | 沿监听链逐层返回决策，Manager 使用最终返回值。   | `rsi/before-call`：按 binding 判断是否允许调用，返回 `proceed` 或 `reject` 决策。 |
+| `waterfall` | 沿监听链逐层返回值，由发布者取得最终结果。   | `rsi/before-call`：按 binding 判断是否允许调用，返回 `proceed` 或 `reject` 决策。 |
 
 - `serial` 生命周期通知的监听函数只能返回 `undefined` 或 `Promise<undefined>`。返回 `true`、`0`、字符串或对象等值，会提前结束本次事件分发，跳过后续监听；
 
@@ -21,7 +21,7 @@
 
 下述生命周期和事实通知由框架自动发布，插件直接订阅即可；Agent 对话观察使用下文单独说明的调用内路径。下表说明监听函数第一个参数 `event` 的完整字段：每个事件都包含所属分组的通用参数，再加上事件表列出的专用参数。未标 `?` 的字段均必填；`?` 表示可以省略，`string | null` 表示字段存在但值可为 `null`。所有字段只读，类型定义见[事件契约](../../../src/contracts/runtime/events.ts)。
 
-普通监听接收 `(event, ctx)`，两个 waterfall 钩子都接收 `(event, next, ctx)`。每个监听有独立的 `RuntimeContext`。使用不带参数的 `await next()` 取得后续监听的决策，再向调用方返回自己的决策。
+普通监听接收 `(event, ctx)`，两个内置调用准入钩子都接收 `(event, next, ctx)`。每个监听有独立的 `RuntimeContext`。使用不带参数的 `await next()` 取得后续监听的决策，再向调用方返回自己的决策。
 
 ### 实验生命周期
 
@@ -184,7 +184,7 @@ factoryCtx.event.on('rsi/before-call', async (event, next) => {
 });
 ```
 
-对于 `rsi/before-call`，默认决策为 `{ kind: 'proceed' }`，允许调用时可通过 `metadata` 为回执添加元数据。两个 waterfall 钩子都支持返回 `{ kind: 'reject', reason }` 拒绝请求，`reason` 必须为非空字符串。
+对于 `rsi/before-call`，默认决策为 `{ kind: 'proceed' }`，允许调用时可通过 `metadata` 为回执添加元数据。两个调用准入钩子都支持返回 `{ kind: 'reject', reason }` 拒绝请求，`reason` 必须为非空字符串。
 
 对于 `rsi/before-agent-invoke`，默认决策还包含原始 `input`。下面的监听保留后续监听返回的修改，并为来自 `proposer` 绑定的请求添加审计标记。
 

@@ -9,6 +9,7 @@ import {
 import type {
   Binding,
   RuntimeContext,
+  CallDecision,
   CallEventInfo,
   EventPipeline,
   FactStore,
@@ -21,7 +22,6 @@ import { object, digest, json } from '../../shared/json.js';
 import { validate } from '../../shared/schema.js';
 import { errorText } from '../../shared/errors.js';
 import type { Registry } from '../registry/index.js';
-import { assertAdmission } from '../services/events.js';
 import { agentReplayKey } from './retry.js';
 
 interface CallExecutorOptions {
@@ -57,6 +57,23 @@ export interface CallExecutor {
   close(): void;
   idle(): Promise<void>;
   unconfirmed(): Promise<void>;
+}
+
+/** Validate the final decision from potentially untyped plugin listeners. */
+export function assertCallAdmitted<T extends CallDecision>(
+  decision: T,
+): asserts decision is Extract<T, { kind: 'proceed' }> {
+  if (
+    !decision ||
+    (decision.kind !== 'proceed' && decision.kind !== 'reject') ||
+    (decision.kind === 'reject' &&
+      (typeof decision.reason !== 'string' || !decision.reason.trim()))
+  )
+    throw new Error('Invalid call admission decision');
+  if (decision.kind === 'reject')
+    throw new Error(`Call admission rejected: ${decision.reason}`);
+  if (decision.metadata !== undefined)
+    object(decision.metadata, 'Call admission metadata');
 }
 
 export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
@@ -327,7 +344,7 @@ export function createCallExecutor(options: CallExecutorOptions): CallExecutor {
             async () => ({ kind: 'proceed' }),
           );
           ctx.signal.throwIfAborted();
-          assertAdmission(decision, 'rsi/before-call');
+          assertCallAdmitted(decision);
           if (decision.metadata !== undefined) {
             const admitted = structuredClone(decision.metadata);
             const write = writes.then(async () => {

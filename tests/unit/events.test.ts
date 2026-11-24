@@ -17,6 +17,7 @@ interface DispatchThis {
   label: string;
   [Context.filter]?(context: Context): boolean;
 }
+type ProposalReview = { kind: 'reject'; reason: string };
 declare module '@deepseek-ai/cordis' {
   interface Events {
     'test/value'(
@@ -25,6 +26,7 @@ declare module '@deepseek-ai/cordis' {
     ): number | false | null | undefined;
     'test/wait'(value: number): Promise<string | false | undefined>;
     'test/chain'(value: string, next: () => Promise<string>): Promise<string>;
+    'test/review'(next: () => Promise<ProposalReview>): Promise<ProposalReview>;
     'test/notice'(value: number): void;
   }
 }
@@ -209,6 +211,19 @@ test('serial and parallel use the locked Cordis short-circuit and all-settled be
   await assert.rejects(result, AggregateError);
   assert.ok(calls.includes(4));
   await service.dispose();
+});
+
+test('custom waterfall returns a rejected proposal to its publisher', async (t) => {
+  const { service, add } = fixture();
+  t.after(() => service.dispose());
+  const review: ProposalReview = { kind: 'reject', reason: 'Missing evidence' };
+  add('reviewer', (event) => {
+    event.on('test/review', async () => review);
+  });
+  const result = await service.event.waterfall('test/review', async () =>
+    assert.fail('the reviewer supplied the result'),
+  );
+  assert.strictEqual(result, review);
 });
 
 test('waterfall preserves downstream transformation, exception recovery and repeated native next', async () => {

@@ -5,9 +5,7 @@ import type {
   RuntimeContext,
   EventPublisher,
   EventPipeline,
-  CallDecision,
 } from '../../contracts/index.js';
-import { object } from '../../shared/json.js';
 
 export interface EventDiagnostic {
   eventName: string;
@@ -54,24 +52,6 @@ const ordinaryNotifications = new Set<keyof Events>([
   'rsi/revision-activated',
   'rsi/memory-activated',
 ]);
-
-/** Validate the native waterfall result at the plugin boundary. */
-export function assertAdmission<T extends CallDecision>(
-  decision: T,
-  event: 'rsi/before-call' | 'rsi/before-agent-invoke',
-): asserts decision is Extract<T, { kind: 'proceed' }> {
-  if (
-    !decision ||
-    (decision.kind !== 'proceed' && decision.kind !== 'reject') ||
-    (decision.kind === 'reject' &&
-      (typeof decision.reason !== 'string' || !decision.reason.trim()))
-  )
-    throw new Error(`Invalid ${event} decision`);
-  if (decision.kind === 'reject')
-    throw new Error(`Call admission rejected: ${decision.reason}`);
-  if (decision.metadata !== undefined)
-    object(decision.metadata, `${event} metadata`);
-}
 
 /** One independent Cordis root per experiment, with binding-owned subscriptions. */
 export class ManagedEvents {

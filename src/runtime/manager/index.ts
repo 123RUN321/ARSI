@@ -13,10 +13,14 @@ import type {
 import { agentContract } from '../../contracts/plugin-types/agent.js';
 import { RuntimeContext } from '../../contracts/runtime/context.js';
 import { object, string, digest } from '../../shared/json.js';
-import { createCallExecutor, type CallExecutor } from './calls.js';
+import {
+  assertCallAdmitted,
+  createCallExecutor,
+  type CallExecutor,
+} from './calls.js';
 import { Instances } from './instances.js';
 import { acquireExecutionLock } from './execution-lock.js';
-import { assertAdmission, ManagedEvents } from '../services/events.js';
+import { ManagedEvents } from '../services/events.js';
 import {
   FileArtifacts,
   FileFacts,
@@ -673,7 +677,7 @@ export class Manager {
             async () => ({ kind: 'proceed', input }),
           );
           this.signal.throwIfAborted();
-          assertAdmission(decision, 'rsi/before-agent-invoke');
+          assertCallAdmitted(decision);
           return object(
             await calls.invoke(
               agentRef,

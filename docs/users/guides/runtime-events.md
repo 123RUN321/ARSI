@@ -13,7 +13,7 @@ Plugin instances subscribe to lifecycle events through `ctx.event` in `create(co
 | `emit`      | Continue after publishing without waiting for asynchronous listeners.                                                | `rsi/candidate-recorded`: notify plugins to update statistics after a candidate is saved.                |
 | `parallel`  | Run listeners concurrently and wait for asynchronous listeners to finish.                                            | `rsi/experiment-finished`: wait for listeners to flush logs and release local resources.                 |
 | `serial`    | Run listeners in order, waiting for each to finish before starting the next; a throw prevents subsequent flow.       | `rsi/before-experiment`: run checks in order before the experiment starts.                               |
-| `waterfall` | Pass decisions back through a listener chain. The Manager consumes the final return value. | `rsi/before-call`: decide whether to allow a binding's call, returning a `proceed` or `reject` decision. |
+| `waterfall` | Pass a value back through the listener chain. The publisher receives the final result. | `rsi/before-call`: decide whether to allow a binding's call, returning a `proceed` or `reject` decision. |
 
 - Listeners for `serial` lifecycle notifications must return only `undefined` or `Promise<undefined>`. Returning values such as `true`, `0`, a string, or an object ends that event dispatch early and skips subsequent listeners.
 
@@ -21,7 +21,7 @@ Plugin instances subscribe to lifecycle events through `ctx.event` in `create(co
 
 The framework publishes the lifecycle and fact notifications below for plugins to subscribe to. Agent conversation observation uses the separate call-local path described below. The tables document every field of the listener's first argument, `event`: each event contains its group's common parameters plus the event-specific parameters listed in its row. Fields are required unless marked with `?`; `?` means a field may be omitted, while `string | null` means the field is present but may hold `null`. All fields are read-only; see the [event contract](../../../src/contracts/runtime/events.ts) for the type definitions.
 
-Ordinary listeners receive `(event, ctx)`. Both waterfall hooks receive `(event, next, ctx)`. Each listener gets its own `RuntimeContext`. Call `await next()` with no arguments to obtain the downstream decision, then return your decision to the caller.
+Ordinary listeners receive `(event, ctx)`. The two built-in call admission hooks receive `(event, next, ctx)`. Each listener gets its own `RuntimeContext`. Call `await next()` with no arguments to obtain the downstream decision, then return your decision to the caller.
 
 ### Experiment lifecycle
 
@@ -184,7 +184,7 @@ factoryCtx.event.on('rsi/before-call', async (event, next) => {
 });
 ```
 
-For `rsi/before-call`, the default decision is `{ kind: 'proceed' }`. A successful decision accepts optional `metadata` for the call receipt. Both waterfall hooks accept `{ kind: 'reject', reason }` with a nonempty reason.
+For `rsi/before-call`, the default decision is `{ kind: 'proceed' }`. A successful decision accepts optional `metadata` for the call receipt. Both call admission hooks accept `{ kind: 'reject', reason }` with a nonempty reason.
 
 For `rsi/before-agent-invoke`, the default decision also includes the original `input`. This listener keeps downstream changes and adds an audit tag to requests from the `proposer` binding.
 
