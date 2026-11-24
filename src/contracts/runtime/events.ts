@@ -2,6 +2,7 @@ import type { Context, Events } from '@deepseek-ai/cordis';
 import type { DoctorContext, DoctorResult } from '../doctor.js';
 import type { JsonObject } from '../json.js';
 import type { AgentObservation } from '../models/agent-record.js';
+import type { AgentInput } from '../plugin-types/agent.js';
 import type { RuntimeContext } from './context.js';
 import type { FactStore } from './services.js';
 
@@ -54,7 +55,18 @@ export interface BeforeCallEvent extends CallEventInfo {
   readonly status: 'running';
 }
 export type CallDecision =
-  | { kind: 'proceed' }
+  | { kind: 'proceed'; metadata?: JsonObject }
+  | { kind: 'reject'; reason: string };
+export interface BeforeAgentInvokeEvent {
+  readonly experimentId: string;
+  readonly callerBindingId: string;
+  readonly callerDirectory: string;
+  readonly agentRef: string;
+  /** Deeply frozen snapshot of the request passed to invokeAgent. */
+  readonly input: Readonly<AgentInput>;
+}
+export type BeforeAgentInvokeResult =
+  | { kind: 'proceed'; input: AgentInput; metadata?: JsonObject }
   | { kind: 'reject'; reason: string };
 export interface CallSucceededEvent extends CallEventInfo {
   readonly status: 'succeeded';
@@ -82,9 +94,15 @@ export interface PolicyStepCompletedEvent extends PolicyEventInfo {
   readonly stepPath: string;
 }
 export interface PolicyBoundaryCompletedEvent extends PolicyEventInfo {
-  readonly boundary: 'iteration-completed' | 'policy-completed';
+  readonly boundary:
+    | 'iteration-completed'
+    | 'loop-completed'
+    | 'step-completed'
+    | 'policy-completed';
   readonly iteration?: number;
+  readonly stepId?: string;
   readonly stepPath?: string;
+  readonly hasTopLevelLoop: boolean;
 }
 export interface CandidateRecordedEvent {
   readonly experimentId: string;
@@ -106,6 +124,12 @@ export interface RevisionActivatedEvent {
   readonly revisionRefs: Readonly<Record<string, string>>;
   readonly policyRevisionRef?: string;
 }
+export interface MemoryActivatedEvent {
+  readonly experimentId: string;
+  readonly activationId: string;
+  readonly memoryVersionRef: string;
+  readonly artifactRef: string;
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Events extends OperationEventMap {
@@ -126,6 +150,11 @@ declare module '@deepseek-ai/cordis' {
       event: BeforeCallEvent,
       next: () => Promise<CallDecision>,
     ): Promise<CallDecision>;
+    /** @mode waterfall Prepare the Agent request before project validation and call identity. */
+    'rsi/before-agent-invoke'(
+      event: BeforeAgentInvokeEvent,
+      next: () => Promise<BeforeAgentInvokeResult>,
+    ): Promise<BeforeAgentInvokeResult>;
     /** @mode parallel Await processing; failures do not rewrite the saved receipt. */
     'rsi/call-succeeded'(event: CallSucceededEvent): void | Promise<void>;
     /** @mode parallel Preserve the original failure on notification errors. */
@@ -152,6 +181,8 @@ declare module '@deepseek-ai/cordis' {
     'rsi/measurement-recorded'(event: MeasurementRecordedEvent): void;
     /** @mode emit Notify committed activation; errors do not roll it back. */
     'rsi/revision-activated'(event: RevisionActivatedEvent): void;
+    /** @mode emit Notify a committed Memory activation; errors are diagnostics. */
+    'rsi/memory-activated'(event: MemoryActivatedEvent): void;
   }
 }
 

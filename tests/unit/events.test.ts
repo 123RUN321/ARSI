@@ -17,6 +17,7 @@ interface DispatchThis {
   label: string;
   [Context.filter]?(context: Context): boolean;
 }
+type ProposalReview = { kind: 'reject'; reason: string };
 declare module '@deepseek-ai/cordis' {
   interface Events {
     'test/value'(
@@ -25,6 +26,7 @@ declare module '@deepseek-ai/cordis' {
     ): number | false | null | undefined;
     'test/wait'(value: number): Promise<string | false | undefined>;
     'test/chain'(value: string, next: () => Promise<string>): Promise<string>;
+    'test/review'(next: () => Promise<ProposalReview>): Promise<ProposalReview>;
     'test/notice'(value: number): void;
   }
 }
@@ -211,6 +213,19 @@ test('serial and parallel use the locked Cordis short-circuit and all-settled be
   await service.dispose();
 });
 
+test('custom waterfall returns a rejected proposal to its publisher', async (t) => {
+  const { service, add } = fixture();
+  t.after(() => service.dispose());
+  const review: ProposalReview = { kind: 'reject', reason: 'Missing evidence' };
+  add('reviewer', (event) => {
+    event.on('test/review', async () => review);
+  });
+  const result = await service.event.waterfall('test/review', async () =>
+    assert.fail('the reviewer supplied the result'),
+  );
+  assert.strictEqual(result, review);
+});
+
 test('waterfall preserves downstream transformation, exception recovery and repeated native next', async () => {
   const { service, add } = fixture();
   const calls: string[] = [];
@@ -347,6 +362,28 @@ test('emit preserves synchronous truncation and tracks earlier asynchronous reje
   assert.equal(diagnostics[0]!.bindingId, 'a');
   assert.equal(diagnostics[0]!.eventName, 'rsi/experiment-started');
   assert.match(String(diagnostics[0]!.error), /asynchronous/);
+  await service.dispose();
+});
+
+test('asynchronous Memory activation observer failures are diagnostics', async () => {
+  const { service, diagnostics, add } = fixture();
+  const activation = {
+    experimentId: 'experiment',
+    activationId: 'activation',
+    memoryVersionRef: 'version',
+    artifactRef: 'snapshot',
+  };
+  add('observer', (event) => {
+    event.on('rsi/memory-activated', async (info) => {
+      assert.deepEqual(info, activation);
+      throw new Error('observer failed');
+    });
+  });
+  service.event.emit('rsi/memory-activated', activation);
+  await service.idle();
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.eventName, 'rsi/memory-activated');
+  assert.match(String(diagnostics[0]!.error), /observer failed/);
   await service.dispose();
 });
 

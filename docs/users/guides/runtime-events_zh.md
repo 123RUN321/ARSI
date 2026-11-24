@@ -13,7 +13,7 @@
 | `emit`      | 发布事件后继续执行，不等待异步监听完成。                       | `rsi/candidate-recorded`：候选保存后通知插件更新统计。                            |
 | `parallel`  | 并发执行监听，并等待异步监听完成。                             | `rsi/experiment-finished`：等待监听刷新日志、释放本地资源。                       |
 | `serial`    | 按顺序执行监听，前一个完成后再执行下一个；抛错会阻止后续流程。 | `rsi/before-experiment`：依次执行实验启动前的检查。                               |
-| `waterfall` | 按监听链处理准入决策，Manager 根据最终结果决定是否执行调用。   | `rsi/before-call`：按 binding 判断是否允许调用，返回 `proceed` 或 `reject` 决策。 |
+| `waterfall` | 沿监听链逐层返回值，由发布者取得最终结果。   | `rsi/before-call`：按 binding 判断是否允许调用，返回 `proceed` 或 `reject` 决策。 |
 
 - `serial` 生命周期通知的监听函数只能返回 `undefined` 或 `Promise<undefined>`。返回 `true`、`0`、字符串或对象等值，会提前结束本次事件分发，跳过后续监听；
 
@@ -21,7 +21,7 @@
 
 下述生命周期和事实通知由框架自动发布，插件直接订阅即可；Agent 对话观察使用下文单独说明的调用内路径。下表说明监听函数第一个参数 `event` 的完整字段：每个事件都包含所属分组的通用参数，再加上事件表列出的专用参数。未标 `?` 的字段均必填；`?` 表示可以省略，`string | null` 表示字段存在但值可为 `null`。所有字段只读，类型定义见[事件契约](../../../src/contracts/runtime/events.ts)。
 
-普通监听接收 `(event, ctx)`，`rsi/before-call` 接收 `(event, next, ctx)`。`ctx` 是本次监听的 `RuntimeContext`；`next: () => Promise<CallDecision>` 用于继续后续监听并取得准入决策，详见[监听内置事件](#3-监听内置事件)。`ctx` 和 `next` 都不是 `event` 的字段。
+普通监听接收 `(event, ctx)`，两个内置调用准入钩子都接收 `(event, next, ctx)`。每个监听有独立的 `RuntimeContext`。使用不带参数的 `await next()` 取得后续监听的决策，再向调用方返回自己的决策。
 
 ### 实验生命周期
 
@@ -65,6 +65,18 @@
 | `rsi/call-cancelled` | 取消回执保存后，报告调用取消前                   | `parallel`  | 无。                                                                  |
 | `rsi/call-unknown`   | 插件执行结果未确认的回执保存后                   | `parallel`  | 无。                                                                  |
 
+### Agent 调用
+
+插件调用 `ctx.invokeAgent` 时，Manager 先以 `waterfall` 方式分发 `rsi/before-agent-invoke`，再进入 Agent 调用并分发 `rsi/before-call`。监听可以返回调整后的 Agent 输入、为回执添加 JSON 元数据，或拒绝请求。
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `experimentId` | `string` | 当前实验 ID。 |
+| `callerBindingId` | `string` | 发起 Agent 调用的绑定名。 |
+| `callerDirectory` | `string` | 调用方拥有的执行目录。 |
+| `agentRef` | `string` | 选用的 Agent 绑定名。 |
+| `input` | `Readonly<AgentInput>` | 递归冻结的请求快照，包含 `goal`、`cwd`、`outputSchema` 和可选的 `role`。 |
+
 ### Agent 对话观察
 
 | 事件 | 发布时机 | 分发方式 | 参数 |
@@ -99,8 +111,19 @@ ctx.event.emit('rsi/agent-observation', {
 | ------------------------------- | ------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rsi/policy-started`            | 输入、配置和恢复身份校验后，Policy 执行首个步骤前 | `serial` | `resumed: boolean`：是否从已保存的 Policy 检查点恢复。                                                                                                                                                                                            |
 | `rsi/policy-step-completed`     | Policy 中新执行步骤的检查点保存后                 | `emit`   | `stepPath: string`：完成步骤的完整路径，如 `steps/evaluate`。                                                                                                                                                                                     |
-| `rsi/policy-boundary-completed` | Loop/Policy 执行边界的检查点保存后                | `serial` | `boundary: 'iteration-completed' \| 'policy-completed'`：表示一轮循环完成或整个 Policy 执行完成。<br>`iteration?: number`：可选。从 0 开始的迭代序号，仅在循环迭代边界提供。<br>`stepPath?: string`：可选。循环步骤的路径，仅在循环迭代边界提供。 |
+| `rsi/policy-boundary-completed` | 串行执行到达边界、Policy 继续执行前 | `serial` | 见下表。 |
 | `rsi/policy-completed`          | Policy 最终输出校验后                             | `emit`   | 无，只有通用参数。                                                                                                                                                                                                                                |
+
+监听 `rsi/policy-boundary-completed` 时，可以根据 `event.boundary` 处理不同边界。
+
+| 边界 | 触发时机 |
+| --- | --- |
+| `iteration-completed` | 顶层循环每轮迭代完成后，`iteration` 从零开始。 |
+| `loop-completed` | 顶层循环结束时触发一次。 |
+| `step-completed` | 串行步骤完成后触发，并行 `foreach` 内各项的步骤不产生此边界。 |
+| `policy-completed` | 最后一个顶层步骤完成后，Policy 确定最终输出前。 |
+
+步骤和循环边界通过 `stepId`、`stepPath` 标识对应步骤。`hasTopLevelLoop` 表示 Policy 是否声明顶层循环。
 
 ### 候选、测量与版本
 
@@ -161,7 +184,22 @@ factoryCtx.event.on('rsi/before-call', async (event, next) => {
 });
 ```
 
-`next()` 继续后面的监听，默认结果为 `{ kind: 'proceed' }`。Manager 使用整条链的最终决策；最终 `reject` 必须有非空原因，被调用方不会执行。需要监听上下文时，第三个参数是 `ctx`，即 `(event, next, ctx)`。
+对于 `rsi/before-call`，默认决策为 `{ kind: 'proceed' }`，允许调用时可通过 `metadata` 为回执添加元数据。两个调用准入钩子都支持返回 `{ kind: 'reject', reason }` 拒绝请求，`reason` 必须为非空字符串。
+
+对于 `rsi/before-agent-invoke`，默认决策包含一份独立的请求副本。要调整 Agent 请求，在返回的 `proceed` 决策中提供更新后的 `input`。下面的监听保留后续监听返回的修改，并为来自 `proposer` 绑定的请求添加审计标记。
+
+```ts
+factoryCtx.event.on('rsi/before-agent-invoke', async (event, next) => {
+  const decision = await next();
+  if (decision.kind === 'reject' || event.callerBindingId !== 'proposer') {
+    return decision;
+  }
+  return {
+    ...decision,
+    metadata: { ...decision.metadata, requestedBy: 'proposer' },
+  };
+});
+```
 
 ## 4. 声明、监听和发布自定义事件
 
@@ -219,5 +257,5 @@ const candidateRef = await ctx.recordCandidate(artifactRef, parentCandidateRef);
 - **实例激活后才接收事件。**注册插件定义和配置 binding 不会启动监听；例如，较晚创建的插件不会收到实验启动通知。
 - **按来源筛选。**监听中发起的业务调用也会产生事件，记得使用 binding 等条件过滤，避免递归触发自身。
 - **终态监听只做收尾。**`rsi/experiment-finished` 中可以读取记录、刷新日志、释放本地资源，不能再启动受控业务调用。
-- **恢复不会重放已完成通知。**复用成功调用回执、恢复已完成步骤或已有事实时，不重放对应事件；
+- **恢复会重新处理待完成的边界。**执行器在串行边界分发前保存检查点，等所有监听返回后标记完成。若在此期间中断，恢复时可能再次分发同一边界。会写入数据的监听应通过实验、Policy 执行范围、边界类型、步骤路径及迭代序号标识边界。恢复时跳过已完成的边界和已保存事实的通知。
 - **订阅由 Runtime 清理。**插件自行持有的文件、连接等资源，仍需由插件的 `dispose()` 释放。
