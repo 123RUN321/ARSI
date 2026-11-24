@@ -141,8 +141,6 @@ ctx.event.emit('rsi/agent-observation', {
 | `rsi/measurement-recorded` | 测量校验并保存后                                 | `emit`   | `callId: string`：写入该记录的调用 ID。<br>`bindingId: string`：写入该记录的绑定名。<br>`measurementRef: string`：已保存的测量引用。                                                                                                                                                                                        |
 | `rsi/revision-activated`   | 激活记录保存、有效绑定及已有插件实例的订阅切换后 | `emit`   | `activationId: string`：本次修订启用记录的 ID。<br>`bindingIds: readonly string[]`：本次启用修订涉及的绑定名列表。<br>`revisionRefs: Readonly<Record<string, string>>`：本次启用的修订映射，键为绑定名，值为修订引用。<br>`policyRevisionRef?: string`：可选。契约预留的 Policy 修订引用；当前 Runtime 发布该事件时不设置。 |
 
-事件契约还为已提交的 Memory 激活声明了 `rsi/memory-activated`（`emit`）。其中 `experimentId`、`activationId`、`memoryVersionRef` 和 `artifactRef` 均为字符串。目前由 Policy 管理的 Memory 插件保存制品时不会发出此通知。
-
 ### 插件诊断与资源清理
 
 插件在 `create(config, ctx)` 中按需订阅这两个事件。完整 `doctor` 在绑定声明的本地路径通过检查后创建临时实例。手动 `cleanup` 从当前和历次归档的 Recipe 中收集绑定，按 `(bindingId, pluginId)` 去重，用该组合最近一次保存的配置创建实例。即使续跑复用了全部评测结果，也能找到旧插件。框架等待回调和实例的 `dispose()` 完成，再处理下一个绑定。
