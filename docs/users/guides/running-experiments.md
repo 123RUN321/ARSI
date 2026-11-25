@@ -51,6 +51,7 @@ These options apply across commands:
 | `run`       | `--id <experiment-id>` | Set the experiment ID. New experiments generate one if omitted; resuming requires it. |
 | `run`       | `--resume`             | Continue an existing experiment with the supplied Recipe. Requires `--id`.            |
 | `dashboard` | `--port <port>`        | Set the listening port. Defaults to `4317`; accepts values from `1` to `65535`.       |
+| `dashboard` | `--public-read-only` | Listen on all IPv4 interfaces in public read-only mode. |
 
 ## Validate and start
 
@@ -122,6 +123,8 @@ Cleanup preserves checkpoints, results, logs, and resources still in use by othe
 ```sh
 arsi dashboard --port <port>
 ```
+
+Run `arsi dashboard --public-read-only --port 4317` to share a workspace. Anyone who can reach the port can read experiment records, artifacts, prompts, and Agent traces without signing in. Use a workspace whose contents are suitable for publication. The server accepts only GET and HEAD requests and disables the local file change preview.
 
 Run from an experiment workspace that already contains `.rsi/`. The web dashboard displays experiments, summaries, candidates, diffs, measurements, calls, Agent traces, results, and charts, as shown below.
 

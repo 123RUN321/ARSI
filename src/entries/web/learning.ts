@@ -7,6 +7,7 @@ export function registerLearningRoutes(
   app: FastifyInstance,
   manager: Pick<Manager, 'reflection'>,
   queries: ObservationQueries,
+  publicReadOnly = false,
 ): void {
   const identifier = {
     type: 'string',
@@ -37,6 +38,14 @@ export function registerLearningRoutes(
     async (request) => {
       const { id, ref } = request.params;
       await queries.assertRevision(id, ref);
+      if (publicReadOnly)
+        return {
+          applicationAllowed: false,
+          restrictions: [
+            'Local file changes are unavailable on a public read-only dashboard.',
+          ],
+          changes: [],
+        };
       return queries.applicationPreview(
         id,
         await manager.reflection().show(ref),

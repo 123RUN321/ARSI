@@ -113,3 +113,62 @@ test('HTTP exposes catalog and rejects cross-origin mutation before dispatch', a
     await server.close();
   }
 });
+
+test('public dashboard serves external reads and rejects every control before validation', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'arsi-public-dashboard-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const runtime = await createRuntime({ rootDirectory: root });
+  t.after(() => runtime.dispose());
+  const headers = {
+    host: 'dashboard.example',
+    origin: 'https://dashboard.example',
+  };
+  const local = await createServer(runtime);
+  t.after(() => local.close());
+  assert.equal(
+    (await local.inject({ url: '/api/catalog', headers })).statusCode,
+    403,
+  );
+  const server = await createServer(runtime, { publicReadOnly: true });
+  t.after(() => server.close());
+  for (const method of ['GET', 'HEAD'] as const) {
+    assert.equal(
+      (
+        await server.inject({
+          method,
+          url: '/api/observation/experiments',
+          headers,
+        })
+      ).statusCode,
+      200,
+    );
+  }
+  await runtime.manager.facts.write('experiments', 'demo', { id: 'demo' });
+  await runtime.manager.facts.write('revisions', 'rev', {
+    experimentId: 'demo',
+  });
+  t.mock.method(runtime.manager, 'reflection', () => {
+    throw new Error('Public preview must not inspect local files');
+  });
+  const preview = await server.inject(
+    '/api/observation/experiments/demo/revisions/rev/application',
+  );
+  assert.equal(preview.statusCode, 200);
+  assert.equal(preview.json().applicationAllowed, false);
+  assert.deepEqual(preview.json().changes, []);
+  for (const url of [
+    '/api/experiments',
+    '/api/experiments/demo/cancel',
+    '/api/experiments/demo/revisions/rev/apply',
+  ]) {
+    const response = await server.inject({ method: 'POST', url, headers });
+    assert.equal(response.statusCode, 405);
+    assert.equal(response.headers.allow, 'GET, HEAD');
+  }
+  for (const method of ['PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const) {
+    assert.equal(
+      (await server.inject({ method, url: '/api/experiments' })).statusCode,
+      405,
+    );
+  }
+});

@@ -25,6 +25,7 @@ interface RunRequest {
 /** HTTP adapts Runtime calls; jobs survive the lifetime of an individual browser request. */
 export async function createServer(
   runtime: ServerRuntime,
+  { publicReadOnly = false }: { publicReadOnly?: boolean } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
     bodyLimit: 65536,
@@ -34,6 +35,14 @@ export async function createServer(
   const jobs = new Map<string, Promise<unknown>>(),
     starting = new Map<string, JsonObject>();
   app.addHook('onRequest', async (request, reply) => {
+    if (publicReadOnly) {
+      if (request.method !== 'GET' && request.method !== 'HEAD')
+        return reply
+          .code(405)
+          .header('Allow', 'GET, HEAD')
+          .send({ error: 'Dashboard is read-only' });
+      return;
+    }
     const host = request.headers.host ?? 'localhost';
     let hostname: string;
     try {
@@ -71,7 +80,7 @@ export async function createServer(
       : undefined,
   );
   registerObservationRoutes(app, queries);
-  registerLearningRoutes(app, runtime.manager, queries);
+  registerLearningRoutes(app, runtime.manager, queries, publicReadOnly);
   app.get('/api/catalog', async () => runtime.registry.catalog());
   app.get('/api/experiments', async () => {
     const entries = await runtime.manager.list();
