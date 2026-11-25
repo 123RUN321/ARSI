@@ -17,7 +17,6 @@ import {
   sdkRunner,
   type EvaluatorRunner,
 } from '../shared/evaluator-adapter/sdk.js';
-import { evaluationStatus } from '../shared/evaluator-adapter/measurement.js';
 import {
   parseEvaluatorConfig,
   type SdkEvaluatorConfig,
@@ -76,7 +75,7 @@ export async function createInferencebench(
                       : null,
                 }),
               );
-              const measurementRef = await normalizeEvaluation(
+              const { measurementRef, status } = await normalizeEvaluation(
                 evaluationConfig,
                 input,
                 execution,
@@ -84,8 +83,6 @@ export async function createInferencebench(
                 context,
                 diagnostic,
               );
-              if (input.returnFailedMeasurement && !context.signal.aborted)
-                return { measurementRef };
               throw Object.assign(
                 new Error(
                   error instanceof Error ? error.message : String(error),
@@ -93,42 +90,22 @@ export async function createInferencebench(
                 ),
                 {
                   measurementRef,
-                  status: evaluationStatus(partial, context, true),
+                  status,
                 },
               );
             }
-            const measurementRef = await normalizeEvaluation(
+            const { measurementRef, status } = await normalizeEvaluation(
               evaluationConfig,
               input,
               execution,
               result,
               context,
             );
-            const raw = object(result);
-            if (
-              input.returnFailedMeasurement &&
-              !context.signal.aborted &&
-              (raw.snapshot === undefined || raw.exitCode !== 0)
-            )
-              return { measurementRef };
-            if (raw.snapshot === undefined)
-              throw Object.assign(
-                new Error(
-                  'Evaluator result has no confirmed collected snapshot',
-                ),
-                { measurementRef, status: 'unknown' },
-              );
-            if (context.signal.aborted || raw.exitCode !== 0) {
-              const status = evaluationStatus(raw, context);
-              throw Object.assign(
-                new Error('Evaluator completed with nonzero exitCode'),
-                {
-                  measurementRef,
-                  status,
-                  exitCode: raw.exitCode,
-                },
-              );
-            }
+            if (status !== 'succeeded' && status !== 'failed')
+              throw Object.assign(new Error(`Evaluator outcome: ${status}`), {
+                measurementRef,
+                status,
+              });
             return { measurementRef };
           },
         );
@@ -139,16 +116,15 @@ export async function createInferencebench(
         )
           throw error;
         await context.charge('evaluationRuns', 1);
-        return {
-          measurementRef: await normalizeEvaluation(
-            null,
-            input,
-            {},
-            null,
-            context,
-            { phase: 'startup', message: errorText(error) },
-          ),
-        };
+        const { measurementRef } = await normalizeEvaluation(
+          null,
+          input,
+          {},
+          null,
+          context,
+          { phase: 'startup', message: errorText(error) },
+        );
+        return { measurementRef };
       }
     },
     async dispose(): Promise<void> {},

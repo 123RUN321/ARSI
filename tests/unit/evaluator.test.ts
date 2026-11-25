@@ -5,6 +5,7 @@ import {
   scorePoints,
 } from '../../web/features/experiments/charts/metric-data.js';
 import test from 'node:test';
+import { managerFixture } from '../helpers/manager-fixture.js';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -1154,7 +1155,8 @@ for (const kind of ['agentbench', 'inferencebench'] as const) {
         const expectedStatus =
           outcome === 'cancelled'
             ? 'cancelled'
-            : outcome === 'missing-snapshot'
+            : outcome === 'missing-snapshot' ||
+                (kind === 'inferencebench' && outcome === 'partial-error')
               ? 'unknown'
               : 'failed';
         const def = evaluatorWithRunner(kind, async (options) => {
@@ -1185,14 +1187,18 @@ for (const kind of ['agentbench', 'inferencebench'] as const) {
             : { benchmark: 'agentx' },
           services,
         );
-        await assert.rejects(
-          op.execute(
-            kind === 'agentbench'
-              ? { candidateRef: 'candidate:a', taskIds: ['task/a'] }
-              : { candidateRef: 'candidate:a' },
-            call,
-          ),
-          (error: unknown) => {
+        const evaluation = op.execute(
+          kind === 'agentbench'
+            ? { candidateRef: 'candidate:a', taskIds: ['task/a'] }
+            : { candidateRef: 'candidate:a' },
+          call,
+        );
+        if (kind === 'inferencebench' && outcome === 'nonzero-exit') {
+          assert.deepEqual(await evaluation, {
+            measurementRef: 'measurement:one',
+          });
+        } else
+          await assert.rejects(evaluation, (error: unknown) => {
             assert.ok(error instanceof Error);
             assert.equal(
               Reflect.get(error, 'measurementRef'),
@@ -1200,8 +1206,7 @@ for (const kind of ['agentbench', 'inferencebench'] as const) {
             );
             assert.equal(Reflect.get(error, 'status'), expectedStatus);
             return true;
-          },
-        );
+          });
         assert.deepEqual(charges, [['evaluationRuns', 1]]);
         assert.equal(measurements.length, 1);
         assert.equal(measurements[0].status, expectedStatus);
@@ -1358,4 +1363,65 @@ test('inferencebench records cleaned startup rejection once without invoking the
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('InferenceBench sample IDs execute two measurements in one parent call', async (t) => {
+  let runs = 0;
+  const evaluator: typeof inferencebenchDefinition = {
+    ...inferencebenchDefinition,
+    async create(config: EvaluatorConfig, services) {
+      const op = await createInferencebench(config, services, async () => {
+        runs++;
+        return {
+          kind: 'local',
+          exitCode: 0,
+          snapshot: snapshot('performance'),
+        };
+      });
+      return {
+        execute: (input, ctx) =>
+          op.execute(
+            input,
+            ctx.extend({
+              withInstance: async (_candidate, _capability, use) =>
+                use({ baseUrl: 'http://endpoint/v1', model: 'fixture' }),
+            }),
+          ),
+        dispose: () => op.dispose(),
+      };
+    },
+  };
+  const fixture = await managerFixture(
+    async (ctx) => {
+      const candidateRef = string(
+        (await ctx.applicationMetadata()).initialCandidateRef,
+      );
+      for (const sampleId of ['1-1', '1-2'])
+        await ctx.invoke('benchmark', {
+          candidateRef,
+          concurrency: 10,
+          sampleId,
+        });
+      return {};
+    },
+    {
+      plugins: [evaluator],
+      bindings: {
+        benchmark: { plugin: evaluator.id, config: { benchmark: 'agentx' } },
+      },
+    },
+  );
+  t.after(() => fixture.dispose());
+  const result = await fixture.run();
+  assert.equal(result.status, 'succeeded', JSON.stringify(result));
+  assert.equal(runs, 2);
+  const calls = (await fixture.manager.facts.list('calls')).filter(
+    (call) => call.bindingId === 'benchmark',
+  );
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].parentCallId, calls[1].parentCallId);
+  assert.equal(
+    new Set(calls.map((call) => object(call.output).measurementRef)).size,
+    2,
+  );
 });
