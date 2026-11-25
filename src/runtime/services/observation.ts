@@ -107,13 +107,6 @@ function page<T>(items: T[], offset: number, limit: number): Page<T> {
   };
 }
 
-function isMemoryCall(entry: JsonObject): boolean {
-  return (
-    entry.contractId === 'contract.memory' ||
-    (entry.contractId == null && entry.pluginId === 'memory.agent')
-  );
-}
-
 /** Reads recorded facts without interpreting Policy outputs. */
 export class ObservationQueries {
   constructor(
@@ -260,7 +253,7 @@ export class ObservationQueries {
         else if (kind === 'calls') {
           if (entry.output !== undefined) collect(entry.output);
           if (
-            isMemoryCall(entry) &&
+            entry.pluginId === 'memory.agent' &&
             entry.input &&
             typeof entry.input === 'object' &&
             !Array.isArray(entry.input) &&
@@ -311,7 +304,7 @@ export class ObservationQueries {
           reason: entry.reason ?? null,
           status: entry.status ?? 'unknown',
         });
-      } else if (isMemoryCall(entry)) {
+      } else if (entry.pluginId === 'memory.agent') {
         const input =
           entry.input &&
           typeof entry.input === 'object' &&
