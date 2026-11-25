@@ -101,7 +101,11 @@ export async function runCommand(
     .action(() => runJson(({ registry }) => registry.catalog()));
   program
     .command('dashboard')
-    .description('Start the dashboard on localhost')
+    .description('Start the dashboard (localhost by default)')
+    .option(
+      '--public-read-only',
+      'Listen on all IPv4 interfaces for read-only access',
+    )
     .option(
       '--port <port>',
       'Listening port (1..65535)',
@@ -231,7 +235,13 @@ export async function runCommand(
     return id;
   }
 
-  async function startDashboard({ port }: { port: number }): Promise<void> {
+  async function startDashboard({
+    port,
+    publicReadOnly = false,
+  }: {
+    port: number;
+    publicReadOnly?: boolean;
+  }): Promise<void> {
     if (!statSync('.rsi', { throwIfNoEntry: false })?.isDirectory())
       throw new Error(
         'Dashboard requires a .rsi directory in the current working directory. Run it from your experiment workspace.',
@@ -240,9 +250,16 @@ export async function runCommand(
       program.opts<{ pluginDir: string[] }>().pluginDir,
     );
     const { createServer } = await import('../web/server.js');
-    const server = await createServer(runtime);
-    const address = await server.listen({ host: '127.0.0.1', port });
-    process.stdout.write(`Dashboard open at ${address}\n`);
+    const server = await createServer(runtime, { publicReadOnly });
+    const address = await server.listen({
+      host: publicReadOnly ? '0.0.0.0' : '127.0.0.1',
+      port,
+    });
+    process.stdout.write(
+      publicReadOnly
+        ? `Public read-only dashboard listening on 0.0.0.0:${port}\n`
+        : `Dashboard open at ${address}\n`,
+    );
     try {
       await aborted(context.signal, server);
     } finally {
