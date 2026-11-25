@@ -5,6 +5,8 @@ import type {
   MeasurementSummary,
 } from '../../web/api/observation-client.js';
 import {
+  compareThroughput,
+  inferenceSelection,
   inferenceMetric,
   inferenceSummary,
 } from '../../web/features/experiments/inference-summary.js';
@@ -107,4 +109,35 @@ test('unavailable, partial and unknown-condition metrics do not create a report'
   row.coverage = 'complete';
   row.comparisonKey = null;
   assert.equal(inferenceSummary([row], candidates), null);
+});
+
+test('fixed-workload retest compares the selected references under the same metric definition', () => {
+  const base = measurement('m1', 'root', 100);
+  const final = measurement('m2', 'child', 175);
+  assert.deepEqual(compareThroughput(base, final), {
+    value: 175,
+    unit: final.metrics[1]!.unit,
+    change: 75,
+  });
+  assert.equal(
+    compareThroughput(base, { ...final, coverage: 'partial' }),
+    null,
+  );
+  final.metrics[1]!.definitionRef = 'different';
+  assert.equal(compareThroughput(base, final), null);
+});
+
+test('a selected candidate without a retest remains visible', () => {
+  assert.deepEqual(
+    inferenceSelection([
+      { path: '/candidateRef', kind: 'candidate', ref: 'winner' },
+      { path: '/measurementRef', kind: 'measurement', ref: 'sample' },
+    ]),
+    {
+      selected: 'winner',
+      searchBest: undefined,
+      confirmation: undefined,
+      baselineRef: undefined,
+    },
+  );
 });

@@ -36,23 +36,45 @@ export function callLabels(
     invariantProposer: 'Inv Proposer',
     domainProposer: 'Domain Proposer',
     composer: 'Composer',
+    proposer: 'Proposer',
+    prelude: 'Preparation',
+    sampling: 'Measurement sampling',
+    ledger: 'Ledger',
+    framework: 'Grid proposer',
+    sweep: 'Concurrency sweep',
+    close: 'Summary',
   };
   let component = isAgentCall(owner)
     ? 'Agent'
-    : owner.pluginId.startsWith('proposer.')
-      ? (roles[owner.bindingId] ??
-        (owner.bindingId === 'proposer' ? 'Proposer' : owner.bindingId))
-      : (names[owner.pluginId.split('.')[0]!] ?? owner.bindingId);
+    : (roles[owner.bindingId] ??
+      (owner.pluginId.startsWith('proposer.')
+        ? owner.bindingId
+        : names[owner.pluginId.split('.')[0]!]) ??
+      owner.bindingId);
   const stage = stages.get(owner.callId);
   if (owner.pluginId.startsWith('evaluator.') && stage)
     component += ` · ${stage.variant === 'Invariant' ? 'Inv' : stage.variant}`;
 
   const path =
     owner.path && !owner.path.startsWith('call-') ? owner.path : null;
-  const round = stage?.round ?? roundLabel(owner.triggerPath ?? path);
+  let scope = owner;
+  const ancestors = new Set<string>();
+  while (
+    !scope.triggerPath &&
+    scope.path?.startsWith('call-') &&
+    scope.parentCallId &&
+    !ancestors.has(scope.callId)
+  ) {
+    ancestors.add(scope.callId);
+    const parent = byId.get(scope.parentCallId);
+    if (!parent) break;
+    scope = parent;
+  }
+  const roundPath = scope.triggerPath ?? scope.path;
+  const round = stage?.round ?? roundLabel(roundPath);
   return {
     title: component,
-    round: round?.replace(/Round /g, 'R') ?? null,
+    round: round ?? (roundPath === 'steps/baseline' ? 'Baseline' : null),
     plugins:
       owner.callId === call.callId
         ? call.pluginId

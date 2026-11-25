@@ -152,6 +152,8 @@ function parseCandidate(raw: unknown): CandidateSummary {
     ref: text(data.ref),
     parentRef: nullable(data.parentRef),
     artifactRef: text(data.artifactRef),
+    batchPosition:
+      data.batchPosition == null ? undefined : number(data.batchPosition),
     originPath:
       data.originPath === undefined ? null : nullable(data.originPath),
   };

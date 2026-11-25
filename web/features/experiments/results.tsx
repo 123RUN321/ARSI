@@ -63,6 +63,7 @@ export function Results({
           measurements={measurements.data!.items}
           candidates={candidates.data?.items ?? []}
           resultReferences={references}
+          result={details.data?.result}
         />
       </div>
     );

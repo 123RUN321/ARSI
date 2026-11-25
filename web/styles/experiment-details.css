@@ -1500,6 +1500,42 @@ td .measurement-metrics {
   }
 }
 
+@media (min-width: 901px) {
+  .studio-workspace:has(.call-history) {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+  }
+  .studio-main:has(.call-history),
+  .page-stack:has(> .call-history),
+  .call-history,
+  .call-history > .ui-card-content {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+  }
+  .call-history .call-workspace {
+    flex: 1 1 0;
+    height: 0;
+    min-height: 560px;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .call-list-panel {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .call-history .compact-calls {
+    flex: 1 1 0;
+    max-height: none;
+    align-content: start;
+  }
+  .call-workspace > :nth-child(2) {
+    overflow: auto;
+  }
+}
+
 .candidate-list-pane {
   min-width: 0;
 }

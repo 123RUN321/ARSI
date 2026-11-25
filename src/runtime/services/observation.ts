@@ -107,7 +107,7 @@ function page<T>(items: T[], offset: number, limit: number): Page<T> {
   };
 }
 
-/** Reads through existing stores; never writes facts, executes plugins, or interprets Policy outputs. */
+/** Reads recorded facts without interpreting Policy outputs. */
 export class ObservationQueries {
   constructor(
     private readonly facts: Pick<FactStore, 'read' | 'list' | 'scan'>,
@@ -370,8 +370,21 @@ export class ObservationQueries {
     );
 
     const resultReferences: ResultReference[] = [];
-    if (record.output !== undefined && result && !result.truncated)
-      recordedStrings(record.output, '', (ref, path) => {
+    // Preserve direct result links when the full output exceeds the preview limit.
+    let referenceSource: JsonValue | undefined = record.output;
+    if (result?.truncated) {
+      const output = record.output;
+      referenceSource =
+        output && typeof output === 'object' && !Array.isArray(output)
+          ? Object.fromEntries(
+              Object.entries(output).filter(
+                ([, value]) => typeof value === 'string',
+              ),
+            )
+          : undefined;
+    }
+    if (referenceSource !== undefined)
+      recordedStrings(referenceSource, '', (ref, path) => {
         const kind = candidateRefs.has(ref)
           ? 'candidate'
           : measurementRefs.has(ref)
@@ -620,6 +633,17 @@ export class ObservationQueries {
           for (const key of ['candidateRef', 'initialCandidateRef'])
             if (typeof output[key] === 'string')
               compact.output[key] = output[key];
+          const batch = Array.isArray(output.candidates)
+            ? output.candidates.map((item) =>
+                item && typeof item === 'object' && !Array.isArray(item)
+                  ? item.candidateRef
+                  : null,
+              )
+            : Array.isArray(output.candidateRefs)
+              ? output.candidateRefs
+              : [];
+          if (batch.length && batch.every((ref) => typeof ref === 'string'))
+            compact.output.candidateRefs = batch;
         }
         records.push(compact);
       }
@@ -870,7 +894,10 @@ export class ObservationQueries {
       this.owned('calls', id),
     ]);
     const byId = new Map(calls.map((call) => [string(call.callId), call]));
-    const originsByRef = new Map<string, JsonObject[]>();
+    const originsByRef = new Map<
+      string,
+      { call: JsonObject; batchPosition?: number }[]
+    >();
     calls.sort(
       (a, b) =>
         String(a.startedAt ?? '').localeCompare(String(b.startedAt ?? '')) ||
@@ -880,15 +907,23 @@ export class ObservationQueries {
       const output = call.output;
       if (!output || typeof output !== 'object' || Array.isArray(output))
         continue;
-      for (const ref of new Set([
-        output.candidateRef,
-        output.initialCandidateRef,
-      ])) {
-        if (typeof ref !== 'string') continue;
+      const batch = Array.isArray(output.candidateRefs)
+        ? output.candidateRefs
+        : [];
+      const addOrigin = (
+        ref: JsonValue | undefined,
+        batchPosition?: number,
+      ) => {
+        if (typeof ref !== 'string') return;
         const origins = originsByRef.get(ref) ?? [];
-        origins.push(call);
+        origins.push({ call, batchPosition });
         originsByRef.set(ref, origins);
-      }
+      };
+      batch.forEach((ref, index) =>
+        addOrigin(ref, batch.length > 1 ? index + 1 : undefined),
+      );
+      addOrigin(output.candidateRef);
+      addOrigin(output.initialCandidateRef);
     }
     const paths = new Map<string, string | null>();
     const callPath = (origin: JsonObject): string | null => {
@@ -915,12 +950,16 @@ export class ObservationQueries {
       for (const callId of seen) paths.set(callId, path);
       return path;
     };
-    const originPath = (ref: string): string | null => {
+    const provenance = (ref: string) => {
       for (const origin of originsByRef.get(ref) ?? []) {
-        const path = callPath(origin);
-        if (path) return path;
+        const path = callPath(origin.call);
+        if (path)
+          return {
+            originPath: path,
+            batchPosition: origin.batchPosition,
+          };
       }
-      return null;
+      return { originPath: null };
     };
 
     entries.sort((a, b) => string(a.ref).localeCompare(string(b.ref)));
@@ -931,7 +970,7 @@ export class ObservationQueries {
         ref: string(entry.ref),
         parentRef: optionalText(entry.parentRef),
         artifactRef: string(entry.artifactRef),
-        originPath: originPath(string(entry.ref)),
+        ...provenance(string(entry.ref)),
       })),
     };
   }

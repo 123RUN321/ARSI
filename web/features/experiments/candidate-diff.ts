@@ -1,3 +1,4 @@
+import { diffIndices } from 'node-diff3';
 import {
   readObservation,
   parseArtifact,
@@ -159,56 +160,65 @@ export interface DiffLine {
   before: number | null;
   after: number | null;
 }
-/** One contiguous replacement with three context lines; exact text is preserved without a quadratic diff. */
+function contentLines(text: string | null): string[] {
+  if (!text) return [];
+  const lines = text.split(/\r?\n/);
+  if (text.endsWith('\n')) lines.pop();
+  return lines;
+}
+
+/** Align matching lines between edits and retain three lines of context around each change. */
 export function changedLines(
   before: string | null,
   after: string | null,
 ): DiffLine[] {
-  const left = before === null ? [] : before.split('\n'),
-    right = after === null ? [] : after.split('\n');
-  let prefix = 0,
-    suffix = 0;
-  while (
-    prefix < left.length &&
-    prefix < right.length &&
-    left[prefix] === right[prefix]
-  )
-    prefix++;
-  while (
-    suffix < left.length - prefix &&
-    suffix < right.length - prefix &&
-    left[left.length - 1 - suffix] === right[right.length - 1 - suffix]
-  )
-    suffix++;
-  if (prefix === left.length && prefix === right.length) return [];
+  if (before === after) return [];
+  const left = contentLines(before);
+  const right = contentLines(after);
   const lines: DiffLine[] = [];
-  for (let index = Math.max(0, prefix - 3); index < prefix; index++)
-    lines.push({
-      kind: 'context',
-      text: left[index]!,
-      before: index + 1,
-      after: index + 1,
-    });
-  for (let index = prefix; index < left.length - suffix; index++)
-    lines.push({
-      kind: 'removed',
-      text: left[index]!,
-      before: index + 1,
-      after: null,
-    });
-  for (let index = prefix; index < right.length - suffix; index++)
-    lines.push({
-      kind: 'added',
-      text: right[index]!,
-      before: null,
-      after: index + 1,
-    });
-  for (let index = 0; index < Math.min(3, suffix); index++)
-    lines.push({
-      kind: 'context',
-      text: left[left.length - suffix + index]!,
-      before: left.length - suffix + index + 1,
-      after: right.length - suffix + index + 1,
-    });
+  let previousEnd = 0;
+  const changes = diffIndices(left, right);
+  for (const [index, change] of changes.entries()) {
+    const {
+      buffer1: [start, removed],
+      buffer2: [next, added],
+    } = change;
+    for (let i = Math.max(previousEnd, start - 3); i < start; i++)
+      lines.push({
+        kind: 'context',
+        text: left[i]!,
+        before: i + 1,
+        after: next - start + i + 1,
+      });
+    for (let i = start; i < start + removed; i++)
+      lines.push({
+        kind: 'removed',
+        text: left[i]!,
+        before: i + 1,
+        after: null,
+      });
+    for (let i = next; i < next + added; i++)
+      lines.push({
+        kind: 'added',
+        text: right[i]!,
+        before: null,
+        after: i + 1,
+      });
+    previousEnd = start + removed;
+    // Only emit trailing context up to the next edit, where line offsets can change.
+    const gap = Math.min(
+      3,
+      (changes[index + 1]?.buffer1[0] ?? left.length) - previousEnd,
+    );
+    for (let i = 0; i < gap; i++) {
+      lines.push({
+        kind: 'context',
+        text: left[previousEnd]!,
+        before: previousEnd + 1,
+        after: next + added + i + 1,
+      });
+      previousEnd++;
+    }
+  }
   return lines;
 }

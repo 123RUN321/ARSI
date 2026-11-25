@@ -69,8 +69,7 @@ export function CandidateRelations({
   );
   const pageOffset = (offset ?? 0) < matching.length ? (offset ?? 0) : 0;
   const visible = matching.slice(pageOffset, pageOffset + 50);
-  const name = (ref: string): string =>
-    labels.candidate(ref).replace(/Round /g, 'R');
+  const name = (ref: string): string => labels.candidate(ref);
   return (
     <section className="candidate-version-list" aria-label="Candidate versions">
       <label className="browser-search">

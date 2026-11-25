@@ -121,6 +121,12 @@ export function CandidateTextDiff({
                 </h3>
                 {currentFile?.reason ? (
                   <p className="filter-note">{currentFile.reason}</p>
+                ) : currentFile && !lines.length ? (
+                  <p className="muted">
+                    {currentFile.kind === 'modified'
+                      ? 'Only line endings changed.'
+                      : 'Empty file.'}
+                  </p>
                 ) : currentFile ? (
                   <>
                     {lines.length > 400 ? (

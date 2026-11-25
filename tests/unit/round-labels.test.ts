@@ -81,6 +81,10 @@ test('round labels use creation provenance and evaluation paths independently', 
 
 test('round labels decode current and historical iterations without interpreting opaque paths', () => {
   for (const [path, expected] of [
+    [
+      'steps/explore_agent/then/exploration/iteration-0/evaluate_batch/iteration-1/evaluate',
+      'Round 1 · Candidate 2',
+    ],
     ['steps/rounds/iteration-0/propose', 'Round 1'],
     ['steps/search/iteration-7/train', 'Round 8'],
     ['steps/outer/iteration-1/inner/iteration-2/propose', 'Round 2 / Round 3'],

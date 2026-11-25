@@ -627,6 +627,8 @@ import * as publicApi from 'arsi';
 import {register,contract,lifecycle,deliveries,admissions,creations,disposals} from './lifecycle-extension/index.mjs';
 import {createRuntime,Recipe,Policy,Binding,proposerContract,operatorProposerContract,operatorSummarizerContract,gridProposerContract,iterativeProposerContract,RuntimeContext,prepareAgentProject} from 'arsi';
 import {RuntimeContext as ContractContext,iterativeProposerContract as ContractsIterativeProposerContract} from 'arsi/contracts';
+assert.equal(typeof publicApi.requestEdit,'function');
+assert.equal(publicApi.agentConfigSchema.type,'object');
 assert.equal(RuntimeContext,ContractContext);
 assert.equal(iterativeProposerContract,ContractsIterativeProposerContract);
 assert.equal(Object.hasOwn(publicApi,'validateRecipe'),false);

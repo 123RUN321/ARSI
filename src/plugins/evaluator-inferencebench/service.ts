@@ -15,7 +15,6 @@ import {
   sdkRunner,
   type EvaluatorRunner,
 } from '../shared/evaluator-adapter/sdk.js';
-import { evaluationStatus } from '../shared/evaluator-adapter/measurement.js';
 import {
   parseEvaluatorConfig,
   type SdkEvaluatorConfig,
@@ -40,6 +39,7 @@ export async function createInferencebench(
             context.signal.throwIfAborted();
             await mkdir(context.directory, { recursive: true });
             const evaluationConfig = prepareEvaluationConfig(config, {
+              concurrency: input.concurrency,
               execution,
               directory: context.directory,
             });
@@ -71,7 +71,7 @@ export async function createInferencebench(
                       : null,
                 }),
               );
-              const measurementRef = await normalizeEvaluation(
+              const { measurementRef, status } = await normalizeEvaluation(
                 evaluationConfig,
                 input,
                 execution,
@@ -86,36 +86,22 @@ export async function createInferencebench(
                 ),
                 {
                   measurementRef,
-                  status: evaluationStatus(partial, context, true),
+                  status,
                 },
               );
             }
-            const measurementRef = await normalizeEvaluation(
+            const { measurementRef, status } = await normalizeEvaluation(
               evaluationConfig,
               input,
               execution,
               result,
               context,
             );
-            const raw = object(result);
-            if (raw.snapshot === undefined)
-              throw Object.assign(
-                new Error(
-                  'Evaluator result has no confirmed collected snapshot',
-                ),
-                { measurementRef, status: 'unknown' },
-              );
-            if (context.signal.aborted || raw.exitCode !== 0) {
-              const status = evaluationStatus(raw, context);
-              throw Object.assign(
-                new Error('Evaluator completed with nonzero exitCode'),
-                {
-                  measurementRef,
-                  status,
-                  exitCode: raw.exitCode,
-                },
-              );
-            }
+            if (status !== 'succeeded' && status !== 'failed')
+              throw Object.assign(new Error(`Evaluator outcome: ${status}`), {
+                measurementRef,
+                status,
+              });
             return { measurementRef };
           },
         );
@@ -126,16 +112,15 @@ export async function createInferencebench(
         )
           throw error;
         await context.charge('evaluationRuns', 1);
-        return {
-          measurementRef: await normalizeEvaluation(
-            null,
-            input,
-            {},
-            null,
-            context,
-            { phase: 'startup', message: errorText(error) },
-          ),
-        };
+        const { measurementRef } = await normalizeEvaluation(
+          null,
+          input,
+          {},
+          null,
+          context,
+          { phase: 'startup', message: errorText(error) },
+        );
+        return { measurementRef };
       }
     },
     async dispose(): Promise<void> {},
@@ -147,9 +132,11 @@ export function prepareEvaluationConfig(
   {
     execution,
     directory,
+    concurrency,
   }: {
     execution: JsonObject;
     directory: string;
+    concurrency?: number;
   },
 ): SdkEvaluatorConfig {
   const config = object(rawConfig, 'evaluator config');
@@ -158,6 +145,16 @@ export function prepareEvaluationConfig(
     typeof prepared.benchmark === 'string'
       ? { name: prepared.benchmark }
       : object(prepared.benchmark, 'benchmark');
+  if (concurrency !== undefined) {
+    const settings = object(benchmark.config ?? {}, 'benchmark.config');
+    benchmark.config = {
+      ...settings,
+      workload: {
+        ...object(settings.workload ?? {}, 'benchmark.config.workload'),
+        concurrency,
+      },
+    };
+  }
   const solver: JsonObject =
     typeof benchmark.solver === 'string'
       ? { name: benchmark.solver }

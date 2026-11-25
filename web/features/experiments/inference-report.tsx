@@ -3,6 +3,7 @@ import type {
   CandidateSummary,
   MeasurementSummary,
   ResultReference,
+  JsonPreview,
 } from '../../api/observation-client';
 import { route } from '../../app/routing';
 import { Status } from '../../components/observation-feedback';
@@ -16,7 +17,14 @@ import {
   TableRow,
 } from '../../components/ui/table';
 import { useRoundLabels } from './round-labels';
-import { inferenceMetric, inferenceSummary } from './inference-summary';
+import {
+  compareThroughput,
+  inferenceSelection,
+  inferenceMetric,
+  inferenceSummary,
+} from './inference-summary';
+
+import { previewObject } from './plugin-call-summary';
 
 const number = (value: number | null): string =>
   value === null
@@ -28,10 +36,12 @@ export function InferenceReport({
   measurements,
   candidates,
   resultReferences,
+  result,
 }: {
   id: string;
   measurements: MeasurementSummary[];
   candidates: CandidateSummary[];
+  result?: JsonPreview | null;
   resultReferences?: ResultReference[];
 }): React.JSX.Element | null {
   const [condition, setCondition] = useState('');
@@ -51,6 +61,14 @@ export function InferenceReport({
     218 - ((value - low) / (high - low)) * 180;
   const detail = (ref: string): string =>
     route(id, 'measurements', undefined, undefined, { measurement: ref });
+  const { selected, searchBest, confirmation, baselineRef } =
+    inferenceSelection(resultReferences);
+  const finalFeasible = confirmation
+    ? previewObject(result).finalFeasible
+    : null;
+  const baseline = measurements.find((item) => item.ref === baselineRef);
+  const final = measurements.find((item) => item.ref === confirmation);
+  const confirmedRate = compareThroughput(baseline, final);
   const ordered = [...measurements].sort(
     (a, b) =>
       (a.startedAt ?? '').localeCompare(b.startedAt ?? '') ||
@@ -87,6 +105,44 @@ export function InferenceReport({
             ))}
           </select>
         </label>
+      ) : null}
+      {selected || searchBest || confirmation ? (
+        <section className="inference-delivery" aria-label="Policy selection">
+          <h3>Policy selection</h3>
+          {selected ? (
+            <a href={route(id, 'candidates', selected)}>
+              Selected {labels.candidate(selected)}
+            </a>
+          ) : searchBest ? (
+            <a href={route(id, 'candidates', searchBest)}>
+              Search winner {labels.candidate(searchBest)}
+            </a>
+          ) : null}
+          {selected &&
+          final?.candidateRef === selected &&
+          confirmedRate !== null ? (
+            <span>
+              {baseline?.candidateRef === selected
+                ? 'Baseline retained'
+                : 'Selected configuration'}{' '}
+              · {number(confirmedRate.value)} {confirmedRate.unit} in final
+              measurement ({confirmedRate.change >= 0 ? '+' : ''}
+              {number(confirmedRate.change)}% vs. initial baseline)
+            </span>
+          ) : null}
+          {confirmation ? (
+            <a href={detail(confirmation)}>
+              Final measurement
+              {typeof finalFeasible === 'boolean'
+                ? selected
+                  ? ' · Selected'
+                  : finalFeasible
+                    ? ' · Feasible, selection unconfirmed'
+                    : ' · Failed'
+                : ''}
+            </a>
+          ) : null}
+        </section>
       ) : null}
       <section className="inference-scoreboard" aria-label="Throughput summary">
         <div className="inference-best">

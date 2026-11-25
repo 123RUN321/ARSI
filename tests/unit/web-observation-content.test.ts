@@ -236,6 +236,22 @@ test('content query validates nested result references against this experiment',
     ].sort((a, b) => a.path.localeCompare(b.path)),
   );
   assert.deepEqual(await facts.read('experiments', 'run-alpha'), before);
+  await facts.write('experiments', 'run-alpha', {
+    ...other,
+    output: {
+      candidateRef: 'candidate-root',
+      padding: 'x'.repeat(40000),
+      finalFeasible: null,
+      secret: 'candidate-next',
+      history: ['measurement-first'],
+    },
+  });
+  const large = await query.details('run-alpha');
+  assert.equal(large.result?.truncated, true);
+  assert.deepEqual(large.resultReferences, [
+    { path: '/candidateRef', kind: 'candidate', ref: 'candidate-root' },
+  ]);
+
   assert.throws(
     () =>
       parseDetails({

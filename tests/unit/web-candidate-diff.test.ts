@@ -26,6 +26,26 @@ test('text diff preserves additions, deletions, replacement context and line num
   );
   assert.deepEqual(changedLines('same', 'same'), []);
 });
+test('a later newline edit preserves unchanged lines after a replacement', () => {
+  const lines = changedLines('before\nold\nkeep\n}', 'before\nnew\nkeep\n}\n');
+  assert.deepEqual(
+    lines.map(({ kind, text }) => [kind, text]),
+    [
+      ['context', 'before'],
+      ['removed', 'old'],
+      ['added', 'new'],
+      ['context', 'keep'],
+      ['context', '}'],
+    ],
+  );
+});
+test('line endings do not add a phantom row, but a real blank line is visible', () => {
+  assert.deepEqual(changedLines('end', 'end\r\n'), []);
+  assert.deepEqual(
+    changedLines('end\n', 'end\n\n').filter((line) => line.kind === 'added'),
+    [{ kind: 'added', text: '', before: null, after: 2 }],
+  );
+});
 test('snapshot comparison uses GET only, detects equal-size edits, and never treats restricted or truncated text as unchanged', async (t) => {
   const files: Record<string, Record<string, string>> = {
     parent: {

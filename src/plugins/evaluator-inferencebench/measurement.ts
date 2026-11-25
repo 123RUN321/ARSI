@@ -26,7 +26,6 @@ import {
   archiveItemDetails,
   archiveItemExecution,
   archiveProvenance,
-  evaluationStatus,
 } from '../shared/evaluator-adapter/measurement.js';
 import {
   agentxWorkloadSchema,
@@ -43,7 +42,7 @@ export async function normalizeEvaluation(
   resultValue: unknown,
   context: RuntimeContext,
   failure: JsonObject | null = null,
-): Promise<string> {
+): Promise<{ measurementRef: string; status: string }> {
   const aisbench = object(native?.benchmark ?? {}).name === 'aisbench';
   const result = object(redact(resultValue ?? {}));
   const snapshot = await snapshotOf(result);
@@ -250,7 +249,12 @@ export async function normalizeEvaluation(
     nativeResultRef,
     metricsEnvelope,
   );
-  const status = evaluationStatus(result, context, failure !== null);
+  let status = nativeStatus(run.status, context.signal);
+  if (status !== 'cancelled') {
+    if (native === null && failure?.phase === 'startup') status = 'failed';
+    else if (failure || (status === 'succeeded' && result.exitCode !== 0))
+      status = 'unknown';
+  }
   const measurement: JsonObject = {
     schemaVersion: 'rsi.measurement/v1',
     ref: `measurement-${context.callId}`,
@@ -299,5 +303,8 @@ export async function normalizeEvaluation(
       ),
     ],
   };
-  return context.recordMeasurement(measurement);
+  return {
+    measurementRef: await context.recordMeasurement(measurement),
+    status,
+  };
 }
