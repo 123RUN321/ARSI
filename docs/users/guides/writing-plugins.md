@@ -382,14 +382,3 @@ Common `createRuntime` options are listed below; see the [Runtime entrypoint](..
 Registrations in a host only apply to that Runtime. A separately started CLI loads extensions from the default user-level directory, or from directories selected with `--plugin-dir`.
 
 `Recipe.load` assembles and structurally validates the definition without running prerequisite probes. Use `arsi doctor` with the same extension registrations for CLI preflight. Register a `rsi/doctor` handler for component diagnostics. See [Connecting custom components](doctor.md#4-connecting-custom-components) for the public callback and a complete registration example.
-
-### Inference extension calls
-
-An extension can use `requestEdit` and `agentConfigSchema` from `arsi` to
-request structured Agent proposals before committing a candidate through the
-Application. A supervising evaluator can use `context.invoke` with an
-Inferencebench binding. Pass the same `candidateRef` and an optional positive
-`concurrency` for a workload probe. Give each intended physical run a stable
-`sampleId` so the Runtime can identify its receipt on replay. Set
-`returnFailedMeasurement` to retrieve a recorded benchmark failure for domain
-analysis. Cancellation, budget exhaustion and infrastructure errors still propagate.

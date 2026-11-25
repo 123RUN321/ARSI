@@ -382,13 +382,3 @@ try {
 宿主中的注册只对该 Runtime 生效。另行启动 CLI 时，将扩展放入默认用户级目录自动加载，或使用 `--plugin-dir` 指定扩展目录。
 
 `Recipe.load` 装配并检查定义的结构，不执行前提探测。需要 CLI 预检时，使用相同的扩展注册运行 `arsi doctor`。注册 `rsi/doctor` 处理器即可提供组件诊断。公开回调和完整注册示例见[自定义组件如何接入 doctor](doctor_zh.md#4-自定义组件如何接入-doctor)。
-
-### 推理扩展调用
-
-扩展可以使用 `arsi` 导出的 `requestEdit` 和 `agentConfigSchema` 获取结构化提案，
-完成领域校验后再通过 Application 提交候选。上层 Evaluator 可以通过
-`context.invoke` 调用一个 Inferencebench binding。容量扫描复用同一个
-`candidateRef`，用可选正整数 `concurrency` 指定压测并发。每次计划中的实测使用
-稳定的 `sampleId`，使 Runtime 能在重放时识别调用收据。设置
-`returnFailedMeasurement` 可以读取已记录的压测失败并做领域分析。取消、
-预算耗尽和基础设施错误仍会向上层传播。
