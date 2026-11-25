@@ -1,6 +1,7 @@
 import type {
   CandidateSummary,
   MeasurementSummary,
+  ResultReference,
 } from '../../api/observation-client.js';
 import { comparableBaseline } from './experiment-summary.js';
 import {
@@ -106,4 +107,16 @@ export function compareThroughput(
   const base = inferenceMetric(baseline, metric.name);
   if (base === null || base <= 0 || value === null) return null;
   return { value, unit: metric.unit, change: ((value - base) / base) * 100 };
+}
+
+/** Interpret the inference report's result paths using experiment-owned references. */
+export function inferenceSelection(refs: readonly ResultReference[] = []) {
+  const find = (path: string, kind: ResultReference['kind']) =>
+    refs.find((ref) => ref.path === path && ref.kind === kind)?.ref;
+  return {
+    selected: find('/candidateRef', 'candidate'),
+    searchBest: find('/searchBestCandidateRef', 'candidate'),
+    confirmation: find('/finalMeasurementRef', 'measurement'),
+    baselineRef: find('/baselineMeasurementRef', 'measurement'),
+  };
 }

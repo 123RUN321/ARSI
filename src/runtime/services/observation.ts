@@ -107,33 +107,6 @@ function page<T>(items: T[], offset: number, limit: number): Page<T> {
   };
 }
 
-/** Reads through existing stores; never writes facts, executes plugins, or interprets Policy outputs. */
-function selectionFields(
-  output: JsonValue | undefined,
-): Pick<ExperimentOverview, 'selection'> {
-  if (
-    !output ||
-    typeof output !== 'object' ||
-    Array.isArray(output) ||
-    typeof output.finalFeasible !== 'boolean'
-  )
-    return {};
-  const ref = (value: JsonValue | undefined, prefix: string): string | null =>
-    typeof value === 'string' &&
-    new RegExp('^' + prefix + '-[a-f0-9]+$').test(value)
-      ? value
-      : null;
-  return {
-    selection: {
-      candidateRef: ref(output.candidateRef, 'candidate'),
-      searchBestCandidateRef: ref(output.searchBestCandidateRef, 'candidate'),
-      finalMeasurementRef: ref(output.finalMeasurementRef, 'measurement'),
-      baselineMeasurementRef: ref(output.baselineMeasurementRef, 'measurement'),
-      finalFeasible: output.finalFeasible,
-    },
-  };
-}
-
 function isMemoryCall(entry: JsonObject): boolean {
   return (
     entry.contractId === 'contract.memory' ||
@@ -141,6 +114,7 @@ function isMemoryCall(entry: JsonObject): boolean {
   );
 }
 
+/** Reads recorded facts without interpreting Policy outputs. */
 export class ObservationQueries {
   constructor(
     private readonly facts: Pick<FactStore, 'read' | 'list' | 'scan'>,
@@ -403,8 +377,21 @@ export class ObservationQueries {
     );
 
     const resultReferences: ResultReference[] = [];
-    if (record.output !== undefined && result && !result.truncated)
-      recordedStrings(record.output, '', (ref, path) => {
+    // Preserve direct result links when the full output exceeds the preview limit.
+    let referenceSource: JsonValue | undefined = record.output;
+    if (result?.truncated) {
+      const output = record.output;
+      referenceSource =
+        output && typeof output === 'object' && !Array.isArray(output)
+          ? Object.fromEntries(
+              Object.entries(output).filter(
+                ([, value]) => typeof value === 'string',
+              ),
+            )
+          : undefined;
+    }
+    if (referenceSource !== undefined)
+      recordedStrings(referenceSource, '', (ref, path) => {
         const kind = candidateRefs.has(ref)
           ? 'candidate'
           : measurementRefs.has(ref)
@@ -416,7 +403,6 @@ export class ObservationQueries {
       configuration: this.preview(record.recipe, secrets),
       result,
       resultReferences,
-      ...selectionFields(record.output),
     };
   }
 
@@ -608,7 +594,6 @@ export class ObservationQueries {
       ...(await this.summary(record, secrets)),
       observedAt: new Date().toISOString(),
       usage,
-      ...selectionFields(record.output),
       limits: numbers(record.recipe ? object(record.recipe).budget : undefined),
       output: this.preview(record.output, secrets),
     };

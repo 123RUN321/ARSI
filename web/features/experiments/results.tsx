@@ -63,7 +63,7 @@ export function Results({
           measurements={measurements.data!.items}
           candidates={candidates.data?.items ?? []}
           resultReferences={references}
-          policySelection={details.data?.selection}
+          result={details.data?.result}
         />
       </div>
     );

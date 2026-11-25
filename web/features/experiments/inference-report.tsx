@@ -3,7 +3,7 @@ import type {
   CandidateSummary,
   MeasurementSummary,
   ResultReference,
-  ExperimentOverview,
+  JsonPreview,
 } from '../../api/observation-client';
 import { route } from '../../app/routing';
 import { Status } from '../../components/observation-feedback';
@@ -19,9 +19,12 @@ import {
 import { useRoundLabels } from './round-labels';
 import {
   compareThroughput,
+  inferenceSelection,
   inferenceMetric,
   inferenceSummary,
 } from './inference-summary';
+
+import { previewObject } from './plugin-call-summary';
 
 const number = (value: number | null): string =>
   value === null
@@ -33,12 +36,12 @@ export function InferenceReport({
   measurements,
   candidates,
   resultReferences,
-  policySelection,
+  result,
 }: {
   id: string;
   measurements: MeasurementSummary[];
   candidates: CandidateSummary[];
-  policySelection?: ExperimentOverview['selection'];
+  result?: JsonPreview | null;
   resultReferences?: ResultReference[];
 }): React.JSX.Element | null {
   const [condition, setCondition] = useState('');
@@ -58,19 +61,11 @@ export function InferenceReport({
     218 - ((value - low) / (high - low)) * 180;
   const detail = (ref: string): string =>
     route(id, 'measurements', undefined, undefined, { measurement: ref });
-  const selected =
-    policySelection?.candidateRef ??
-    resultReferences?.find(
-      (ref) => ref.path === '/candidateRef' && ref.kind === 'candidate',
-    )?.ref;
-  const searchBest = policySelection?.searchBestCandidateRef;
-  const confirmation = policySelection?.finalMeasurementRef;
-  const baselineRef =
-    policySelection?.baselineMeasurementRef ??
-    resultReferences?.find(
-      (ref) =>
-        ref.path === '/baselineMeasurementRef' && ref.kind === 'measurement',
-    )?.ref;
+  const { selected, searchBest, confirmation, baselineRef } =
+    inferenceSelection(resultReferences);
+  const finalFeasible = confirmation
+    ? previewObject(result).finalFeasible
+    : null;
   const baseline = measurements.find((item) => item.ref === baselineRef);
   const final = measurements.find((item) => item.ref === confirmation);
   const confirmedRate = compareThroughput(baseline, final);
@@ -130,18 +125,18 @@ export function InferenceReport({
               {baseline?.candidateRef === selected
                 ? 'Baseline retained'
                 : 'Selected configuration'}{' '}
-              · {number(confirmedRate.value)} {confirmedRate.unit} on retest (
-              {confirmedRate.change >= 0 ? '+' : ''}
+              · {number(confirmedRate.value)} {confirmedRate.unit} in final
+              measurement ({confirmedRate.change >= 0 ? '+' : ''}
               {number(confirmedRate.change)}% vs. initial baseline)
             </span>
           ) : null}
           {confirmation ? (
             <a href={detail(confirmation)}>
-              Fixed-workload confirmation
-              {typeof policySelection?.finalFeasible === 'boolean'
+              Final measurement
+              {typeof finalFeasible === 'boolean'
                 ? selected
                   ? ' · Selected'
-                  : policySelection.finalFeasible
+                  : finalFeasible
                     ? ' · Feasible, selection unconfirmed'
                     : ' · Failed'
                 : ''}

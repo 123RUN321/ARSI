@@ -6,6 +6,7 @@ import type {
 } from '../../web/api/observation-client.js';
 import {
   compareThroughput,
+  inferenceSelection,
   inferenceMetric,
   inferenceSummary,
 } from '../../web/features/experiments/inference-summary.js';
@@ -124,4 +125,19 @@ test('fixed-workload retest compares the selected references under the same metr
   );
   final.metrics[1]!.definitionRef = 'different';
   assert.equal(compareThroughput(base, final), null);
+});
+
+test('a selected candidate without a retest remains visible', () => {
+  assert.deepEqual(
+    inferenceSelection([
+      { path: '/candidateRef', kind: 'candidate', ref: 'winner' },
+      { path: '/measurementRef', kind: 'measurement', ref: 'sample' },
+    ]),
+    {
+      selected: 'winner',
+      searchBest: undefined,
+      confirmation: undefined,
+      baselineRef: undefined,
+    },
+  );
 });
